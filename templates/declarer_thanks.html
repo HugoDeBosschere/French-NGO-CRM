@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Merci{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <h1>Merci !</h1>
+  <p class="muted">
+    Votre déclaration a bien été transmise. Un membre de l'équipe la relira
+    avant son enregistrement définitif.
+  </p>
+  <div class="actions" style="flex-direction:column">
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer') }}">
+      Déclarer autre chose
+    </a>
+    <a class="muted" href="{{ url_for('login') }}">← Retour à la connexion</a>
+  </div>
+</div>
+{% endblock %}

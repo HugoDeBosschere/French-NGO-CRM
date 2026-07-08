@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Déclarer une rencontre{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Déclarer une rencontre</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<form class="card form" method="post" enctype="multipart/form-data"
+      action="{{ url_for('declarer_meeting') }}">
+
+  <div class="field">
+    <label for="proposed_people">Personnes concernées <span class="req">*</span></label>
+    <textarea id="proposed_people" name="proposed_people" rows="2" required
+      placeholder="ex. Jean Dupont, Marie Martin…">{{ form.get('proposed_people', '') }}</textarea>
+    <p class="hint">Indiquez les noms ; un membre de l'équipe fera le lien avec les fiches.</p>
+    <div class="notice">
+      <span class="notice-icon">⚠️</span>
+      <span>Si la rencontre concerne une nouvelle personne, merci de la
+        <a href="{{ url_for('declarer_person') }}">déclarer d'abord</a>. Cette étape est
+        facultative mais nous facilite grandement la vie donc est très appréciée.</span>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="meeting_date">Date de la rencontre <span class="req">*</span></label>
+      <input type="text" id="meeting_date" name="meeting_date" inputmode="numeric"
+             placeholder="JJ/MM/AAAA" value="{{ form.get('meeting_date', today) | fr_date }}" required>
+    </div>
+
+    <div class="field">
+      <label for="meeting_time">Heure <span class="muted">(facultatif)</span></label>
+      <input type="text" id="meeting_time" name="meeting_time" inputmode="numeric"
+             placeholder="HH:MM" value="{{ form.get('meeting_time', '') }}">
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="summary">Points clés de la rencontre <span class="req">*</span></label>
+    <textarea id="summary" name="summary" rows="5" required
+      placeholder="Sujets abordés, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
+  </div>
+
+  <div class="field">
+    <label for="details">Compte rendu détaillé de la rencontre <span class="muted">(facultatif)</span></label>
+    <textarea id="details" name="details" rows="6"
+      placeholder="Notes complètes, verbatim, contexte…">{{ form.get('details', '') }}</textarea>
+    <p class="hint">Si vous disposez de plus d'informations ou de notes sur le contenu
+      de la rencontre, mettez les ici.</p>
+  </div>
+
+  <div class="field">
+    <label for="document">Document joint <span class="muted">(facultatif)</span></label>
+    <input type="file" id="document" name="document"
+           accept=".pdf,.doc,.docx,.odt,.txt">
+    <p class="hint">Compte rendu, notes… Formats acceptés : .pdf, .doc, .docx, .odt, .txt
+      — jusqu'à 10&nbsp;Mo.</p>
+  </div>
+
+  <div class="field">
+    <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
+    <input type="text" id="submitted_by" name="submitted_by"
+           value="{{ form.get('submitted_by', '') }}" required
+           placeholder="ex. Marie L. ou marie_l#1234">
+    <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
+      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».</p>
+  </div>
+
+  <div class="field">
+    <label for="captcha">Combien font {{ captcha_question }} ? <span class="req">*</span></label>
+    <input type="text" id="captcha" name="captcha" inputmode="numeric"
+           autocomplete="off" required placeholder="Vérification anti-robot">
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

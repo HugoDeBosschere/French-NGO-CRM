@@ -7,9 +7,9 @@
   --ink:       #1c2733;
   --muted:     #67788a;
   --line:      #e2e8f0;
-  --brand:     #0f766e;   /* teal */
-  --brand-ink: #0b5a54;
-  --brand-soft:#d8f0ed;
+  --brand:     #ff971b;   /* orange */
+  --brand-ink: #b45309;   /* deep amber — readable as text on white/soft */
+  --brand-soft:#ffedd5;
   --danger:    #b42318;
   --danger-bg: #fef3f2;
   --ok:        #027a48;
@@ -28,7 +28,7 @@ body {
   line-height: 1.5;
 }
 
-a { color: var(--brand); text-decoration: none; }
+a { color: var(--brand-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* ---------- Header / footer ---------- */
@@ -97,6 +97,8 @@ h2 { font-size: 1.2rem; margin: 2rem 0 .75rem; }
 .btn-primary:hover { background: var(--brand-ink); border-color: var(--brand-ink); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn-ghost:hover { background: #eceff2; }
+.btn-danger { background: transparent; border-color: #e2b6b6; color: #b42318; }
+.btn-danger:hover { background: #fbeaea; border-color: #d98a8a; }
 .btn-block { width: 100%; justify-content: center; }
 
 /* ---------- Flash messages ---------- */
@@ -227,7 +229,12 @@ table.calendar td {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-a.cal-ev:hover { text-decoration: none; filter: brightness(.96); }
+a.cal-ev { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+a.cal-ev:hover {
+  text-decoration: underline;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  transform: translateY(-1px);
+}
 .cal-meeting  { background: var(--brand-soft); color: var(--brand-ink); }
 .cal-followup { background: #fff4e5;           color: #b54708; }
 
@@ -319,3 +326,45 @@ a.cal-ev:hover { text-decoration: none; filter: brightness(.96); }
   margin-bottom: 1rem;
 }
 .auth-card input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+
+/* --- Moderation / anonymous declaration additions --- */
+.flash-info { background: var(--brand-soft); color: var(--brand-ink); border-color: #fcd9a8; }
+
+.badge {
+  display: inline-block;
+  min-width: 1.1rem;
+  padding: 0 .35rem;
+  margin-left: .15rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.auth-sep { border: none; border-top: 1px solid var(--line); margin: 1.25rem 0; }
+
+.card-list { display: grid; gap: .75rem; margin-bottom: 1.75rem; }
+.card-list .card { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.card-body { flex: 1 1 auto; }
+.card-body p { margin: .35rem 0 0; }
+.card-list .actions { flex: 0 0 auto; margin: 0; }
+.card-list .actions form { margin: 0; }
+
+/* --- Highlighted notice banner (e.g. "déclarez la personne d'abord") --- */
+.notice {
+  display: flex;
+  gap: .55rem;
+  align-items: flex-start;
+  margin-top: .6rem;
+  padding: .65rem .85rem;
+  background: #fff8e1;
+  border: 1px solid #ffd98a;
+  border-radius: 8px;
+  color: #7a5300;
+  font-size: .92rem;
+}
+.notice .notice-icon { flex: 0 0 auto; line-height: 1.45; }
+.notice a { color: #7a5300; text-decoration: underline; }

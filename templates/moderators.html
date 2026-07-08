@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Utilisateurices{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Utilisateurices certifié·es</h1>
+</div>
+
+<p class="muted">Iels apparaissent dans les champs « Qui a participé / reçu / ajouté »
+  et « Validé par » des fiches.</p>
+
+<form class="card form" method="post" action="{{ url_for('add_moderator') }}"
+      style="margin-bottom:1.5rem">
+  <div class="field">
+    <label for="name">Nom ou pseudo Discord <span class="req">*</span></label>
+    <input type="text" id="name" name="name" required
+           placeholder="ex. Marie L. ou marie_l#1234">
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Ajouter</button>
+  </div>
+</form>
+
+{% if moderators %}
+<div class="card-list">
+  {% for mo in moderators %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ mo['name'] }}</strong>
+      <p class="hint">{{ mo['ref_count'] }} fiche(s) liée(s)</p>
+    </div>
+    <div class="actions">
+      <form method="post" action="{{ url_for('delete_moderator', mod_id=mo['id']) }}"
+            onsubmit="return confirm('Supprimer cet·te utilisateurice ? Les fiches déjà enregistrées restent, mais ne lui seront plus attribuées.');">
+        <button class="btn btn-ghost" type="submit">Supprimer</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><p>Aucun·e utilisateurice pour le moment.</p></div>
+{% endif %}
+{% endblock %}

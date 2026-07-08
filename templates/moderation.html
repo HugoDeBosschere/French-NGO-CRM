@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Modération{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Modération</h1>
+</div>
+
+<p class="muted">
+  Déclarations transmises sans mot de passe. <strong>Valider</strong> ouvre une
+  fiche pré-remplie que vous complétez avant l'enregistrement définitif ;
+  <strong>Rejeter</strong> supprime définitivement le brouillon.
+</p>
+
+{% if not pending_persons and not pending_meetings and not pending_mails %}
+  <div class="empty"><p>Aucune déclaration en attente. 🎉</p></div>
+{% endif %}
+
+{% if pending_meetings %}
+<h2>Rencontres ({{ pending_meetings|length }})</h2>
+<div class="card-list">
+  {% for m in pending_meetings %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} · {{ m['meeting_time'] }}{% endif %}</strong>
+      — {{ m['proposed_people'] }}
+      <p>{{ m['summary'] }}</p>
+      {% if m['details'] %}<p class="hint">+ compte rendu détaillé fourni</p>{% endif %}
+      {% if m['document_orig_name'] %}<p class="hint">📎 {{ m['document_orig_name'] }}</p>{% endif %}
+      {% if m['submitted_by'] %}<p class="hint">Déclaré par {{ m['submitted_by'] }}</p>{% endif %}
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary" href="{{ url_for('approve_pending_meeting', pid=m['id']) }}">Valider</a>
+      <form method="post" action="{{ url_for('reject_pending_meeting', pid=m['id']) }}"
+            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
+        <button class="btn btn-ghost" type="submit">Rejeter</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if pending_mails %}
+<h2>Courriels ({{ pending_mails|length }})</h2>
+<div class="card-list">
+  {% for x in pending_mails %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ x['mail_date'] | fr_date }} · {{ directions.get(x['direction'], x['direction']) }}</strong>
+      {% if x['important'] %} · ⭐ important{% endif %}
+      — {{ x['proposed_people'] }}
+      <p>{{ x['summary'] }}</p>
+      {% if x['document_orig_name'] %}<p class="hint">📎 {{ x['document_orig_name'] }}</p>{% endif %}
+      {% if x['submitted_by'] %}<p class="hint">Déclaré par {{ x['submitted_by'] }}</p>{% endif %}
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary" href="{{ url_for('approve_pending_mail', pid=x['id']) }}">Valider</a>
+      <form method="post" action="{{ url_for('reject_pending_mail', pid=x['id']) }}"
+            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
+        <button class="btn btn-ghost" type="submit">Rejeter</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if pending_persons %}
+<h2>Personnes ({{ pending_persons|length }})</h2>
+<div class="card-list">
+  {% for p in pending_persons %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ p['name'] }}</strong>
+      {% if p['role'] %} — {{ p['role'] }}{% endif %}
+      {% if p['political_group'] %} <span class="muted">({{ p['political_group'] }})</span>{% endif %}
+      {% if p['stance'] %}<p class="hint">Position : {{ p['stance'] }}</p>{% endif %}
+      {% if p['notes'] %}<p>{{ p['notes'] }}</p>{% endif %}
+      {% if p['submitted_by'] %}<p class="hint">Déclaré par {{ p['submitted_by'] }}</p>{% endif %}
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary" href="{{ url_for('approve_pending_person', pid=p['id']) }}">Valider</a>
+      <form method="post" action="{{ url_for('reject_pending_person', pid=p['id']) }}"
+            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
+        <button class="btn btn-ghost" type="submit">Rejeter</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

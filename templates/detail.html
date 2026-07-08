@@ -6,6 +6,10 @@
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('edit_meeting', meeting_id=m['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('index') }}">Retour</a>
+    <form method="post" action="{{ url_for('delete_meeting', meeting_id=m['id']) }}"
+          onsubmit="return confirm('Supprimer définitivement cette rencontre ? Cette action est irréversible.');">
+      <button class="btn btn-danger" type="submit">Supprimer</button>
+    </form>
   </span>
 </div>
 
@@ -28,17 +32,37 @@
   </div>
 
   <div class="field">
-    <label>Résumé</label>
+    <label>Qui a participé à la rencontre</label>
+    {% if participants %}
+      <p>{% for name in participants %}<span class="tag">{{ name }}</span>{% endfor %}</p>
+    {% else %}
+      <p class="muted">—</p>
+    {% endif %}
+  </div>
+
+  <div class="field">
+    <label>Points clés de la rencontre</label>
     <p class="prose">{{ m['summary'] }}</p>
   </div>
 
+  {% if m['details'] %}
+  <div class="field">
+    <label>Compte rendu détaillé</label>
+    <p class="prose">{{ m['details'] }}</p>
+  </div>
+  {% endif %}
+
   <div class="grid-2">
     <div class="field">
-      <label>Saisi par</label>
-      <p>{{ m['recorded_by'] or '—' }}</p>
+      <label>Validé par</label>
+      <p>{{ validated_by or '—' }}</p>
     </div>
     <div class="field">
-      <label>Compte-rendu complet</label>
+      <label>Saisi par</label>
+      <p>{{ recorded_by or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Document joint</label>
       {% if m['document_stored_name'] %}
         <p>📎 <a href="{{ url_for('download', meeting_id=m['id']) }}">{{ m['document_orig_name'] }}</a></p>
       {% else %}

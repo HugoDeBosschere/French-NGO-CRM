@@ -15,8 +15,11 @@ Run with:  uv run flask --app app run --debug
 
 import calendar as pycalendar
 import os
+import random
 import sqlite3
+import time
 import uuid
+from collections import defaultdict
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
@@ -44,7 +47,7 @@ DB_PATH = BASE_DIR / "meetings.db"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".docx", ".odt", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".odt", ".txt"}
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB per upload
 
 # Shared password gating access to the whole site. Override in production with
@@ -177,11 +180,32 @@ def close_db(exception):  # noqa: ARG001
         db.close()
 
 
+@app.context_processor
+def inject_pending_count():
+    """Expose the number of drafts awaiting moderation to every template, so the
+    nav can show a badge. Only computed for authenticated (certified) users."""
+    if not session.get("authenticated"):
+        return {"pending_count": 0}
+    db = get_db()
+    total = sum(
+        db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+        for t in ("pending_persons", "pending_meetings", "pending_mails")
+    )
+    return {"pending_count": total}
+
+
 def init_db():
     """Create tables if they don't exist yet, and run lightweight migrations."""
     db = sqlite3.connect(DB_PATH)
     db.executescript(
         """
+        -- Certified users (password holders). Just an identity — name or Discord
+        -- pseudo. Referenced by the provenance fields on the real records below.
+        CREATE TABLE IF NOT EXISTS moderators (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS persons (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             name            TEXT NOT NULL,
@@ -191,6 +215,8 @@ def init_db():
             first_contacted TEXT,
             follow_up_date  TEXT,
             notes           TEXT,
+            added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
+            validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
         );
 
@@ -199,7 +225,9 @@ def init_db():
             meeting_date         TEXT NOT NULL,
             meeting_time         TEXT,
             summary              TEXT NOT NULL,
+            details              TEXT,   -- optional "compte rendu détaillé"
             recorded_by          TEXT,
+            validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
             document_orig_name   TEXT,
             created_at           TEXT NOT NULL
@@ -211,6 +239,13 @@ def init_db():
             PRIMARY KEY (meeting_id, person_id)
         );
 
+        -- Who (among the moderators) took part in a meeting: 1..n.
+        CREATE TABLE IF NOT EXISTS meeting_moderators (
+            meeting_id   INTEGER NOT NULL REFERENCES meetings(id)   ON DELETE CASCADE,
+            moderator_id INTEGER NOT NULL REFERENCES moderators(id) ON DELETE CASCADE,
+            PRIMARY KEY (meeting_id, moderator_id)
+        );
+
         CREATE TABLE IF NOT EXISTS mails (
             id                   INTEGER PRIMARY KEY AUTOINCREMENT,
             mail_date            TEXT NOT NULL,
@@ -218,6 +253,8 @@ def init_db():
             important            INTEGER NOT NULL DEFAULT 0,
             summary              TEXT NOT NULL,
             follow_up_date       TEXT,            -- for sent mails: when to follow up
+            received_by          INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
+            validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
             document_orig_name   TEXT,
             created_at           TEXT NOT NULL
@@ -227,6 +264,50 @@ def init_db():
             mail_id   INTEGER NOT NULL REFERENCES mails(id)    ON DELETE CASCADE,
             person_id INTEGER NOT NULL REFERENCES persons(id)  ON DELETE CASCADE,
             PRIMARY KEY (mail_id, person_id)
+        );
+
+        -- Staging tables. Anonymous users (no password) submit drafts here via
+        -- the "Déclarer une activité" forms. A certified user reviews them on the
+        -- /moderation page and either promotes a draft into the real table above
+        -- or deletes it. Nothing here is ever shown in the normal lists.
+        CREATE TABLE IF NOT EXISTS pending_persons (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT NOT NULL,
+            role            TEXT,
+            political_group TEXT,   -- nullable: an anonymous draft may omit it
+            stance          TEXT,
+            first_contacted TEXT,
+            follow_up_date  TEXT,
+            notes           TEXT,
+            submitted_by    TEXT,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pending_meetings (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            meeting_date    TEXT NOT NULL,
+            meeting_time    TEXT,
+            summary         TEXT NOT NULL,
+            details         TEXT,   -- optional "compte rendu détaillé"
+            proposed_people TEXT,   -- free-text "personnes concernées"
+            submitted_by    TEXT,
+            document_stored_name TEXT,
+            document_orig_name   TEXT,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pending_mails (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            mail_date       TEXT NOT NULL,
+            direction       TEXT NOT NULL,
+            important       INTEGER NOT NULL DEFAULT 0,
+            summary         TEXT NOT NULL,
+            follow_up_date  TEXT,
+            proposed_people TEXT,   -- free-text "personnes concernées"
+            submitted_by    TEXT,
+            document_stored_name TEXT,
+            document_orig_name   TEXT,
+            created_at      TEXT NOT NULL
         );
         """
     )
@@ -242,6 +323,38 @@ def init_db():
     meeting_cols = [r[1] for r in db.execute("PRAGMA table_info(meetings)")]
     if "meeting_time" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN meeting_time TEXT")
+    if "details" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN details TEXT")
+    pmeeting_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_meetings)")]
+    if "details" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN details TEXT")
+    if "document_stored_name" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN document_stored_name TEXT")
+    if "document_orig_name" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN document_orig_name TEXT")
+    pmail_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_mails)")]
+    if "document_stored_name" not in pmail_cols:
+        db.execute("ALTER TABLE pending_mails ADD COLUMN document_stored_name TEXT")
+    if "document_orig_name" not in pmail_cols:
+        db.execute("ALTER TABLE pending_mails ADD COLUMN document_orig_name TEXT")
+    # Provenance fields referencing moderators(id). Added via ALTER with a NULL
+    # default (SQLite requires that for a column carrying a REFERENCES clause);
+    # legacy rows predate the feature and keep NULL.
+    if "added_by" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN added_by INTEGER "
+                   "REFERENCES moderators(id) ON DELETE SET NULL")
+    if "validated_by" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN validated_by INTEGER "
+                   "REFERENCES moderators(id) ON DELETE SET NULL")
+    if "validated_by" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN validated_by INTEGER "
+                   "REFERENCES moderators(id) ON DELETE SET NULL")
+    if "received_by" not in mail_cols:
+        db.execute("ALTER TABLE mails ADD COLUMN received_by INTEGER "
+                   "REFERENCES moderators(id) ON DELETE SET NULL")
+    if "validated_by" not in mail_cols:
+        db.execute("ALTER TABLE mails ADD COLUMN validated_by INTEGER "
+                   "REFERENCES moderators(id) ON DELETE SET NULL")
     db.commit()
     db.close()
 
@@ -357,6 +470,32 @@ def _form_from_row(row):
     return {k: ("" if v is None else v) for k, v in dict(row).items()}
 
 
+def _moderators(db):
+    """All certified users, for the provenance dropdowns on the real forms."""
+    return db.execute(
+        "SELECT id, name FROM moderators ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+
+
+def _valid_moderator(db, value):
+    """Return the int id if `value` names an existing moderator, else None."""
+    value = (value or "").strip()
+    if value.isdigit() and db.execute(
+        "SELECT 1 FROM moderators WHERE id = ?", (int(value),)
+    ).fetchone():
+        return int(value)
+    return None
+
+
+def _set_meeting_moderators(db, meeting_id, moderator_ids):
+    """Replace a meeting's participant links with `moderator_ids`."""
+    db.execute("DELETE FROM meeting_moderators WHERE meeting_id = ?", (meeting_id,))
+    db.executemany(
+        "INSERT INTO meeting_moderators (meeting_id, moderator_id) VALUES (?, ?)",
+        [(meeting_id, mid) for mid in moderator_ids],
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Meetings
 # --------------------------------------------------------------------------- #
@@ -419,16 +558,27 @@ def _save_meeting(db, meeting):
     ).fetchall()
     valid_ids = {str(p["id"]) for p in people}
 
+    mod_ids = {str(m["id"]) for m in _moderators(db)}
+
     meeting_date, date_ok = _to_iso(request.form.get("meeting_date"))
     meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
     summary = (request.form.get("summary") or "").strip()
-    recorded_by = (request.form.get("recorded_by") or "").strip()
+    details = (request.form.get("details") or "").strip()
+    recorded_by = _valid_moderator(db, request.form.get("recorded_by"))
     person_ids = [pid for pid in request.form.getlist("person_ids") if pid in valid_ids]
+    participant_ids = [m for m in request.form.getlist("participant_ids") if m in mod_ids]
+    validated_by = _valid_moderator(db, request.form.get("validated_by"))
     remove_doc = bool(request.form.get("remove_document"))
 
     errors = []
     if not person_ids:
         errors.append("Sélectionnez au moins une personne.")
+    if not participant_ids:
+        errors.append("Indiquez qui a participé à la rencontre.")
+    if validated_by is None:
+        errors.append("Indiquez qui a validé la rencontre.")
+    if recorded_by is None:
+        errors.append("Indiquez qui a saisi la rencontre.")
     if not meeting_date:
         errors.append("La date de la rencontre est obligatoire.")
     elif not date_ok:
@@ -443,17 +593,19 @@ def _save_meeting(db, meeting):
         return None, errors
 
     person_id_ints = [int(pid) for pid in person_ids]
+    participant_id_ints = [int(m) for m in participant_ids]
 
     if meeting is None:
         cur = db.execute(
             """
             INSERT INTO meetings (
-                meeting_date, meeting_time, summary, recorded_by,
+                meeting_date, meeting_time, summary, details, recorded_by, validated_by,
                 document_stored_name, document_orig_name, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (meeting_date, meeting_time or None, summary, recorded_by or None,
-             stored_name, orig_name, datetime.utcnow().isoformat(timespec="seconds")),
+            (meeting_date, meeting_time or None, summary, details or None,
+             recorded_by, validated_by, stored_name, orig_name,
+             datetime.utcnow().isoformat(timespec="seconds")),
         )
         meeting_id = cur.lastrowid
     else:
@@ -469,16 +621,17 @@ def _save_meeting(db, meeting):
         db.execute(
             """
             UPDATE meetings SET meeting_date = ?, meeting_time = ?, summary = ?,
-                recorded_by = ?, document_stored_name = ?, document_orig_name = ?
-            WHERE id = ?
+                details = ?, recorded_by = ?, validated_by = ?, document_stored_name = ?,
+                document_orig_name = ? WHERE id = ?
             """,
-            (meeting_date, meeting_time or None, summary, recorded_by or None,
-             new_stored, new_orig, meeting_id),
+            (meeting_date, meeting_time or None, summary, details or None,
+             recorded_by, validated_by, new_stored, new_orig, meeting_id),
         )
 
     if file and stored_name:
         file.save(UPLOAD_DIR / stored_name)
     _set_person_links(db, "meeting_persons", "meeting_id", meeting_id, person_id_ints)
+    _set_meeting_moderators(db, meeting_id, participant_id_ints)
     db.commit()
     return meeting_id, []
 
@@ -490,6 +643,7 @@ def new_meeting():
     people = db.execute(
         "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
     ).fetchall()
+    mods = _moderators(db)
 
     if request.method == "POST":
         meeting_id, errors = _save_meeting(db, None)
@@ -500,8 +654,9 @@ def new_meeting():
             flash(e, "error")
         return (
             render_template(
-                "new_meeting.html", people=people, form=request.form,
+                "new_meeting.html", people=people, moderators=mods, form=request.form,
                 selected_ids=set(request.form.getlist("person_ids")),
+                selected_mods=set(request.form.getlist("participant_ids")),
                 current=None, today=date.today().isoformat(),
                 action_url=url_for("new_meeting"), heading="Nouvelle rencontre",
                 cancel_url=url_for("index"),
@@ -510,8 +665,8 @@ def new_meeting():
         )
 
     return render_template(
-        "new_meeting.html", people=people, form={}, selected_ids=set(),
-        current=None, today=date.today().isoformat(),
+        "new_meeting.html", people=people, moderators=mods, form={}, selected_ids=set(),
+        selected_mods=set(), current=None, today=date.today().isoformat(),
         action_url=url_for("new_meeting"), heading="Nouvelle rencontre",
         cancel_url=url_for("index"),
     )
@@ -529,10 +684,17 @@ def edit_meeting(meeting_id):
     people = db.execute(
         "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
     ).fetchall()
+    mods = _moderators(db)
     linked = {
         str(r["person_id"])
         for r in db.execute(
             "SELECT person_id FROM meeting_persons WHERE meeting_id = ?", (meeting_id,)
+        )
+    }
+    linked_mods = {
+        str(r["moderator_id"])
+        for r in db.execute(
+            "SELECT moderator_id FROM meeting_moderators WHERE meeting_id = ?", (meeting_id,)
         )
     }
 
@@ -545,8 +707,9 @@ def edit_meeting(meeting_id):
             flash(e, "error")
         return (
             render_template(
-                "new_meeting.html", people=people, form=request.form,
+                "new_meeting.html", people=people, moderators=mods, form=request.form,
                 selected_ids=set(request.form.getlist("person_ids")),
+                selected_mods=set(request.form.getlist("participant_ids")),
                 current=meeting, today=date.today().isoformat(),
                 action_url=url_for("edit_meeting", meeting_id=meeting_id),
                 heading="Modifier la rencontre",
@@ -556,12 +719,30 @@ def edit_meeting(meeting_id):
         )
 
     return render_template(
-        "new_meeting.html", people=people, form=_form_from_row(meeting), selected_ids=linked,
+        "new_meeting.html", people=people, moderators=mods,
+        form=_form_from_row(meeting), selected_ids=linked, selected_mods=linked_mods,
         current=meeting, today=date.today().isoformat(),
         action_url=url_for("edit_meeting", meeting_id=meeting_id),
         heading="Modifier la rencontre",
         cancel_url=url_for("meeting_detail", meeting_id=meeting_id),
     )
+
+
+@app.route("/meetings/<int:meeting_id>/delete", methods=["POST"])
+@login_required
+def delete_meeting(meeting_id):
+    db = get_db()
+    meeting = db.execute(
+        "SELECT * FROM meetings WHERE id = ?", (meeting_id,)
+    ).fetchone()
+    if meeting is None:
+        abort(404)
+    _delete_upload(meeting["document_stored_name"])
+    # meeting_persons / meeting_moderators are ON DELETE CASCADE.
+    db.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
+    db.commit()
+    flash("Rencontre supprimée.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/meetings/<int:meeting_id>")
@@ -582,7 +763,27 @@ def meeting_detail(meeting_id):
         """,
         (meeting_id,),
     ).fetchall()
-    return render_template("detail.html", m=meeting, people=people)
+    participants = db.execute(
+        """
+        SELECT mo.name FROM moderators mo
+        JOIN meeting_moderators mm ON mm.moderator_id = mo.id
+        WHERE mm.meeting_id = ?
+        ORDER BY mo.name COLLATE NOCASE
+        """,
+        (meeting_id,),
+    ).fetchall()
+    validator = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (meeting["validated_by"],)
+    ).fetchone()
+    recorder = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (meeting["recorded_by"],)
+    ).fetchone()
+    return render_template(
+        "detail.html", m=meeting, people=people,
+        participants=[r["name"] for r in participants],
+        validated_by=validator["name"] if validator else None,
+        recorded_by=recorder["name"] if recorder else None,
+    )
 
 
 @app.route("/uploads/<int:meeting_id>")
@@ -722,6 +923,8 @@ def _save_person(db, person):
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
     follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     notes = (request.form.get("notes") or "").strip()
+    added_by = _valid_moderator(db, request.form.get("added_by"))
+    validated_by = _valid_moderator(db, request.form.get("validated_by"))
 
     errors = []
     if not name:
@@ -730,6 +933,10 @@ def _save_person(db, person):
         errors.append("Le groupe politique est obligatoire.")
     if not stance:
         errors.append("La position sur PauseAI est obligatoire.")
+    if added_by is None:
+        errors.append("Indiquez qui a ajouté la personne.")
+    if validated_by is None:
+        errors.append("Indiquez qui a validé la fiche.")
     if not fc_ok:
         errors.append("La date de contact est invalide (format JJ/MM/AAAA).")
     if not fu_ok:
@@ -743,11 +950,11 @@ def _save_person(db, person):
             """
             INSERT INTO persons (
                 name, role, political_group, stance, first_contacted,
-                follow_up_date, notes, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                follow_up_date, notes, added_by, validated_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (name, role or None, political_group, stance, first_contacted or None,
-             follow_up_date or None, notes or None,
+             follow_up_date or None, notes or None, added_by, validated_by,
              datetime.utcnow().isoformat(timespec="seconds")),
         )
         person_id = cur.lastrowid
@@ -756,10 +963,11 @@ def _save_person(db, person):
         db.execute(
             """
             UPDATE persons SET name = ?, role = ?, political_group = ?, stance = ?,
-                first_contacted = ?, follow_up_date = ?, notes = ? WHERE id = ?
+                first_contacted = ?, follow_up_date = ?, notes = ?,
+                added_by = ?, validated_by = ? WHERE id = ?
             """,
             (name, role or None, political_group, stance, first_contacted or None,
-             follow_up_date or None, notes or None, person_id),
+             follow_up_date or None, notes or None, added_by, validated_by, person_id),
         )
     db.commit()
     return person_id, []
@@ -769,6 +977,7 @@ def _save_person(db, person):
 @login_required
 def new_person():
     db = get_db()
+    mods = _moderators(db)
     if request.method == "POST":
         person_id, errors = _save_person(db, None)
         if not errors:
@@ -779,7 +988,7 @@ def new_person():
         return (
             render_template(
                 "new_person.html", groups=POLITICAL_GROUPS, roles=ROLES, stances=STANCES,
-                form=request.form, today=date.today().isoformat(),
+                moderators=mods, form=request.form, today=date.today().isoformat(),
                 action_url=url_for("new_person"), heading="Nouvelle personne",
                 cancel_url=url_for("people"),
             ),
@@ -788,7 +997,7 @@ def new_person():
 
     return render_template(
         "new_person.html", groups=POLITICAL_GROUPS, roles=ROLES, stances=STANCES,
-        form={}, today=date.today().isoformat(),
+        moderators=mods, form={}, today=date.today().isoformat(),
         action_url=url_for("new_person"), heading="Nouvelle personne",
         cancel_url=url_for("people"),
     )
@@ -803,6 +1012,7 @@ def edit_person(person_id):
     ).fetchone()
     if person is None:
         abort(404)
+    mods = _moderators(db)
 
     if request.method == "POST":
         _, errors = _save_person(db, person)
@@ -817,11 +1027,28 @@ def edit_person(person_id):
 
     return render_template(
         "new_person.html", groups=POLITICAL_GROUPS, roles=ROLES, stances=STANCES,
-        form=form, today=date.today().isoformat(),
+        moderators=mods, form=form, today=date.today().isoformat(),
         action_url=url_for("edit_person", person_id=person_id),
         heading="Modifier la personne",
         cancel_url=url_for("person_detail", person_id=person_id),
     )
+
+
+@app.route("/people/<int:person_id>/delete", methods=["POST"])
+@login_required
+def delete_person(person_id):
+    db = get_db()
+    person = db.execute(
+        "SELECT id FROM persons WHERE id = ?", (person_id,)
+    ).fetchone()
+    if person is None:
+        abort(404)
+    # meeting_persons / mail_persons links are ON DELETE CASCADE; the meetings
+    # and mails themselves remain (they may involve other people).
+    db.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+    db.commit()
+    flash("Personne supprimée.", "success")
+    return redirect(url_for("people"))
 
 
 @app.route("/people/<int:person_id>")
@@ -853,6 +1080,12 @@ def person_detail(person_id):
     ).fetchall()
     mails_sent = sum(1 for x in mails if x["direction"] == "sent")
     mails_received = sum(1 for x in mails if x["direction"] == "received")
+    added_by = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (person["added_by"],)
+    ).fetchone()
+    validator = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (person["validated_by"],)
+    ).fetchone()
     return render_template(
         "person_detail.html",
         p=person,
@@ -861,6 +1094,8 @@ def person_detail(person_id):
         mails_sent=mails_sent,
         mails_received=mails_received,
         directions=MAIL_DIRECTIONS,
+        added_by=added_by["name"] if added_by else None,
+        validated_by=validator["name"] if validator else None,
     )
 
 
@@ -917,6 +1152,8 @@ def _save_mail(db, mail):
     important = 1 if request.form.get("important") else 0
     follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     person_ids = [pid for pid in request.form.getlist("person_ids") if pid in valid_ids]
+    received_by = _valid_moderator(db, request.form.get("received_by"))
+    validated_by = _valid_moderator(db, request.form.get("validated_by"))
     remove_doc = bool(request.form.get("remove_document"))
 
     # A follow-up date only makes sense for a mail we sent.
@@ -926,6 +1163,10 @@ def _save_mail(db, mail):
     errors = []
     if not person_ids:
         errors.append("Sélectionnez au moins une personne.")
+    if received_by is None:
+        errors.append("Indiquez qui a reçu le courriel.")
+    if validated_by is None:
+        errors.append("Indiquez qui a validé le courriel.")
     if not mail_date:
         errors.append("La date du courriel est obligatoire.")
     elif not date_ok:
@@ -948,11 +1189,13 @@ def _save_mail(db, mail):
             """
             INSERT INTO mails (
                 mail_date, direction, important, summary, follow_up_date,
+                received_by, validated_by,
                 document_stored_name, document_orig_name, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (mail_date, direction, important, summary, follow_up_date or None,
-             stored_name, orig_name, datetime.utcnow().isoformat(timespec="seconds")),
+             received_by, validated_by, stored_name, orig_name,
+             datetime.utcnow().isoformat(timespec="seconds")),
         )
         mail_id = cur.lastrowid
     else:
@@ -967,11 +1210,12 @@ def _save_mail(db, mail):
         db.execute(
             """
             UPDATE mails SET mail_date = ?, direction = ?, important = ?, summary = ?,
-                follow_up_date = ?, document_stored_name = ?, document_orig_name = ?
+                follow_up_date = ?, received_by = ?, validated_by = ?,
+                document_stored_name = ?, document_orig_name = ?
             WHERE id = ?
             """,
             (mail_date, direction, important, summary, follow_up_date or None,
-             new_stored, new_orig, mail_id),
+             received_by, validated_by, new_stored, new_orig, mail_id),
         )
 
     if file and stored_name:
@@ -995,6 +1239,7 @@ def new_mail():
     people = db.execute(
         "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
     ).fetchall()
+    mods = _moderators(db)
 
     if request.method == "POST":
         mail_id, errors = _save_mail(db, None)
@@ -1005,7 +1250,7 @@ def new_mail():
             flash(e, "error")
         return (
             render_template(
-                "new_mail.html", people=people, directions=MAIL_DIRECTIONS,
+                "new_mail.html", people=people, moderators=mods, directions=MAIL_DIRECTIONS,
                 form=request.form, selected_ids=set(request.form.getlist("person_ids")),
                 current=None, today=date.today().isoformat(),
                 action_url=url_for("new_mail"), heading="Nouveau courriel",
@@ -1015,7 +1260,7 @@ def new_mail():
         )
 
     return render_template(
-        "new_mail.html", people=people, directions=MAIL_DIRECTIONS,
+        "new_mail.html", people=people, moderators=mods, directions=MAIL_DIRECTIONS,
         form={}, selected_ids=set(), current=None, today=date.today().isoformat(),
         action_url=url_for("new_mail"), heading="Nouveau courriel",
         cancel_url=url_for("mails"),
@@ -1032,6 +1277,7 @@ def edit_mail(mail_id):
     people = db.execute(
         "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
     ).fetchall()
+    mods = _moderators(db)
     linked = {
         str(r["person_id"])
         for r in db.execute(
@@ -1053,13 +1299,28 @@ def edit_mail(mail_id):
         selected = linked
 
     return render_template(
-        "new_mail.html", people=people, directions=MAIL_DIRECTIONS,
+        "new_mail.html", people=people, moderators=mods, directions=MAIL_DIRECTIONS,
         form=form, selected_ids=selected, current=mail,
         today=date.today().isoformat(),
         action_url=url_for("edit_mail", mail_id=mail_id),
         heading="Modifier le courriel",
         cancel_url=url_for("mail_detail", mail_id=mail_id),
     )
+
+
+@app.route("/mails/<int:mail_id>/delete", methods=["POST"])
+@login_required
+def delete_mail(mail_id):
+    db = get_db()
+    mail = db.execute("SELECT * FROM mails WHERE id = ?", (mail_id,)).fetchone()
+    if mail is None:
+        abort(404)
+    _delete_upload(mail["document_stored_name"])
+    # mail_persons is ON DELETE CASCADE.
+    db.execute("DELETE FROM mails WHERE id = ?", (mail_id,))
+    db.commit()
+    flash("Courriel supprimé.", "success")
+    return redirect(url_for("mails"))
 
 
 @app.route("/mails/<int:mail_id>")
@@ -1078,8 +1339,16 @@ def mail_detail(mail_id):
         """,
         (mail_id,),
     ).fetchall()
+    received_by = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (mail["received_by"],)
+    ).fetchone()
+    validator = db.execute(
+        "SELECT name FROM moderators WHERE id = ?", (mail["validated_by"],)
+    ).fetchone()
     return render_template(
-        "mail_detail.html", x=mail, people=people, directions=MAIL_DIRECTIONS
+        "mail_detail.html", x=mail, people=people, directions=MAIL_DIRECTIONS,
+        received_by=received_by["name"] if received_by else None,
+        validated_by=validator["name"] if validator else None,
     )
 
 
@@ -1099,6 +1368,494 @@ def mail_download(mail_id):
         as_attachment=True,
         download_name=mail["document_orig_name"],
     )
+
+
+# --------------------------------------------------------------------------- #
+# Anonymous submissions ("Déclarer une activité" — no password)
+# --------------------------------------------------------------------------- #
+# These routes are deliberately NOT @login_required. An anonymous user can only
+# *add* drafts to the pending_* staging tables; they can never read the real
+# data. A certified user later reviews each draft on /moderation.
+
+# Lightweight, dependency-free spam protection for the public forms:
+#   * a math captcha whose answer is held in the session, and
+#   * an in-memory per-IP rate limit (resets on restart; fine for a small,
+#     single-process internal app — swap for Flask-Limiter + Redis if scaled).
+RATE_LIMIT_MAX = 5            # submissions allowed...
+RATE_LIMIT_WINDOW = 600      # ...per this many seconds, per IP
+_submission_log = defaultdict(list)
+
+
+def _new_captcha():
+    """Pick a fresh addition question, stash the answer in the session, and
+    return the question text to display."""
+    a, b = random.randint(1, 9), random.randint(1, 9)
+    session["captcha_answer"] = a + b
+    return f"{a} + {b}"
+
+
+def _check_captcha(errors):
+    expected = session.get("captcha_answer")
+    given = (request.form.get("captcha") or "").strip()
+    if expected is None or given != str(expected):
+        errors.append("La vérification anti-robot est incorrecte.")
+
+
+def _rate_limited():
+    """True if the requesting IP has already hit the submission cap. Prunes
+    timestamps outside the window as a side effect."""
+    ip = request.remote_addr or "unknown"
+    now = time.monotonic()
+    recent = [t for t in _submission_log[ip] if now - t < RATE_LIMIT_WINDOW]
+    _submission_log[ip] = recent
+    return len(recent) >= RATE_LIMIT_MAX
+
+
+def _record_submission():
+    _submission_log[request.remote_addr or "unknown"].append(time.monotonic())
+
+
+@app.route("/declarer")
+def declarer():
+    return render_template("declarer_home.html")
+
+
+@app.route("/declarer/personne", methods=["GET", "POST"])
+def declarer_person():
+    if request.method == "POST" and _rate_limited():
+        flash("Trop de déclarations envoyées récemment. Réessayez dans quelques minutes.", "error")
+    elif request.method == "POST":
+        db = get_db()
+        name = (request.form.get("name") or "").strip()
+        role = (request.form.get("role") or "").strip()
+        political_group = (request.form.get("political_group") or "").strip()
+        stance = (request.form.get("stance") or "").strip()
+        first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
+        follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
+        notes = (request.form.get("notes") or "").strip()
+        submitted_by = (request.form.get("submitted_by") or "").strip()
+
+        errors = []
+        if not name:
+            errors.append("Le nom est obligatoire.")
+        if not fc_ok:
+            errors.append("La date de contact est invalide (format JJ/MM/AAAA).")
+        if not fu_ok:
+            errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
+        if not submitted_by:
+            errors.append("Indiquez votre nom ou pseudo Discord (ou « anonyme »).")
+        _check_captcha(errors)
+
+        if not errors:
+            db.execute(
+                """
+                INSERT INTO pending_persons (
+                    name, role, political_group, stance, first_contacted,
+                    follow_up_date, notes, submitted_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (name, role or None, political_group or None, stance or None,
+                 first_contacted or None, follow_up_date or None, notes or None,
+                 submitted_by or None, datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            db.commit()
+            _record_submission()
+            return redirect(url_for("declarer_thanks"))
+        for e in errors:
+            flash(e, "error")
+
+    return render_template(
+        "declarer_person.html", groups=POLITICAL_GROUPS, roles=ROLES,
+        stances=STANCES, form=request.form if request.method == "POST" else {},
+        today=date.today().isoformat(), captcha_question=_new_captcha(),
+    )
+
+
+@app.route("/declarer/rencontre", methods=["GET", "POST"])
+def declarer_meeting():
+    if request.method == "POST" and _rate_limited():
+        flash("Trop de déclarations envoyées récemment. Réessayez dans quelques minutes.", "error")
+    elif request.method == "POST":
+        db = get_db()
+        meeting_date, date_ok = _to_iso(request.form.get("meeting_date"))
+        meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
+        summary = (request.form.get("summary") or "").strip()
+        details = (request.form.get("details") or "").strip()
+        proposed_people = (request.form.get("proposed_people") or "").strip()
+        submitted_by = (request.form.get("submitted_by") or "").strip()
+
+        errors = []
+        if not proposed_people:
+            errors.append("Indiquez la ou les personnes concernées.")
+        if not meeting_date:
+            errors.append("La date de la rencontre est obligatoire.")
+        elif not date_ok:
+            errors.append("La date de la rencontre est invalide (format JJ/MM/AAAA).")
+        if not time_ok:
+            errors.append("L'heure de la rencontre est invalide (format HH:MM).")
+        if not summary:
+            errors.append("Un bref résumé est obligatoire.")
+        if not submitted_by:
+            errors.append("Indiquez votre nom ou pseudo Discord (ou « anonyme »).")
+        file, stored_name, orig_name = _stage_upload(errors)
+        _check_captcha(errors)
+
+        if not errors:
+            db.execute(
+                """
+                INSERT INTO pending_meetings (
+                    meeting_date, meeting_time, summary, details, proposed_people,
+                    submitted_by, document_stored_name, document_orig_name, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (meeting_date, meeting_time or None, summary, details or None,
+                 proposed_people, submitted_by or None, stored_name, orig_name,
+                 datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            if file and stored_name:
+                file.save(UPLOAD_DIR / stored_name)
+            db.commit()
+            _record_submission()
+            return redirect(url_for("declarer_thanks"))
+        for e in errors:
+            flash(e, "error")
+
+    return render_template(
+        "declarer_meeting.html",
+        form=request.form if request.method == "POST" else {},
+        today=date.today().isoformat(), captcha_question=_new_captcha(),
+    )
+
+
+@app.route("/declarer/courriel", methods=["GET", "POST"])
+def declarer_mail():
+    if request.method == "POST" and _rate_limited():
+        flash("Trop de déclarations envoyées récemment. Réessayez dans quelques minutes.", "error")
+    elif request.method == "POST":
+        db = get_db()
+        mail_date, date_ok = _to_iso(request.form.get("mail_date"))
+        direction = (request.form.get("direction") or "").strip()
+        summary = (request.form.get("summary") or "").strip()
+        important = 1 if request.form.get("important") else 0
+        follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
+        proposed_people = (request.form.get("proposed_people") or "").strip()
+        submitted_by = (request.form.get("submitted_by") or "").strip()
+        if direction != "sent":
+            follow_up_date, fu_ok = "", True
+
+        errors = []
+        if not proposed_people:
+            errors.append("Indiquez la ou les personnes concernées.")
+        if not mail_date:
+            errors.append("La date du courriel est obligatoire.")
+        elif not date_ok:
+            errors.append("La date du courriel est invalide (format JJ/MM/AAAA).")
+        if direction not in MAIL_DIRECTIONS:
+            errors.append("Précisez si le courriel a été envoyé ou reçu.")
+        if not summary:
+            errors.append("Un bref résumé est obligatoire.")
+        if not fu_ok:
+            errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
+        if not submitted_by:
+            errors.append("Indiquez votre nom ou pseudo Discord (ou « anonyme »).")
+        file, stored_name, orig_name = _stage_upload(errors)
+        _check_captcha(errors)
+
+        if not errors:
+            db.execute(
+                """
+                INSERT INTO pending_mails (
+                    mail_date, direction, important, summary, follow_up_date,
+                    proposed_people, submitted_by, document_stored_name,
+                    document_orig_name, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (mail_date, direction, important, summary, follow_up_date or None,
+                 proposed_people, submitted_by or None, stored_name, orig_name,
+                 datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            if file and stored_name:
+                file.save(UPLOAD_DIR / stored_name)
+            db.commit()
+            _record_submission()
+            return redirect(url_for("declarer_thanks"))
+        for e in errors:
+            flash(e, "error")
+
+    return render_template(
+        "declarer_mail.html", directions=MAIL_DIRECTIONS,
+        form=request.form if request.method == "POST" else {},
+        today=date.today().isoformat(), captcha_question=_new_captcha(),
+    )
+
+
+@app.route("/declarer/merci")
+def declarer_thanks():
+    return render_template("declarer_thanks.html")
+
+
+# --------------------------------------------------------------------------- #
+# Moderation (certified users review the anonymous drafts)
+# --------------------------------------------------------------------------- #
+
+@app.route("/moderation")
+@login_required
+def moderation():
+    db = get_db()
+    pending_persons = db.execute(
+        "SELECT * FROM pending_persons ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+    pending_meetings = db.execute(
+        "SELECT * FROM pending_meetings ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+    pending_mails = db.execute(
+        "SELECT * FROM pending_mails ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+    return render_template(
+        "moderation.html",
+        pending_persons=pending_persons,
+        pending_meetings=pending_meetings,
+        pending_mails=pending_mails,
+        directions=MAIL_DIRECTIONS,
+    )
+
+
+def _reject(table, row_id):
+    db = get_db()
+    db.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
+    db.commit()
+
+
+@app.route("/moderation/personne/<int:pid>/reject", methods=["POST"])
+@login_required
+def reject_pending_person(pid):
+    _reject("pending_persons", pid)
+    flash("Brouillon de personne rejeté.", "success")
+    return redirect(url_for("moderation"))
+
+
+@app.route("/moderation/rencontre/<int:pid>/reject", methods=["POST"])
+@login_required
+def reject_pending_meeting(pid):
+    db = get_db()
+    draft = db.execute(
+        "SELECT document_stored_name FROM pending_meetings WHERE id = ?", (pid,)
+    ).fetchone()
+    if draft:
+        _delete_upload(draft["document_stored_name"])
+    _reject("pending_meetings", pid)
+    flash("Brouillon de rencontre rejeté.", "success")
+    return redirect(url_for("moderation"))
+
+
+@app.route("/moderation/courriel/<int:pid>/reject", methods=["POST"])
+@login_required
+def reject_pending_mail(pid):
+    db = get_db()
+    draft = db.execute(
+        "SELECT document_stored_name FROM pending_mails WHERE id = ?", (pid,)
+    ).fetchone()
+    if draft:
+        _delete_upload(draft["document_stored_name"])
+    _reject("pending_mails", pid)
+    flash("Brouillon de courriel rejeté.", "success")
+    return redirect(url_for("moderation"))
+
+
+@app.route("/moderation/personne/<int:pid>/approve", methods=["GET", "POST"])
+@login_required
+def approve_pending_person(pid):
+    db = get_db()
+    draft = db.execute(
+        "SELECT * FROM pending_persons WHERE id = ?", (pid,)
+    ).fetchone()
+    if draft is None:
+        abort(404)
+
+    if request.method == "POST":
+        person_id, errors = _save_person(db, None)
+        if not errors:
+            db.execute("DELETE FROM pending_persons WHERE id = ?", (pid,))
+            db.commit()
+            flash("Personne validée et ajoutée.", "success")
+            return redirect(url_for("person_detail", person_id=person_id))
+        for e in errors:
+            flash(e, "error")
+        form = request.form
+    else:
+        form = _form_from_row(draft)
+
+    return render_template(
+        "new_person.html", groups=POLITICAL_GROUPS, roles=ROLES, stances=STANCES,
+        moderators=_moderators(db), form=form, today=date.today().isoformat(),
+        action_url=url_for("approve_pending_person", pid=pid),
+        heading="Valider une personne", cancel_url=url_for("moderation"),
+        moderation_origin=draft, submitted_by=draft["submitted_by"],
+    )
+
+
+@app.route("/moderation/rencontre/<int:pid>/approve", methods=["GET", "POST"])
+@login_required
+def approve_pending_meeting(pid):
+    db = get_db()
+    draft = db.execute(
+        "SELECT * FROM pending_meetings WHERE id = ?", (pid,)
+    ).fetchone()
+    if draft is None:
+        abort(404)
+    people = db.execute(
+        "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+
+    if request.method == "POST":
+        meeting_id, errors = _save_meeting(db, None)
+        if not errors:
+            # Carry over the declarant's attached document unless the moderator
+            # uploaded one to replace it. The file already lives on disk under
+            # its stored name, so we just transfer the DB reference.
+            if draft["document_stored_name"]:
+                current_doc = db.execute(
+                    "SELECT document_stored_name FROM meetings WHERE id = ?", (meeting_id,)
+                ).fetchone()["document_stored_name"]
+                if current_doc:
+                    _delete_upload(draft["document_stored_name"])  # replaced; drop the draft's file
+                else:
+                    db.execute(
+                        "UPDATE meetings SET document_stored_name = ?, document_orig_name = ? "
+                        "WHERE id = ?",
+                        (draft["document_stored_name"], draft["document_orig_name"], meeting_id),
+                    )
+            db.execute("DELETE FROM pending_meetings WHERE id = ?", (pid,))
+            db.commit()
+            flash("Rencontre validée et ajoutée.", "success")
+            return redirect(url_for("meeting_detail", meeting_id=meeting_id))
+        for e in errors:
+            flash(e, "error")
+        form = request.form
+        selected = set(request.form.getlist("person_ids"))
+        selected_mods = set(request.form.getlist("participant_ids"))
+    else:
+        form = _form_from_row(draft)
+        selected = set()
+        selected_mods = set()
+
+    return render_template(
+        "new_meeting.html", people=people, moderators=_moderators(db), form=form,
+        selected_ids=selected, selected_mods=selected_mods,
+        current=None, today=date.today().isoformat(),
+        action_url=url_for("approve_pending_meeting", pid=pid),
+        heading="Valider une rencontre", cancel_url=url_for("moderation"),
+        proposed_people=draft["proposed_people"],
+        proposed_document=draft["document_orig_name"],
+        submitted_by=draft["submitted_by"],
+    )
+
+
+@app.route("/moderation/courriel/<int:pid>/approve", methods=["GET", "POST"])
+@login_required
+def approve_pending_mail(pid):
+    db = get_db()
+    draft = db.execute(
+        "SELECT * FROM pending_mails WHERE id = ?", (pid,)
+    ).fetchone()
+    if draft is None:
+        abort(404)
+    people = db.execute(
+        "SELECT id, name, political_group FROM persons ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+
+    if request.method == "POST":
+        mail_id, errors = _save_mail(db, None)
+        if not errors:
+            # Carry over the declarant's attached document unless the moderator
+            # uploaded one to replace it (the file already lives on disk).
+            if draft["document_stored_name"]:
+                current_doc = db.execute(
+                    "SELECT document_stored_name FROM mails WHERE id = ?", (mail_id,)
+                ).fetchone()["document_stored_name"]
+                if current_doc:
+                    _delete_upload(draft["document_stored_name"])
+                else:
+                    db.execute(
+                        "UPDATE mails SET document_stored_name = ?, document_orig_name = ? "
+                        "WHERE id = ?",
+                        (draft["document_stored_name"], draft["document_orig_name"], mail_id),
+                    )
+            db.execute("DELETE FROM pending_mails WHERE id = ?", (pid,))
+            db.commit()
+            flash("Courriel validé et ajouté.", "success")
+            return redirect(url_for("mail_detail", mail_id=mail_id))
+        for e in errors:
+            flash(e, "error")
+        form = request.form
+        selected = set(request.form.getlist("person_ids"))
+    else:
+        form = _form_from_row(draft)
+        selected = set()
+
+    return render_template(
+        "new_mail.html", people=people, moderators=_moderators(db), directions=MAIL_DIRECTIONS,
+        form=form, selected_ids=selected, current=None,
+        today=date.today().isoformat(),
+        action_url=url_for("approve_pending_mail", pid=pid),
+        heading="Valider un courriel", cancel_url=url_for("moderation"),
+        proposed_people=draft["proposed_people"],
+        proposed_document=draft["document_orig_name"],
+        submitted_by=draft["submitted_by"],
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Moderators / certified users administration
+# --------------------------------------------------------------------------- #
+
+@app.route("/moderateurs")
+@login_required
+def moderators_admin():
+    db = get_db()
+    mods = db.execute(
+        """
+        SELECT mo.*,
+            (SELECT COUNT(*) FROM meeting_moderators mm WHERE mm.moderator_id = mo.id)
+              + (SELECT COUNT(*) FROM meetings  WHERE validated_by = mo.id)
+              + (SELECT COUNT(*) FROM mails     WHERE validated_by = mo.id OR received_by = mo.id)
+              + (SELECT COUNT(*) FROM persons   WHERE validated_by = mo.id OR added_by = mo.id)
+              AS ref_count
+        FROM moderators mo
+        ORDER BY mo.name COLLATE NOCASE
+        """
+    ).fetchall()
+    return render_template("moderators.html", moderators=mods)
+
+
+@app.route("/moderateurs/add", methods=["POST"])
+@login_required
+def add_moderator():
+    db = get_db()
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        flash("Le nom ou pseudo est obligatoire.", "error")
+    elif db.execute(
+        "SELECT 1 FROM moderators WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone():
+        flash("Cet utilisateurice existe déjà.", "error")
+    else:
+        db.execute("INSERT INTO moderators (name) VALUES (?)", (name,))
+        db.commit()
+        flash("Utilisateurice ajouté.", "success")
+    return redirect(url_for("moderators_admin"))
+
+
+@app.route("/moderateurs/<int:mod_id>/delete", methods=["POST"])
+@login_required
+def delete_moderator(mod_id):
+    db = get_db()
+    # FK columns are ON DELETE SET NULL / the join is ON DELETE CASCADE, so
+    # removing a user leaves existing records intact (just unattributed).
+    db.execute("DELETE FROM moderators WHERE id = ?", (mod_id,))
+    db.commit()
+    flash("Utilisateurice supprimé.", "success")
+    return redirect(url_for("moderators_admin"))
 
 
 # Initialise the database as soon as the module is imported, so it works both

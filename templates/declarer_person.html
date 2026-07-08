@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Proposer une personne{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Proposer une personne</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<p class="muted">Donnez ce que vous savez — un membre de l'équipe complétera et
+  validera la fiche. Seul le nom est obligatoire.</p>
+
+<form class="card form" method="post" action="{{ url_for('declarer_person') }}">
+
+  <div class="field">
+    <label for="name">Nom <span class="req">*</span></label>
+    <input type="text" id="name" name="name"
+           value="{{ form.get('name', '') }}" autofocus required
+           placeholder="ex. Jean Dupont">
+  </div>
+
+  <div class="field">
+    <label for="role">Fonction <span class="muted">(facultatif)</span></label>
+    <select id="role" name="role">
+      <option value="" {% if not form.get('role') %}selected{% endif %}>
+        Choisir une fonction…
+      </option>
+      {% for r in roles %}
+        <option value="{{ r }}" {% if form.get('role') == r %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="political_group">Groupe politique <span class="muted">(facultatif)</span></label>
+      <select id="political_group" name="political_group">
+        <option value="" {% if not form.get('political_group') %}selected{% endif %}>
+          Choisir un groupe politique…
+        </option>
+        {% for institution, names in groups.items() %}
+          <optgroup label="{{ institution }}">
+            {% for name in names %}
+              <option value="{{ name }}"
+                {% if form.get('political_group') == name %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="stance">Position sur PauseAI <span class="muted">(facultatif)</span></label>
+      <select id="stance" name="stance">
+        <option value="" {% if not form.get('stance') %}selected{% endif %}>
+          Quel est son ressenti vis-à-vis de PauseAI ?
+        </option>
+        {% for s in stances %}
+          <option value="{{ s }}" {% if form.get('stance') == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="notes">Notes <span class="muted">(facultatif)</span></label>
+    <textarea id="notes" name="notes" rows="4"
+      placeholder="Tout ce qu'il est utile de retenir sur cette personne…">{{ form.get('notes', '') }}</textarea>
+  </div>
+
+  <div class="field">
+    <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
+    <input type="text" id="submitted_by" name="submitted_by"
+           value="{{ form.get('submitted_by', '') }}" required
+           placeholder="ex. Marie L. ou marie_l#1234">
+    <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
+      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».</p>
+  </div>
+
+  <div class="field">
+    <label for="captcha">Combien font {{ captcha_question }} ? <span class="req">*</span></label>
+    <input type="text" id="captcha" name="captcha" inputmode="numeric"
+           autocomplete="off" required placeholder="Vérification anti-robot">
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

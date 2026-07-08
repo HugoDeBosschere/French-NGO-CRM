@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Rencontres{% endblock %} · PauseIA</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='form-masks.js') }}" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -15,8 +16,12 @@
         <a href="{{ url_for('calendar_view') }}">Calendrier</a>
         <a href="{{ url_for('mails') }}">Courriels</a>
         <a href="{{ url_for('people') }}">Personnes</a>
+        <a href="{{ url_for('moderation') }}">Modération{% if pending_count %}
+          <span class="badge">{{ pending_count }}</span>{% endif %}</a>
+        <a href="{{ url_for('moderators_admin') }}">Utilisateurices</a>
         <a class="btn btn-primary" href="{{ url_for('new_meeting') }}">+ Rencontre</a>
         <a class="btn btn-primary" href="{{ url_for('new_mail') }}">+ Courriel</a>
+        <a class="btn btn-primary" href="{{ url_for('new_person') }}">+ Personne</a>
         <a class="muted" href="{{ url_for('logout') }}">Déconnexion</a>
       {% endif %}
     </nav>

@@ -12,8 +12,37 @@
   <a class="btn btn-primary" href="{{ url_for('new_person') }}">+ Ajouter une personne</a>
 </div>
 {% else %}
+{% if submitted_by %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Courriel proposé par :</strong> {{ submitted_by }}
+  <p class="hint">Nom ou pseudo Discord indiqué par l'utilisateurice anonyme qui a
+    soumis ce courriel.</p>
+</div>
+{% endif %}
+{% if proposed_people %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Personnes indiquées par le déclarant :</strong> {{ proposed_people }}
+  <p class="hint">Cochez les personnes correspondantes ci-dessous. Si l'une d'elles
+    n'existe pas encore, <a href="{{ url_for('new_person') }}">créez-la d'abord</a>.</p>
+</div>
+{% endif %}
+{% if proposed_document %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Document joint par le déclarant :</strong> 📎 {{ proposed_document }}
+  <p class="hint">Il sera conservé avec le courriel, sauf si vous en téléversez un
+    autre ci-dessous pour le remplacer.</p>
+</div>
+{% endif %}
 <form class="card form" method="post" enctype="multipart/form-data"
       action="{{ action_url }}">
+
+  {% if not moderators %}
+  <div class="notice">
+    <span class="notice-icon">⚠️</span>
+    <span>Aucun·e utilisateurice n'est encore enregistré·e. Pour renseigner les champs
+      ci-dessous, <a href="{{ url_for('moderators_admin') }}">ajoutez d'abord un utilisateurice</a>.</span>
+  </div>
+  {% endif %}
 
   <div class="field">
     <label>Personnes concernées <span class="req">*</span></label>
@@ -58,6 +87,34 @@
       placeholder="Objet du courriel, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
   </div>
 
+  <div class="grid-2">
+    <div class="field">
+      <label for="received_by">Qui a reçu le mail ? <span class="req">*</span></label>
+      <select id="received_by" name="received_by" required>
+        <option value="" disabled {% if not form.get('received_by') %}selected{% endif %}>
+          Choisir un utilisateurice…
+        </option>
+        {% for mo in moderators %}
+          <option value="{{ mo['id'] }}"
+            {% if form.get('received_by')|string == mo['id']|string %}selected{% endif %}>{{ mo['name'] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="validated_by">Validé par <span class="req">*</span></label>
+      <select id="validated_by" name="validated_by" required>
+        <option value="" disabled {% if not form.get('validated_by') %}selected{% endif %}>
+          Choisir un utilisateurice…
+        </option>
+        {% for mo in moderators %}
+          <option value="{{ mo['id'] }}"
+            {% if form.get('validated_by')|string == mo['id']|string %}selected{% endif %}>{{ mo['name'] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
   <div class="field">
     <label class="check">
       <input type="checkbox" name="important" value="1"
@@ -85,10 +142,10 @@
         </label>
       </p>
     {% endif %}
-    <input type="file" id="document" name="document" accept=".docx,.odt,.txt">
+    <input type="file" id="document" name="document" accept=".pdf,.doc,.docx,.odt,.txt">
     <p class="hint">
       {% if current and current['document_stored_name'] %}Choisir un fichier le remplace. {% endif %}
-      Formats acceptés : .docx, .odt, .txt — jusqu'à 10&nbsp;Mo.
+      Formats acceptés : .pdf, .doc, .docx, .odt, .txt — jusqu'à 10&nbsp;Mo.
     </p>
   </div>
 

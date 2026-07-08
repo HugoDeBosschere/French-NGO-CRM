@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Déclarer une activité{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <h1>Déclarer une activité</h1>
+  <p class="muted">
+    Merci de nous signaler une rencontre, un courriel ou une personne en lien
+    avec le plaidoyer de PauseIA. Votre déclaration sera relue par un membre de
+    l'équipe avant d'être enregistrée. Aucun mot de passe n'est nécessaire.
+  </p>
+
+  <div class="actions" style="flex-direction:column">
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_meeting') }}">
+      Déclarer une rencontre
+    </a>
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_mail') }}">
+      Déclarer un courriel
+    </a>
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_person') }}">
+      Proposer une personne
+    </a>
+  </div>
+
+  <hr class="auth-sep">
+  <a class="muted" href="{{ url_for('login') }}">← Retour à la connexion</a>
+</div>
+{% endblock %}

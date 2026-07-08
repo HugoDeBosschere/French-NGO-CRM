@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Déclarer un courriel{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Déclarer un courriel</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<form class="card form" method="post" enctype="multipart/form-data"
+      action="{{ url_for('declarer_mail') }}">
+
+  <div class="field">
+    <label for="proposed_people">Personnes concernées <span class="req">*</span></label>
+    <textarea id="proposed_people" name="proposed_people" rows="2" required
+      placeholder="ex. Jean Dupont, Marie Martin…">{{ form.get('proposed_people', '') }}</textarea>
+    <p class="hint">Indiquez les noms ; un membre de l'équipe fera le lien avec les fiches.</p>
+    <div class="notice">
+      <span class="notice-icon">⚠️</span>
+      <span>Si le courriel concerne une nouvelle personne, merci de la
+        <a href="{{ url_for('declarer_person') }}">déclarer d'abord</a>. Cette étape est
+        facultative mais nous facilite grandement la vie donc est très appréciée.</span>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="mail_date">Date du courriel <span class="req">*</span></label>
+      <input type="text" id="mail_date" name="mail_date" inputmode="numeric"
+             placeholder="JJ/MM/AAAA" value="{{ form.get('mail_date', today) | fr_date }}" required>
+    </div>
+
+    <div class="field">
+      <label for="direction">Sens <span class="req">*</span></label>
+      <select id="direction" name="direction" required>
+        <option value="" disabled {% if not form.get('direction') %}selected{% endif %}>
+          Envoyé ou reçu ?
+        </option>
+        {% for value, label in directions.items() %}
+          <option value="{{ value }}"
+            {% if form.get('direction') == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="summary">Contenu du mail <span class="req">*</span></label>
+    <textarea id="summary" name="summary" rows="5" required
+      placeholder="Objet du courriel, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
+  </div>
+
+  <div class="field">
+    <label class="check">
+      <input type="checkbox" name="important" value="1"
+             {% if form.get('important') %}checked{% endif %}>
+      Courriel important
+    </label>
+  </div>
+
+  <div class="field" id="follow-up-field"
+       {% if form.get('direction') != 'sent' %}hidden{% endif %}>
+    <label for="follow_up_date">Relance suggérée le <span class="muted">(facultatif)</span></label>
+    <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
+           placeholder="JJ/MM/AAAA" value="{{ form.get('follow_up_date', '') | fr_date }}">
+  </div>
+
+  <div class="field">
+    <label for="document">Document joint <span class="muted">(facultatif)</span></label>
+    <input type="file" id="document" name="document"
+           accept=".pdf,.doc,.docx,.odt,.txt">
+    <p class="hint">Copie du courriel, pièce jointe… Formats acceptés :
+      .pdf, .doc, .docx, .odt, .txt — jusqu'à 10&nbsp;Mo.</p>
+  </div>
+
+  <div class="field">
+    <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
+    <input type="text" id="submitted_by" name="submitted_by"
+           value="{{ form.get('submitted_by', '') }}" required
+           placeholder="ex. Marie L. ou marie_l#1234">
+    <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
+      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».</p>
+  </div>
+
+  <div class="field">
+    <label for="captcha">Combien font {{ captcha_question }} ? <span class="req">*</span></label>
+    <input type="text" id="captcha" name="captcha" inputmode="numeric"
+           autocomplete="off" required placeholder="Vérification anti-robot">
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+
+<script>
+  // Show the follow-up ("relance") date only when the mail was sent.
+  (function () {
+    var dir = document.getElementById('direction');
+    var fld = document.getElementById('follow-up-field');
+    function sync() { fld.hidden = (dir.value !== 'sent'); }
+    dir.addEventListener('change', sync);
+    sync();
+  })();
+</script>
+{% endblock %}

@@ -9,5 +9,12 @@
     <input type="password" id="password" name="password" autofocus required>
     <button class="btn btn-primary btn-block" type="submit">Entrer</button>
   </form>
+
+  <hr class="auth-sep">
+  <p class="muted">Vous n'êtes pas un membre certifié&nbsp;? Vous pouvez tout de
+    même nous signaler une activité, sans mot de passe.</p>
+  <a class="btn btn-primary btn-block" href="{{ url_for('declarer') }}">
+    Déclarer une activité
+  </a>
 </div>
 {% endblock %}

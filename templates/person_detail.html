@@ -6,6 +6,10 @@
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('edit_person', person_id=p['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('people') }}">Retour</a>
+    <form method="post" action="{{ url_for('delete_person', person_id=p['id']) }}"
+          onsubmit="return confirm('Supprimer définitivement cette personne ? Ses liens vers les rencontres et courriels seront retirés. Cette action est irréversible.');">
+      <button class="btn btn-danger" type="submit">Supprimer</button>
+    </form>
   </span>
 </div>
 
@@ -71,6 +75,17 @@
     <p class="prose">{{ p['notes'] }}</p>
   </div>
   {% endif %}
+
+  <div class="grid-2">
+    <div class="field">
+      <label>Qui a ajouté la personne</label>
+      <p>{{ added_by or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Validé par</label>
+      <p>{{ validated_by or '—' }}</p>
+    </div>
+  </div>
 </div>
 
 <h2>Rencontres</h2>
