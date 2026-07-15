@@ -157,6 +157,15 @@ app.config.update(
     SESSION_COOKIE_SECURE=bool(os.environ.get("PRODUCTION")),
 )
 
+# In production the app sits behind Caddy (reverse proxy), so every request's
+# remote_addr is Caddy's internal IP. Trust one hop of X-Forwarded-For/-Proto
+# to recover the real client IP (rate limiting) and scheme. Gated on
+# PRODUCTION because without a proxy in front, clients could spoof the header.
+if os.environ.get("PRODUCTION"):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 
 @app.template_filter("fr_date")
 def fr_date(value):

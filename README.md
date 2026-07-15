@@ -122,7 +122,7 @@ automatically on first run. `init_db()` also runs lightweight migrations that
 add newer columns (follow-up dates, provenance fields, document fields on
 drafts) to older tables if they are missing.
 
-## Running
+## Running locally
 
 ```bash
 uv run flask --app app run --debug
@@ -130,6 +130,42 @@ uv run flask --app app run --debug
 
 Then open <http://127.0.0.1:5000> and sign in with the shared password. The
 public declaration form is reachable from the login page without signing in.
+
+## Deployment
+
+The app is designed to run behind a **reverse proxy** (Caddy / nginx) that
+terminates HTTPS and forwards requests to the app.
+
+### Environment variables (all three required in production)
+
+| Variable | Purpose |
+|----------|---------|
+| `APP_PASSWORD` | The shared team password. **Must** be set — the fallback is a public placeholder. |
+| `SECRET_KEY` | Signs the session cookies. Generate once (`python -c "import secrets; print(secrets.token_hex(32))"`) and keep it **stable** across restarts, or every deploy logs everyone out. **Must** be set — the fallback is a public placeholder. |
+| `PRODUCTION` | Set to `1` when running behind HTTPS + a reverse proxy. Enables production-only behaviour that is deliberately off in local dev: the session cookie becomes HTTPS-only, and the app reads the real visitor IP from the proxy's `X-Forwarded-For` header (one proxy hop expected). Without it, per-visitor rate limiting on the public forms does not work behind a proxy. Do **not** set it if the app is exposed directly without a proxy. |
+
+### System requirements
+
+- **`libmagic1`** (Debian/Ubuntu package) — required by `python-magic`, which
+  verifies that uploaded documents match their file extension. In a Docker
+  image: `apt-get install -y libmagic1`.
+- **gunicorn with a single worker** (`gunicorn -w 1 app:app`) — the app uses
+  SQLite and keeps its rate-limiting state in memory, both of which assume one
+  process.
+
+### Data persistence (Docker)
+
+`meetings.db` (the whole database) and `uploads/` (attached documents) live on
+disk next to `app.py`. When running in a container, **both must be on a mounted
+volume** — otherwise redeploying the container silently destroys all data, and
+host-level server backups never see it.
+
+### First run
+
+The database schema is created automatically. Before meetings or mails can be
+saved, at least one certified _utilisateurice_ must be added at
+`/moderateurs` (the "Saisi par" / "Validé par" dropdowns are mandatory and
+start empty).
 
 
 ## Project layout
