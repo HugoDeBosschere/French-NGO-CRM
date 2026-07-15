@@ -24,6 +24,7 @@ from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
 
+import magic
 from flask import (
     Flask,
     abort,
@@ -47,7 +48,19 @@ DB_PATH = BASE_DIR / "meetings.db"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".odt", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".odt", ".txt"}
+# MIME types (detected from file content via libmagic) accepted per extension.
+# docx/odt are zip containers; libmagic may only see "application/zip" on
+# some variants, which still rules out executables and other disguised types.
+ALLOWED_MIMES = {
+    ".pdf": {"application/pdf"},
+    ".docx": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip",
+    },
+    ".odt": {"application/vnd.oasis.opendocument.text", "application/zip"},
+    ".txt": None,  # any text/* — checked by prefix below
+}
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB per upload
 
 # Shared password gating access to the whole site. Override in production with
@@ -134,6 +147,14 @@ app = Flask(__name__)
 app.config.update(
     SECRET_KEY=SECRET_KEY,
     MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
+    # Lax blocks the session cookie on cross-site POSTs, so a malicious page
+    # cannot fire authenticated actions (deletes, moderation) with a logged-in
+    # member's session (CSRF).
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_HTTPONLY=True,
+    # Only send the session cookie over HTTPS. Gated on an env var because it
+    # would break login on plain-http local dev; set PRODUCTION=1 on the server.
+    SESSION_COOKIE_SECURE=bool(os.environ.get("PRODUCTION")),
 )
 
 
@@ -445,6 +466,17 @@ def _stage_upload(errors):
             + ", ".join(sorted(ALLOWED_EXTENSIONS))
             + "."
         )
+        return None, None, None
+    # The extension alone is declarative; verify the actual content matches it
+    # so a renamed executable (or any other disguised type) is rejected.
+    head = file.stream.read(2048)
+    file.stream.seek(0)
+    mime = magic.from_buffer(head, mime=True)
+    allowed = ALLOWED_MIMES[ext]
+    if (allowed is None and not mime.startswith("text/")) or (
+        allowed is not None and mime not in allowed
+    ):
+        errors.append("Le contenu du document ne correspond pas à son format.")
         return None, None, None
     return file, f"{uuid.uuid4().hex}{ext}", orig_name
 
@@ -1381,15 +1413,15 @@ def mail_download(mail_id):
 #   * a math captcha whose answer is held in the session, and
 #   * an in-memory per-IP rate limit (resets on restart; fine for a small,
 #     single-process internal app — swap for Flask-Limiter + Redis if scaled).
-RATE_LIMIT_MAX = 5            # submissions allowed...
-RATE_LIMIT_WINDOW = 600      # ...per this many seconds, per IP
+RATE_LIMIT_MAX = 10           # submissions allowed...
+RATE_LIMIT_WINDOW = 300      # ...per this many seconds, per IP
 _submission_log = defaultdict(list)
 
 
 def _new_captcha():
     """Pick a fresh addition question, stash the answer in the session, and
     return the question text to display."""
-    a, b = random.randint(1, 9), random.randint(1, 9)
+    a, b = random.randint(1, 50), random.randint(1, 50)
     session["captcha_answer"] = a + b
     return f"{a} + {b}"
 
@@ -1399,6 +1431,9 @@ def _check_captcha(errors):
     given = (request.form.get("captcha") or "").strip()
     if expected is None or given != str(expected):
         errors.append("La vérification anti-robot est incorrecte.")
+        # A wrong answer spends rate-limit budget too, so a bot cannot
+        # brute-force the captcha with free retries.
+        _record_submission()
 
 
 def _rate_limited():

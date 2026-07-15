@@ -26,8 +26,8 @@ session (`login_required`).
   shows how many mails were sent to / received from them, how many meetings were
   held, and how many days remain until the next planned follow-up.
 - **Meetings** — date, time, one or more people met, a short summary, an
-  optional detailed report, and an optional attached document (`.docx` / `.odt`
-  / `.txt`). The meetings list is split into **upcoming** (soonest first) and
+  optional detailed report, and an optional attached document (`.pdf` / `.docx`
+  / `.odt` / `.txt`). The meetings list is split into **upcoming** (soonest first) and
   **past** (most recent first).
 - **Mails** — date, one or more people, direction (sent / received), an
   importance flag, a short summary, an optional follow-up date (for sent mails,

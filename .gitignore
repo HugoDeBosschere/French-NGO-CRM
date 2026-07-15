@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PauseIA app data — never commit real data
+meetings.db
+*.db
+uploads/
