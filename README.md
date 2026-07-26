@@ -3,7 +3,11 @@
 A small internal Flask app for the **PauseIA** team to track its advocacy
 outreach: the **people** it talks to (politicians / officials), the **meetings**
 it has with them, and the **mails** it exchanges. The interface is in French;
-the code and comments are in English.
+the code and comments are in English. However, this tool can be used by any NGO
+that wants to do some kind of lobbying towards French politicians. Apart from
+the "Position sur PauseIA" field and the PauseIA colors of the interface, it 
+is easily reusable. Note that the entire code was written by Claude and I 
+did NOT review it thourougly although I did think about data security. 
 
 The app has **two audiences**, and the features below are split accordingly:
 
@@ -14,6 +18,8 @@ The app has **two audiences**, and the features below are split accordingly:
   declaration form for signalling a person, a meeting or a mail to the team,
   without ever being able to read the journal.
 
+This is useful to harness the power of the collective while not giving admin 
+permissions to untrusted users.
 ---
 
 ## For team members (with the password)

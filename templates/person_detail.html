@@ -69,6 +69,19 @@
     </div>
   </div>
 
+  {% if p['circonscription'] or p['email'] %}
+  <div class="grid-2">
+    <div class="field">
+      <label>Circonscription</label>
+      <p>{{ p['circonscription'] or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Courriel</label>
+      <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>{% else %}—{% endif %}</p>
+    </div>
+  </div>
+  {% endif %}
+
   {% if p['notes'] %}
   <div class="field">
     <label>Notes</label>

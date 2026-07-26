@@ -42,6 +42,46 @@
     });
   }
 
+  // A <select data-target="fieldName"> appends its chosen value to the named
+  // textarea as a comma-separated list (no duplicates), then resets itself.
+  // Used by the anonymous forms to pick deputies without losing free-text entry.
+  function attachPicker(select) {
+    var target = document.getElementById(select.getAttribute("data-target"));
+    if (!target) return;
+    select.addEventListener("change", function () {
+      var value = select.value;
+      if (!value) return;
+      var parts = target.value
+        .split(",")
+        .map(function (s) { return s.trim(); })
+        .filter(Boolean);
+      if (parts.indexOf(value) === -1) parts.push(value);
+      target.value = parts.join(", ");
+      select.value = "";
+      target.focus();
+    });
+  }
+
+  // A <select data-check-group="grp"> ticks the checkbox named `grp` whose
+  // value matches the chosen option, then resets. Lets logged-in users pick a
+  // person from a list to check them within a long checkbox group.
+  function attachChecker(select) {
+    var group = select.getAttribute("data-check-group");
+    select.addEventListener("change", function () {
+      var value = select.value;
+      if (!value) return;
+      var box = document.querySelector(
+        'input[name="' + group + '"][value="' + value + '"]'
+      );
+      if (box) {
+        box.checked = true;
+        var row = box.closest("label");
+        if (row) row.scrollIntoView({ block: "nearest" });
+      }
+      select.value = "";
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     document
       .querySelectorAll('input[name="meeting_time"]')
@@ -51,5 +91,11 @@
         'input[name="follow_up_date"], input[name="first_contacted"], input[name="meeting_date"], input[name="mail_date"]'
       )
       .forEach(function (el) { attach(el, DATE_STOPS, false); });
+    document
+      .querySelectorAll("select[data-target]")
+      .forEach(attachPicker);
+    document
+      .querySelectorAll("select[data-check-group]")
+      .forEach(attachChecker);
   });
 })();

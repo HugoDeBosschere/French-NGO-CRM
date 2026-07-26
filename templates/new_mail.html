@@ -46,6 +46,15 @@
 
   <div class="field">
     <label>Personnes concernées <span class="req">*</span></label>
+    <div class="person-picker">
+      <label for="person_picker" class="muted">Cocher une personne depuis la liste</label>
+      <select id="person_picker" data-check-group="person_ids">
+        <option value="">— Choisir une personne —</option>
+        {% for p in people %}
+        <option value="{{ p['id'] }}">{{ p['name'] }} — {{ p['political_group'] }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="checklist">
       {% for p in people %}
         <label class="check">

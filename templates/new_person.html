@@ -90,6 +90,20 @@
     </div>
   </div>
 
+  <div class="grid-2">
+    <div class="field">
+      <label for="circonscription">Circonscription <span class="muted">(facultatif)</span></label>
+      <input type="text" id="circonscription" name="circonscription"
+             placeholder="ex. Ariège (09-2)" value="{{ form.get('circonscription', '') }}">
+    </div>
+
+    <div class="field">
+      <label for="email">Courriel <span class="muted">(facultatif)</span></label>
+      <input type="email" id="email" name="email"
+             placeholder="prenom.nom@assemblee-nationale.fr" value="{{ form.get('email', '') }}">
+    </div>
+  </div>
+
   <div class="field">
     <label for="notes">Notes <span class="muted">(facultatif)</span></label>
     <textarea id="notes" name="notes" rows="4"

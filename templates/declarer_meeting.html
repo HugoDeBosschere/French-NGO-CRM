@@ -14,11 +14,24 @@
     <textarea id="proposed_people" name="proposed_people" rows="2" required
       placeholder="ex. Jean Dupont, Marie Martin…">{{ form.get('proposed_people', '') }}</textarea>
     <p class="hint">Indiquez les noms ; un membre de l'équipe fera le lien avec les fiches.</p>
+    {% if deputies %}
+    <div class="depute-picker">
+      <label for="depute_picker">Ajouter un·e député·e depuis la liste</label>
+      <select id="depute_picker" data-target="proposed_people">
+        <option value="">— Choisir un·e député·e —</option>
+        {% for d in deputies %}
+        <option value="{{ d }}">{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
     <div class="notice">
       <span class="notice-icon">⚠️</span>
-      <span>Si la rencontre concerne une nouvelle personne, merci de la
+      <span>Si la rencontre concerne une personne qui n'est pas dans la liste, merci de la
         <a href="{{ url_for('declarer_person') }}">déclarer d'abord</a>. Cette étape est
-        facultative mais nous facilite grandement la vie donc est très appréciée.</span>
+        facultative mais nous facilite grandement la vie donc est très appréciée.
+        Dans ce cas, mettez le nom de la nouvelle personne dans le champ
+        « Personnes concernées ».</span>
     </div>
   </div>
 

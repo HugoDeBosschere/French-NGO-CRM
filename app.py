@@ -83,6 +83,7 @@ POLITICAL_GROUPS = {
         "Horizons & Indépendants",
         "Gauche Démocrate et Républicaine (GDR)",
         "Libertés, Indépendants, Outre-mer et Territoires (LIOT)",
+        "Union des droites pour la République (UDR)",
         "Non-inscrit",
     ],
     "Sénat": [
@@ -94,6 +95,7 @@ POLITICAL_GROUPS = {
         "Les Indépendants – République et Territoires",
         "Écologiste – Solidarité et Territoires (Sénat)",
         "Rassemblement Démocratique et Social Européen (RDSE)",
+        "Non-inscrit (Sénat)",
     ],
     "Parlement européen": [
         "Parti populaire européen (PPE)",
@@ -129,6 +131,12 @@ STANCES = [
     "Opposé",
     "Inconnu",
 ]
+
+# Shown as the "who added this person" value for rows imported in bulk from the
+# official lists of elected officials (they have no moderator in `added_by`).
+AUTO_IMPORT_LABEL = (
+    "Ajout automatique à partir des listes officielles d'élus au 26-07-2026."
+)
 
 # Mail directions: stored value -> French label shown in the UI.
 MAIL_DIRECTIONS = {
@@ -245,6 +253,8 @@ def init_db():
             first_contacted TEXT,
             follow_up_date  TEXT,
             notes           TEXT,
+            circonscription TEXT,
+            email           TEXT,
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
@@ -367,6 +377,11 @@ def init_db():
         db.execute("ALTER TABLE pending_mails ADD COLUMN document_stored_name TEXT")
     if "document_orig_name" not in pmail_cols:
         db.execute("ALTER TABLE pending_mails ADD COLUMN document_orig_name TEXT")
+    # Optional contact/mandate details on a person.
+    if "circonscription" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN circonscription TEXT")
+    if "email" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN email TEXT")
     # Provenance fields referencing moderators(id). Added via ALTER with a NULL
     # default (SQLite requires that for a column carrying a REFERENCES clause);
     # legacy rows predate the feature and keep NULL.
@@ -964,6 +979,8 @@ def _save_person(db, person):
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
     follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     notes = (request.form.get("notes") or "").strip()
+    circonscription = (request.form.get("circonscription") or "").strip()
+    email = (request.form.get("email") or "").strip()
     added_by = _valid_moderator(db, request.form.get("added_by"))
     validated_by = _valid_moderator(db, request.form.get("validated_by"))
 
@@ -991,11 +1008,13 @@ def _save_person(db, person):
             """
             INSERT INTO persons (
                 name, role, political_group, stance, first_contacted,
-                follow_up_date, notes, added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                follow_up_date, notes, circonscription, email,
+                added_by, validated_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (name, role or None, political_group, stance, first_contacted or None,
-             follow_up_date or None, notes or None, added_by, validated_by,
+             follow_up_date or None, notes or None, circonscription or None,
+             email or None, added_by, validated_by,
              datetime.utcnow().isoformat(timespec="seconds")),
         )
         person_id = cur.lastrowid
@@ -1005,10 +1024,12 @@ def _save_person(db, person):
             """
             UPDATE persons SET name = ?, role = ?, political_group = ?, stance = ?,
                 first_contacted = ?, follow_up_date = ?, notes = ?,
+                circonscription = ?, email = ?,
                 added_by = ?, validated_by = ? WHERE id = ?
             """,
             (name, role or None, political_group, stance, first_contacted or None,
-             follow_up_date or None, notes or None, added_by, validated_by, person_id),
+             follow_up_date or None, notes or None, circonscription or None,
+             email or None, added_by, validated_by, person_id),
         )
     db.commit()
     return person_id, []
@@ -1135,7 +1156,7 @@ def person_detail(person_id):
         mails_sent=mails_sent,
         mails_received=mails_received,
         directions=MAIL_DIRECTIONS,
-        added_by=added_by["name"] if added_by else None,
+        added_by=added_by["name"] if added_by else AUTO_IMPORT_LABEL,
         validated_by=validator["name"] if validator else None,
     )
 
@@ -1459,6 +1480,17 @@ def _record_submission():
     _submission_log[request.remote_addr or "unknown"].append(time.monotonic())
 
 
+def _depute_names(db):
+    """Names of sitting deputies, for the anonymous declaration dropdowns.
+    Only deputies are exposed here — that list is public data. Every other
+    contact in `persons` stays private to logged-in members."""
+    return [
+        r[0] for r in db.execute(
+            "SELECT name FROM persons WHERE role = 'Député·e' ORDER BY name"
+        )
+    ]
+
+
 @app.route("/declarer")
 def declarer():
     return render_template("declarer_home.html")
@@ -1567,6 +1599,7 @@ def declarer_meeting():
     return render_template(
         "declarer_meeting.html",
         form=request.form if request.method == "POST" else {},
+        deputies=_depute_names(get_db()),
         today=date.today().isoformat(), captcha_question=_new_captcha(),
     )
 
@@ -1629,6 +1662,7 @@ def declarer_mail():
     return render_template(
         "declarer_mail.html", directions=MAIL_DIRECTIONS,
         form=request.form if request.method == "POST" else {},
+        deputies=_depute_names(get_db()),
         today=date.today().isoformat(), captcha_question=_new_captcha(),
     )
 
