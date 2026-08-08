@@ -1,4 +1,4 @@
-# Website_meeting
+# French-NGO-CRM
 
 A small internal Flask app for the **PauseIA** team to track its advocacy
 outreach: the **people** it talks to (politicians / officials), the **meetings**
@@ -8,6 +8,8 @@ that wants to do some kind of lobbying towards French politicians. Apart from
 the "Position sur PauseIA" field and the PauseIA colors of the interface, it 
 is easily reusable. Note that the entire code was written by Claude and I 
 did NOT review it thourougly although I did think about data security. 
+It is already populated with information about the 577 député.e.s and 
+348 sénateurices that were elected officials on the 26-07-2026.
 
 The app has **two audiences**, and the features below are split accordingly:
 
