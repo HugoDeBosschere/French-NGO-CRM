@@ -7,8 +7,10 @@ with the official lists of sitting deputies, senators and government members.
 > alone afterwards (except when a moderator adds a person via the UI). These are
 > kept so the lists can be **refreshed later**.
 
-Run them from the repo root. All are **idempotent** (a person whose `name`
-already exists is skipped).
+Run them from the repo root. All are **idempotent**: re-running one never
+creates a duplicate person. The deputies and senators scripts simply skip a
+`name` that already exists; the government script instead adds the missing role
+to that person (see below).
 
 ## Layout
 

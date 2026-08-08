@@ -9,7 +9,9 @@ the "Position sur PauseIA" field and the PauseIA colors of the interface, it
 is easily reusable. Note that the entire code was written by Claude and I 
 did NOT review it thourougly although I did think about data security. 
 It is already populated with information about the 577 député.e.s and 
-348 sénateurices that were elected officials on the 26-07-2026.
+348 sénateurices that were elected officials on the 26-07-2026, plus the 
+36 members of the government (ministres, ministres délégué.e.s, Premier 
+ministre and Président de la République) as of the 08-08-2026.
 
 The app has **two audiences**, and the features below are split accordingly:
 
