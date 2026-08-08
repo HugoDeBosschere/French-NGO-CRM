@@ -27,9 +27,15 @@
 
   <div class="grid-2">
     <div class="field">
-      <label>Fonction</label>
+      <label>Fonction{% if split_roles(p['role'])|length > 1 %}s{% endif %}</label>
       <p>{{ p['role'] or '—' }}</p>
     </div>
+    {% if p['portefeuille'] %}
+    <div class="field">
+      <label>Portefeuille</label>
+      <p>{{ p['portefeuille'] }}</p>
+    </div>
+    {% endif %}
   </div>
 
   <div class="grid-2">

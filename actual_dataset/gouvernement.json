@@ -1,0 +1,544 @@
+{
+  "gouvernement": [
+    {
+      "membre": {
+        "nom_complet": "David Amiel",
+        "prenom": "David",
+        "nom": "Amiel",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l'Action et des Comptes publics",
+        "email": null,
+        "site": "https://www.economie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Philippe Baptiste",
+        "prenom": "Philippe",
+        "nom": "Baptiste",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l’Enseignement supérieur, de la Recherche et de l'Espace",
+        "email": null,
+        "site": "https://www.enseignementsup-recherche.gouv.fr/fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Monique Barbut",
+        "prenom": "Monique",
+        "nom": "Barbut",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de la Transition écologique, de la Biodiversité et des Négociations internationales sur le Climat et la Nature",
+        "email": null,
+        "site": "https://www.ecologie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Jean-Noël Barrot",
+        "prenom": "Jean-Noël",
+        "nom": "Barrot",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l'Europe et des Affaires étrangères",
+        "email": null,
+        "site": "https://www.diplomatie.gouv.fr/fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Gérald Darmanin",
+        "prenom": "Gérald",
+        "nom": "Darmanin",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Garde des Sceaux, ministre",
+        "portefeuille": "Ministère de la Justice",
+        "email": null,
+        "site": "https://www.justice.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Jean-Pierre Farandou",
+        "prenom": "Jean-Pierre",
+        "nom": "Farandou",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère du Travail et des Solidarités",
+        "email": null,
+        "site": "https://travail-emploi.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Marina Ferrari",
+        "prenom": "Marina",
+        "nom": "Ferrari",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère des Sports, de la Jeunesse et de la Vie associative",
+        "email": null,
+        "site": "https://www.sports.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025 Texte n° 1",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Françoise Gatel",
+        "prenom": "Françoise",
+        "nom": "Gatel",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l’Aménagement du Territoire et de la Décentralisation",
+        "email": null,
+        "site": "https://www.ecologie.gouv.fr/",
+        "jorf": "JORF n°0304 du 24 décembre 2024",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000050822328"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Édouard Geffray",
+        "prenom": "Édouard",
+        "nom": "Geffray",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l'Éducation nationale",
+        "email": null,
+        "site": "https://www.education.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Annie Genevard",
+        "prenom": "Annie",
+        "nom": "Genevard",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l’Agriculture, de l'Agro-alimentaire et de la Souveraineté alimentaire",
+        "email": null,
+        "site": "https://agriculture.gouv.fr",
+        "jorf": "JORF n°0304 du 24 décembre 2024",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000050822328"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Vincent Jeanbrun",
+        "prenom": "Vincent",
+        "nom": "Jeanbrun",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de la Ville et du Logement",
+        "email": null,
+        "site": "https://www.cohesion-territoires.gouv.fr/le-ministere",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Roland Lescure",
+        "prenom": "Roland",
+        "nom": "Lescure",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l’Économie, des Finances et de la Souveraineté industrielle, énergétique et numérique",
+        "email": null,
+        "site": "https://www.economie.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Naïma Moutchou",
+        "prenom": "Naïma",
+        "nom": "Moutchou",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère des Outre-mer",
+        "email": null,
+        "site": "https://www.outre-mer.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025 Texte n° 1",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Laurent Nuñez",
+        "prenom": "Laurent",
+        "nom": "Nuñez",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de l'Intérieur",
+        "email": null,
+        "site": "https://www.interieur.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Serge Papin",
+        "prenom": "Serge",
+        "nom": "Papin",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère des petites et moyennes Entreprises, du Commerce, de l'Artisanat, du Tourisme et du Pouvoir d'achat",
+        "email": null,
+        "site": "https://www.economie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Catherine Pégard",
+        "prenom": "Catherine",
+        "nom": "Pégard",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de la Culture",
+        "email": null,
+        "site": "https://www.culture.gouv.fr/",
+        "jorf": "JORF n°0250 du 23 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052415523"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Stéphanie Rist",
+        "prenom": "Stéphanie",
+        "nom": "Rist",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère de la Santé, des Familles, de l’Autonomie et des Personnes handicapées",
+        "email": null,
+        "site": "https://sante.gouv.fr/ministere/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Philippe Tabarot",
+        "prenom": "Philippe",
+        "nom": "Tabarot",
+        "civilite": "M.",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère des Transports",
+        "email": null,
+        "site": "https://www.ecologie.gouv.fr/",
+        "jorf": "JORF n°0234 du 5 octobre 2025 Texte n° 70",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052355163"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Catherine Vautrin",
+        "prenom": "Catherine",
+        "nom": "Vautrin",
+        "civilite": "Mme",
+        "role": "Ministre",
+        "fonction": "Ministre",
+        "portefeuille": "Ministère des Armées et des Anciens combattants",
+        "email": null,
+        "site": "https://www.defense.gouv.fr/",
+        "jorf": "JORF n°0304 du 24 décembre 2024",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000050822328"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Jean-Didier Berger",
+        "prenom": "Jean-Didier",
+        "nom": "Berger",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès du ministre de l'Intérieur",
+        "email": null,
+        "site": "https://www.interieur.gouv.fr",
+        "jorf": "Composition du gouvernement (décret)",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053586369"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Aurore Bergé",
+        "prenom": "Aurore",
+        "nom": "Bergé",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès du Premier Ministre, chargée de l'égalité entre les femmes et les hommes et de la lutte contre les discriminations",
+        "email": null,
+        "site": "https://www.info.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Maud Bregeon",
+        "prenom": "Maud",
+        "nom": "Bregeon",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée auprès du Premier ministre, porte-parole du Gouvernement",
+        "portefeuille": "Ministre déléguée auprès du Premier ministre, porte-parole du Gouvernement ; Ministre déléguée auprès du ministre de l’Économie, des Finances et de la Souveraineté industrielle, énergétique et numérique, chargée de l'énergie",
+        "email": null,
+        "site": "https://www.info.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Eléonore Caroit",
+        "prenom": "Eléonore",
+        "nom": "Caroit",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès du ministre de l'Europe et des Affaires étrangères, chargée de la francophonie, des partenariats internationaux et des Français de l'étranger",
+        "email": null,
+        "site": "https://www.diplomatie.gouv.fr/fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Catherine Chabaud",
+        "prenom": "Catherine",
+        "nom": "Chabaud",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprés de la Ministre de la transition écologique, de la biodiversité et des négociations internationales sur le climat et la nature, chargée de la Mer et de la Pêche",
+        "email": null,
+        "site": "https://www.ecologie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Nicolas Forissier",
+        "prenom": "Nicolas",
+        "nom": "Forissier",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès du ministre de l’Europe et des Affaires étrangères, chargé du commerce extérieur et de l'attractivité",
+        "email": null,
+        "site": "https://www.diplomatie.gouv.fr/fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Michel Fournier",
+        "prenom": "Michel",
+        "nom": "Fournier",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès de la ministre de l’Aménagement du territoire et de la Décentralisation, chargé de la ruralité",
+        "email": null,
+        "site": "https://www.cohesion-territoires.gouv.fr/le-ministere",
+        "jorf": null,
+        "jorf_url": null
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Camille Galliard-Minier",
+        "prenom": "Camille",
+        "nom": "Galliard-Minier",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès de la ministre de la Santé, des Familles, de l’Autonomie et des Personnes handicapées, chargée de l'autonomie et des personnes handicapées",
+        "email": null,
+        "site": null,
+        "jorf": "Composition du gouvernement (décret)",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053586369"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Benjamin Haddad",
+        "prenom": "Benjamin",
+        "nom": "Haddad",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès du ministre de l’Europe et des Affaires étrangères, chargé de l'Europe",
+        "email": null,
+        "site": "https://www.diplomatie.gouv.fr/fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Anne Le Hénanff",
+        "prenom": "Anne",
+        "nom": "Le Hénanff",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès du ministre de l’Économie, des Finances et de la Souveraineté industrielle, énergétique et numérique, chargée de l'intelligence artificielle et du numérique",
+        "email": null,
+        "site": "https://www.economie.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Mathieu Lefèvre",
+        "prenom": "Mathieu",
+        "nom": "Lefèvre",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès de la Ministre de la transition écologique, de la biodiversité et des négociations internationales sur le climat et la nature, chargé de la transition écologique",
+        "email": null,
+        "site": "https://www.ecologie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Sébastien Martin",
+        "prenom": "Sébastien",
+        "nom": "Martin",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre délégué",
+        "portefeuille": "Ministre délégué auprès du ministre de l’Économie, des Finances et de la Souveraineté industrielle, énergétique et numérique, chargé de l’industrie",
+        "email": null,
+        "site": "https://www.economie.gouv.fr/",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Sabrina Roubache",
+        "prenom": "Sabrina",
+        "nom": "Roubache",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée auprès du ministre du travail et des solidarités",
+        "portefeuille": "Ministre déléguée auprès du ministre du travail et des solidarités et du ministre de l'éducation nationale, chargée de l'enseignement et de la formation professionnels et de l'apprentissage",
+        "email": null,
+        "site": "https://travail-emploi.gouv.fr",
+        "jorf": "JORF n°0067 du 19 mars 2026 Texte n° 11",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053700510"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Alice Rufo",
+        "prenom": "Alice",
+        "nom": "Rufo",
+        "civilite": "Mme",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès de la ministre des Armées et des Anciens combattants, chargée de la mémoire et des anciens combattants",
+        "email": null,
+        "site": "https://www.defense.gouv.fr",
+        "jorf": "JORF n°0232 du 6 octobre 2022",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000046368752"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Marie-Pierre Vedrenne",
+        "prenom": "Marie-Pierre",
+        "nom": "Vedrenne",
+        "civilite": "M.",
+        "role": "Ministre délégué·e",
+        "fonction": "Ministre déléguée",
+        "portefeuille": "Ministre déléguée auprès du ministre de l'Intérieur, chargée de la citoyenneté",
+        "email": null,
+        "site": "https://www.interieur.gouv.fr",
+        "jorf": "JORF n°0241 du 13 octobre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052382035"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Sébastien Lecornu",
+        "prenom": "Sébastien",
+        "nom": "Lecornu",
+        "civilite": "M.",
+        "role": "Premier·e ministre",
+        "fonction": "Premier ministre",
+        "portefeuille": null,
+        "email": null,
+        "site": "https://www.info.gouv.fr",
+        "jorf": "JORF n°0210 du 10 septembre 2025",
+        "jorf_url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000052221932"
+      }
+    },
+    {
+      "membre": {
+        "nom_complet": "Emmanuel Macron",
+        "prenom": "Emmanuel",
+        "nom": "Macron",
+        "civilite": "M.",
+        "role": "Président·e de la République",
+        "fonction": "Président de la République",
+        "portefeuille": null,
+        "email": null,
+        "site": "https://www.elysee.fr/",
+        "jorf": null,
+        "jorf_url": null
+      }
+    }
+  ]
+}

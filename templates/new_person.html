@@ -31,16 +31,31 @@
            placeholder="ex. Jean Dupont">
   </div>
 
+  {% set chosen = selected_roles(form) %}
   <div class="field">
-    <label for="role">Fonction <span class="muted">(facultatif)</span></label>
-    <select id="role" name="role">
-      <option value="" {% if not form.get('role') %}selected{% endif %}>
-        Choisir une fonction…
-      </option>
+    <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
+    <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
       {% for r in roles %}
-        <option value="{{ r }}" {% if form.get('role') == r %}selected{% endif %}>{{ r }}</option>
+        <label class="check">
+          <input type="checkbox" name="role" value="{{ r }}"
+                 {% if r in chosen %}checked{% endif %}>
+          {{ r }}
+        </label>
       {% endfor %}
-    </select>
+    </div>
+    <p class="hint">
+      Une même personne peut cumuler plusieurs fonctions
+      (un·e ministre est souvent aussi député·e).
+    </p>
+  </div>
+
+  <div class="field" id="portefeuille-field"
+       {% if not chosen|select('in', portfolio_roles)|list %}hidden{% endif %}>
+    <label for="portefeuille">Portefeuille <span class="muted">(facultatif)</span></label>
+    <input type="text" id="portefeuille" name="portefeuille"
+           value="{{ form.get('portefeuille', '') }}"
+           placeholder="ex. chargé·e de l'intelligence artificielle et du numérique">
+    <p class="hint">Le domaine confié : « chargé·e de l'énergie », « porte-parole du Gouvernement »…</p>
   </div>
 
   <div class="grid-2">

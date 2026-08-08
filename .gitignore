@@ -220,4 +220,8 @@ __marimo__/
 # PauseIA app data — never commit real data
 meetings.db
 *.db
+# Timestamped copies taken before a bulk import (meetings.db.bak-20260808-141841)
+# don't end in .db, so *.db above does not cover them.
+*.db.bak*
+*.bak
 uploads/

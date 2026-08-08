@@ -82,6 +82,26 @@
     });
   }
 
+  // The "Portefeuille" field only makes sense for a government post, so it
+  // stays hidden until one of the roles listed in `data-portfolio-roles`
+  // (rendered from PORTFOLIO_ROLES in app.py) is ticked. Server-side, app.py
+  // drops the value again if no such role was submitted — this is only comfort,
+  // never the thing that enforces it.
+  function attachPortfolioToggle(list) {
+    var field = document.getElementById("portefeuille-field");
+    if (!field) return;
+    var portfolioRoles = (list.getAttribute("data-portfolio-roles") || "").split("|");
+    function sync() {
+      var on = Array.prototype.some.call(
+        list.querySelectorAll('input[type="checkbox"]:checked'),
+        function (box) { return portfolioRoles.indexOf(box.value) !== -1; }
+      );
+      field.hidden = !on;
+    }
+    list.addEventListener("change", sync);
+    sync();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     document
       .querySelectorAll('input[name="meeting_time"]')
@@ -97,5 +117,8 @@
     document
       .querySelectorAll("select[data-check-group]")
       .forEach(attachChecker);
+    document
+      .querySelectorAll("[data-portfolio-roles]")
+      .forEach(attachPortfolioToggle);
   });
 })();

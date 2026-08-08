@@ -114,13 +114,71 @@ POLITICAL_GROUPS = {
     ],
 }
 
-# The person's actual function/role — single source of truth for the dropdown.
+# The person's actual function(s)/role(s) — single source of truth for the form.
+# A person can hold several at once (a minister is usually also a député·e), so
+# `persons.role` stores them joined by ROLE_SEP. A legacy single value is simply
+# a one-element list, which is why no data migration was needed.
 ROLES = [
+    "Président·e de la République",
+    "Premier·e ministre",
+    "Ministre",
+    "Ministre délégué·e",
+    "Secrétaire d'État",
+    "Membre d'un cabinet gouvernemental",
+    "Secrétaire général·e",
+    "Autre fonction gouvernementale",
     "Sénateur·ice",
     "Député·e",
     "Maire·sse",
     "Personnalité publique",
 ]
+
+# How several roles are joined inside the single `role` TEXT column. No label in
+# ROLES contains a comma, so this round-trips safely.
+ROLE_SEP = ", "
+
+# Holding one of these means the person has a government portfolio, so the
+# "Portefeuille" field is revealed on the form (see static/form-masks.js, which
+# reads this same list from `data-portfolio-roles`).
+PORTFOLIO_ROLES = [
+    "Ministre",
+    "Ministre délégué·e",
+    "Secrétaire d'État",
+]
+
+
+def split_roles(value):
+    """`persons.role` -> list of role labels (empty list when NULL/blank)."""
+    return [r.strip() for r in (value or "").split(",") if r.strip()]
+
+
+def _roles_from_form():
+    """Checked roles, whitelisted against ROLES and stored in ROLES order.
+
+    Whitelisting keeps the separator meaningful: a value that isn't a known
+    label can never smuggle a comma into the column.
+    """
+    checked = set(request.form.getlist("role"))
+    return ROLE_SEP.join(r for r in ROLES if r in checked)
+
+
+def has_portfolio(value):
+    """True when any of the person's roles is a government portfolio."""
+    return any(r in PORTFOLIO_ROLES for r in split_roles(value))
+
+
+def selected_roles(form):
+    """Which role boxes the form should render as checked.
+
+    `form` is either a submitted MultiDict (re-render after a validation error,
+    where `role` repeats once per checked box — .get() would return only the
+    first) or a plain dict built from a DB row by _form_from_row (where `role`
+    is the comma-joined column).
+    """
+    getlist = getattr(form, "getlist", None)
+    if getlist is not None:
+        return [r for r in getlist("role") if r in ROLES]
+    return split_roles(form.get("role"))
 
 # How a person feels about PauseAI — single source of truth for the dropdown.
 STANCES = [
@@ -219,6 +277,16 @@ def close_db(exception):  # noqa: ARG001
 
 
 @app.context_processor
+def inject_role_helpers():
+    """`role` holds a comma-joined list, so templates need to split it."""
+    return {
+        "split_roles": split_roles,
+        "selected_roles": selected_roles,
+        "portfolio_roles": PORTFOLIO_ROLES,
+    }
+
+
+@app.context_processor
 def inject_pending_count():
     """Expose the number of drafts awaiting moderation to every template, so the
     nav can show a badge. Only computed for authenticated (certified) users."""
@@ -255,6 +323,7 @@ def init_db():
             notes           TEXT,
             circonscription TEXT,
             email           TEXT,
+            portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
@@ -314,6 +383,7 @@ def init_db():
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             name            TEXT NOT NULL,
             role            TEXT,
+            portefeuille    TEXT,
             political_group TEXT,   -- nullable: an anonymous draft may omit it
             stance          TEXT,
             first_contacted TEXT,
@@ -382,6 +452,13 @@ def init_db():
         db.execute("ALTER TABLE persons ADD COLUMN circonscription TEXT")
     if "email" not in person_cols:
         db.execute("ALTER TABLE persons ADD COLUMN email TEXT")
+    # Government portfolio ("chargé·e de l'énergie"), only meaningful for the
+    # PORTFOLIO_ROLES. The form hides the field for everyone else.
+    if "portefeuille" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN portefeuille TEXT")
+    pperson_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_persons)")]
+    if "portefeuille" not in pperson_cols:
+        db.execute("ALTER TABLE pending_persons ADD COLUMN portefeuille TEXT")
     # Provenance fields referencing moderators(id). Added via ALTER with a NULL
     # default (SQLite requires that for a column carrying a REFERENCES clause);
     # legacy rows predate the feature and keep NULL.
@@ -973,7 +1050,12 @@ def _save_person(db, person):
     `person` is the existing row when editing, or None when creating.
     """
     name = (request.form.get("name") or "").strip()
-    role = (request.form.get("role") or "").strip()
+    role = _roles_from_form()
+    # Only kept when at least one role justifies it, so clearing the roles can't
+    # leave a stale portfolio behind on the record.
+    portefeuille = (request.form.get("portefeuille") or "").strip()
+    if not has_portfolio(role):
+        portefeuille = ""
     political_group = (request.form.get("political_group") or "").strip()
     stance = (request.form.get("stance") or "").strip()
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
@@ -1007,12 +1089,13 @@ def _save_person(db, person):
         cur = db.execute(
             """
             INSERT INTO persons (
-                name, role, political_group, stance, first_contacted,
+                name, role, portefeuille, political_group, stance, first_contacted,
                 follow_up_date, notes, circonscription, email,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (name, role or None, political_group, stance, first_contacted or None,
+            (name, role or None, portefeuille or None, political_group, stance,
+             first_contacted or None,
              follow_up_date or None, notes or None, circonscription or None,
              email or None, added_by, validated_by,
              datetime.utcnow().isoformat(timespec="seconds")),
@@ -1022,12 +1105,14 @@ def _save_person(db, person):
         person_id = person["id"]
         db.execute(
             """
-            UPDATE persons SET name = ?, role = ?, political_group = ?, stance = ?,
+            UPDATE persons SET name = ?, role = ?, portefeuille = ?,
+                political_group = ?, stance = ?,
                 first_contacted = ?, follow_up_date = ?, notes = ?,
                 circonscription = ?, email = ?,
                 added_by = ?, validated_by = ? WHERE id = ?
             """,
-            (name, role or None, political_group, stance, first_contacted or None,
+            (name, role or None, portefeuille or None, political_group, stance,
+             first_contacted or None,
              follow_up_date or None, notes or None, circonscription or None,
              email or None, added_by, validated_by, person_id),
         )
@@ -1226,7 +1311,7 @@ def _save_mail(db, mail):
     if not person_ids:
         errors.append("Sélectionnez au moins une personne.")
     if received_by is None:
-        errors.append("Indiquez qui a reçu le courriel.")
+        errors.append("Indiquez qui a reçu ou envoyé le courriel.")
     if validated_by is None:
         errors.append("Indiquez qui a validé le courriel.")
     if not mail_date:
@@ -1484,9 +1569,14 @@ def _depute_names(db):
     """Names of sitting deputies, for the anonymous declaration dropdowns.
     Only deputies are exposed here — that list is public data. Every other
     contact in `persons` stays private to logged-in members."""
+    # `role` is a comma-joined list, so an exact match would miss a deputy who
+    # is also a minister. Padding both sides makes this an exact element test
+    # (it can't match a label that merely contains "Député·e").
     return [
         r[0] for r in db.execute(
-            "SELECT name FROM persons WHERE role = 'Député·e' ORDER BY name"
+            "SELECT name FROM persons "
+            "WHERE instr(', ' || role || ', ', ', Député·e, ') > 0 "
+            "ORDER BY name"
         )
     ]
 
@@ -1503,7 +1593,10 @@ def declarer_person():
     elif request.method == "POST":
         db = get_db()
         name = (request.form.get("name") or "").strip()
-        role = (request.form.get("role") or "").strip()
+        role = _roles_from_form()
+        portefeuille = (request.form.get("portefeuille") or "").strip()
+        if not has_portfolio(role):
+            portefeuille = ""
         political_group = (request.form.get("political_group") or "").strip()
         stance = (request.form.get("stance") or "").strip()
         first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
@@ -1526,11 +1619,12 @@ def declarer_person():
             db.execute(
                 """
                 INSERT INTO pending_persons (
-                    name, role, political_group, stance, first_contacted,
+                    name, role, portefeuille, political_group, stance, first_contacted,
                     follow_up_date, notes, submitted_by, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, role or None, political_group or None, stance or None,
+                (name, role or None, portefeuille or None,
+                 political_group or None, stance or None,
                  first_contacted or None, follow_up_date or None, notes or None,
                  submitted_by or None, datetime.utcnow().isoformat(timespec="seconds")),
             )
