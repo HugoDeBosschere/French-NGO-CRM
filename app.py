@@ -106,6 +106,7 @@ POLITICAL_GROUPS = {
         "The Left (GUE/NGL)",
         "Patriotes pour l'Europe",
         "Europe des Nations Souveraines (ESN)",
+        "Non-inscrit (Parlement européen)",
     ],
     "Autre": [
         "Gouvernement / Administration",
@@ -129,6 +130,7 @@ ROLES = [
     "Autre fonction gouvernementale",
     "Sénateur·ice",
     "Député·e",
+    "Député·e européen·ne",
     "Maire·sse",
     "Personnalité publique",
 ]
