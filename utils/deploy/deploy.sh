@@ -45,6 +45,10 @@ in_container() {
 }
 
 echo "== 1/5  Copy scripts into the container =="
+# Remove any previous copy first: `docker cp src container:/app/utils` NESTS into
+# an existing dir (creating /app/utils/utils and leaving stale files behind), so
+# a plain re-copy would keep running old code. Wipe then copy for a clean state.
+$DOCKER exec "$CONTAINER" rm -rf /app/utils
 $DOCKER cp utils "$CONTAINER":/app/utils
 echo "   utils/ copied to $CONTAINER:/app/utils"
 
