@@ -181,6 +181,12 @@ python3 utils/import_campaign_mails.py --mbox groupe-campagne.mbox --auto-publis
 Same matching and same Message-ID dedup as the IMAP path, so it is safe to run
 alongside (or before) the live IMAP import without double-counting.
 
+Works from a Takeout of a **group member's own mailbox** too: individual
+("every email") deliveries keep the original `To:`, and **digest / abridged**
+deliveries — which bundle several posts into one email — are automatically
+exploded into their embedded `message/rfc822` messages, so each post is matched
+on its real recipient.
+
 Duplicates are avoided two ways: the last processed IMAP UID is remembered per
 mailbox (incremental runs fetch only `UID > last`), and every `Message-ID` is
 recorded, so a mail is never staged twice even across a backfill/daily overlap.

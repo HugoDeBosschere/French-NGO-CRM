@@ -313,21 +313,43 @@ def handle_message(db, msg, uid, mailbox, email_index, dry_run, auto_publish,
     return "unmatched"
 
 
+def iter_leaf_messages(msg):
+    """Yield the real messages to process from an mbox entry.
+
+    A Google Groups *digest* / *abridged* delivery bundles several posts into one
+    email, each embedded as a `message/rfc822` part that preserves the original
+    To: header. Explode those into individual messages so digest-mode history is
+    matched like individual deliveries. A normal (individual) mail has no such
+    part and is yielded as-is.
+    """
+    embedded = [
+        part.get_payload(0)
+        for part in msg.walk()
+        if part.get_content_type() == "message/rfc822"
+    ]
+    if embedded:
+        yield from embedded
+    else:
+        yield msg
+
+
 def run_mbox(db, path, email_index, dry_run, auto_publish, verbose):
-    """Import from a local .mbox export (e.g. Google Takeout of the group's
-    archive) — the messages keep their original To: headers, unlike a manual
-    Gmail forward. Dedup is by Message-ID only (no IMAP UIDs here)."""
+    """Import from a local .mbox export (e.g. Google Takeout of a mailbox that
+    received the group). Individual deliveries keep the original To: header;
+    digest/abridged deliveries are exploded into their embedded messages. Dedup
+    is by Message-ID only (no IMAP UIDs here)."""
     import mailbox as mailbox_mod
     box = mailbox_mod.mbox(path)
-    log(f"mbox {path!r}: {len(box)} message(s) to inspect.")
+    log(f"mbox {path!r}: {len(box)} mbox entrie(s) to inspect "
+        "(digests are exploded into individual messages).")
     imported = skipped_dup = unmatched = 0
     for key in box.keys():
-        msg = box[key]  # email.message.Message
-        result = handle_message(db, msg, None, f"mbox:{os.path.basename(path)}",
-                                email_index, dry_run, auto_publish, verbose)
-        imported += result == "staged"
-        skipped_dup += result == "dup"
-        unmatched += result == "unmatched"
+        for msg in iter_leaf_messages(box[key]):
+            result = handle_message(db, msg, None, f"mbox:{os.path.basename(path)}",
+                                    email_index, dry_run, auto_publish, verbose)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
     if not dry_run:
         db.commit()
     verb = "published" if auto_publish else "staged"
