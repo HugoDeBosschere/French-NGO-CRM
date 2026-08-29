@@ -196,6 +196,13 @@ separate from the app schema.
   matched case-insensitively against `persons.email`. One draft per matched
   person (a mail may target several élu·es).
 
+### RGPD
+
+Following the brief's minimisation principle, an imported record keeps only the
+**élu·e, the date and the mail's subject** — the citizen's identity is **never
+stored** (the `From` header is not read). The subject is retained for campaign
+context; drop it too if the association's policy calls for it.
+
 > ⚠️ **Validate the `To:` test first.** If the Google Group rewrites the `To:`
 > header, the address fallback breaks — check `X-Original-To` / `Delivered-To`
 > in a real received message, or have the site inject the `X-Elu-Id` marker. This

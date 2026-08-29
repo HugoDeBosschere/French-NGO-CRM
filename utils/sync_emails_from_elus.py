@@ -49,7 +49,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.environ.get("IMAP_DB_PATH", os.path.join(ROOT, "meetings.db"))
 DEFAULT_ELUS_URL = (
-    "https://raw.githubusercontent.com/Romain-Deleglise/pauseai-france/"
+    "https://raw.githubusercontent.com/Pause-IA/pauseai-france/"
     "main/src/lib/data/elus.json"
 )
 CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1, "none": 0}
