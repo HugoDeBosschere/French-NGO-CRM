@@ -76,9 +76,22 @@ existing rows.
 Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from
 the follow-up mailbox that receives a BCC of every mail citizens send to their
 élu·e through the site. It matches each mail's recipient against `persons.email`
-and stages one draft per matched person in `pending_mails` — the same moderation
-queue as anonymous "declarer" submissions — so a certified (Tier 2) member
-validates each import on `/moderation`. Nothing is published automatically.
+(or an `X-Elu-Id` marker) and records one mail per message.
+
+Two output modes:
+
+- **Moderation queue (default).** One draft in `pending_mails` — the same queue
+  as anonymous "declarer" submissions — with the matched names in
+  `proposed_people`, so a certified (Tier 2) member validates each import on
+  `/moderation`. Use this while confirming that matching is reliable.
+- **Auto-publish** (`--auto-publish`, or `IMPORT_AUTO_PUBLISH=1`). Writes straight
+  into the real `mails` table with a structured `mail_persons` link to every
+  matched person — a real mail to several élu·es is one mail with several links,
+  never duplicated. Because matching yields a **certain `persons.id`** (email
+  match or the marker header), this is a clean full automation once the `To:`
+  test below is trusted. Recommended path: run a backfill in moderation mode
+  first, confirm the drafts match the right élu·es, then switch the cron to
+  `--auto-publish`.
 
 Only the Python standard library is used (`imaplib`, `email`) — no extra
 dependency.
@@ -109,6 +122,9 @@ python3 utils/import_campaign_mails.py --backfill --dry-run
 
 # Daily incremental (only IMAP UIDs newer than the last processed one):
 python3 utils/import_campaign_mails.py
+
+# Full automation once matching is trusted (writes straight to the mails table):
+python3 utils/import_campaign_mails.py --auto-publish
 ```
 
 Duplicates are avoided two ways: the last processed IMAP UID is remembered per
@@ -131,12 +147,60 @@ separate from the app schema.
 > in a real received message, or have the site inject the `X-Elu-Id` marker. This
 > conditions the whole matching logic.
 
-### Cron (daily, inside the Docker host)
+### Deployment on the server (systemd timer)
+
+This is a short periodic job, so a **systemd timer** (oneshot service + timer)
+fits better than a 24/7 service — same server, same `systemd`/`/opt` conventions
+as the other Pause IA bots. The script runs **inside the app container** so its
+DB path (`/app/meetings.db`) is the persisted volume, and the app password is
+loaded from the secrets env file (never on the command line).
+
+`/etc/systemd/system/import-campaign-mails.service`:
+
+```ini
+[Unit]
+Description=Import campaign BCC mails into the CRM moderation queue
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Drop --auto-publish while validating; add it once the To: test is trusted.
+ExecStart=/usr/bin/docker exec \
+    --env-file /opt/volunteer-apps/secrets/website-meeting.env \
+    website-meeting-app \
+    python3 /app/utils/import_campaign_mails.py
+```
+
+`/etc/systemd/system/import-campaign-mails.timer`:
+
+```ini
+[Unit]
+Description=Run the campaign-mail import daily
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true      # catch up if the server was off at 06:00
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable and test:
 
 ```bash
-# Run inside the container so the DB path matches (/app/meetings.db), loading the
-# secrets env file. Example crontab line on the host:
-0 6 * * *  docker exec --env-file /opt/volunteer-apps/secrets/website-meeting.env \
-             website-meeting-app python3 /app/utils/import_campaign_mails.py \
-             >> /var/log/import_campaign_mails.log 2>&1
+sudo systemctl daemon-reload
+sudo systemctl enable --now import-campaign-mails.timer
+sudo systemctl list-timers | grep import-campaign   # next run
+sudo systemctl start import-campaign-mails.service   # run once, now
+sudo journalctl -u import-campaign-mails.service -n 50   # see its output
 ```
+
+> The **backfill is a one-off** — run it by hand once (not via the timer):
+> `sudo docker exec --env-file /opt/volunteer-apps/secrets/website-meeting.env
+> website-meeting-app python3 /app/utils/import_campaign_mails.py --backfill`.
+> The timer then only picks up new mail (UID-incremental).
+
+> A plain **cron** line works too if you prefer:
+> `0 6 * * * docker exec --env-file /opt/volunteer-apps/secrets/website-meeting.env
+> website-meeting-app python3 /app/utils/import_campaign_mails.py >> /var/log/import_campaign_mails.log 2>&1`

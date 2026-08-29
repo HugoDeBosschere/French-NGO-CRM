@@ -14,15 +14,26 @@ Nothing is published straight to the public record: drafts land in the very same
 member reviews each import on /moderation before it becomes a real mail. That is a
 free safety net and reuses the existing flow.
 
+Two output modes:
+- Moderation (default): stage a draft in `pending_mails` for a Tier 2 member to
+  validate on /moderation. Safest — use it while confirming matching is reliable.
+- Auto-publish (`--auto-publish` or IMPORT_AUTO_PUBLISH=1): write straight into
+  the real `mails` table with a structured `mail_persons` link to every matched
+  person. Because matching yields a certain `persons.id` (email match or the
+  X-Elu-Id marker), this is a clean full automation once the To: test is trusted.
+
 Usage:
-    # First run: sweep the whole mailbox history.
+    # First run: sweep the whole mailbox history (into the moderation queue).
     python3 utils/import_campaign_mails.py --backfill
 
     # Daily cron: only messages with a higher IMAP UID than the last processed one.
     python3 utils/import_campaign_mails.py
 
-    # See what would be staged without writing anything.
+    # See what would be staged/published without writing anything.
     python3 utils/import_campaign_mails.py --backfill --dry-run
+
+    # Full automation: publish directly to the real mails table.
+    python3 utils/import_campaign_mails.py --auto-publish
 
 Configuration (never hard-code the password — read it from the server env file,
 e.g. /opt/volunteer-apps/secrets/website-meeting.env):
@@ -179,22 +190,45 @@ def mail_date_iso(msg):
     return datetime.now(timezone.utc).date().isoformat()
 
 
-def stage_message(db, msg, uid, mailbox, matches, dry_run):
-    """Insert one pending_mails draft per matched person; record the Message-ID."""
+def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
+    """Record one mail (to all matched persons) and remember its Message-ID.
+
+    Moderation mode -> one `pending_mails` draft, names joined in proposed_people.
+    Auto-publish     -> one real `mails` row + a `mail_persons` link per person.
+    A single citizen mail is one mail with several recipients, never duplicated.
+    """
     message_id = (msg.get("Message-ID") or "").strip()
     subject = decoded(msg.get("Subject")) or "(sans objet)"
     sender = decoded(msg.get("From"))
     mail_date = mail_date_iso(msg)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    names = [name for _pid, name in matches]
+    summary = (
+        f"Mail d'un citoyen à {', '.join(names)} — « {subject} »"
+        + (f" (expéditeur : {sender})" if sender else "")
+    )
 
-    for pid, name in matches:
-        summary = (
-            f"Mail d'un citoyen à {name} — « {subject} »"
-            + (f" (expéditeur : {sender})" if sender else "")
+    if dry_run:
+        mode = "publish" if auto_publish else "stage"
+        log(f"  [dry-run] {mode} -> {', '.join(names)} | {mail_date} | {subject!r}")
+        return
+
+    if auto_publish:
+        cur = db.execute(
+            """
+            INSERT INTO mails (
+                mail_date, direction, important, summary, follow_up_date,
+                received_by, validated_by, document_stored_name,
+                document_orig_name, created_at
+            ) VALUES (?, 'sent', 0, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            """,
+            (mail_date, summary, now),
         )
-        if dry_run:
-            log(f"  [dry-run] -> {name} | {mail_date} | {subject!r}")
-            continue
+        db.executemany(
+            "INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
+            [(cur.lastrowid, pid) for pid, _name in matches],
+        )
+    else:
         db.execute(
             """
             INSERT INTO pending_mails (
@@ -203,10 +237,10 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run):
                 document_orig_name, created_at
             ) VALUES (?, 'sent', 0, ?, NULL, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, summary, name, IMPORT_SOURCE, now),
+            (mail_date, summary, ", ".join(names), IMPORT_SOURCE, now),
         )
 
-    if not dry_run and message_id:
+    if message_id:
         db.execute(
             """
             INSERT OR IGNORE INTO imported_mails (message_id, uid, mailbox, imported_at)
@@ -262,7 +296,12 @@ def main():
                         help="sweep the whole mailbox instead of only new UIDs")
     parser.add_argument("--dry-run", action="store_true",
                         help="show what would be staged without writing anything")
+    parser.add_argument("--auto-publish", action="store_true",
+                        help="publish directly to the real mails table instead of "
+                             "the moderation queue (also enabled by IMPORT_AUTO_PUBLISH=1)")
     args = parser.parse_args()
+
+    auto_publish = args.auto_publish or os.environ.get("IMPORT_AUTO_PUBLISH") == "1"
 
     db_path = os.environ.get("IMAP_DB_PATH", DEFAULT_DB)
     mailbox = os.environ.get("IMAP_MAILBOX", "INBOX")
@@ -275,12 +314,14 @@ def main():
 
     conn = connect_imap()
     try:
+        mode = "auto-publish (real mails)" if auto_publish else "moderation queue"
         last_uid = get_last_uid(db, mailbox)
         uids = fetch_uids(conn, mailbox, last_uid, args.backfill)
         log(f"Mailbox {mailbox!r}: {len(uids)} message(s) to inspect "
-            f"({'backfill' if args.backfill else f'UID > {last_uid}'}).")
+            f"({'backfill' if args.backfill else f'UID > {last_uid}'}) "
+            f"-> {mode}.")
 
-        staged, skipped_dup, unmatched, max_uid = 0, 0, 0, last_uid
+        imported, skipped_dup, unmatched, max_uid = 0, 0, 0, last_uid
         for uid in uids:
             status, data = conn.uid("fetch", str(uid), "(RFC822)")
             if status != "OK" or not data or data[0] is None:
@@ -293,8 +334,9 @@ def main():
             else:
                 matches = match_recipients(msg, db, email_index)
                 if matches:
-                    stage_message(db, msg, uid, mailbox, matches, args.dry_run)
-                    staged += len(matches)
+                    stage_message(db, msg, uid, mailbox, matches,
+                                  args.dry_run, auto_publish)
+                    imported += 1
                 else:
                     unmatched += 1
             max_uid = max(max_uid, uid)
@@ -303,7 +345,8 @@ def main():
             set_last_uid(db, mailbox, max_uid)
             db.commit()
 
-        log(f"Done. Drafts staged: {staged} | already-imported skipped: "
+        verb = "published" if auto_publish else "staged"
+        log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
             f"{skipped_dup} | no match: {unmatched} | last UID now: "
             f"{max_uid if not args.dry_run else last_uid}.")
     finally:
