@@ -201,7 +201,26 @@ separate from the app schema.
 > in a real received message, or have the site inject the `X-Elu-Id` marker. This
 > conditions the whole matching logic.
 
-### Deployment on the server (systemd timer)
+### Turnkey deployment (`deploy/deploy.sh`)
+
+On the server (as the app owner, after the repo checkout is up to date), one
+script does the whole rollout — DB backup, email sync, backfill, and the systemd
+timer. It runs **host-side** (stdlib-only Python on the persisted DB — no docker
+exec):
+
+```bash
+cd /opt/volunteer-apps/apps/website-meeting
+DRY_RUN=1 bash utils/deploy/deploy.sh                 # preview, writes nothing
+bash utils/deploy/deploy.sh                           # real run, moderation queue
+AUTO=1 bash utils/deploy/deploy.sh                    # real run, auto-publish
+MBOX=~/groupe-campagne.mbox bash utils/deploy/deploy.sh   # + replay group history
+```
+
+The daily timer defaults to the moderation queue; add `IMPORT_AUTO_PUBLISH=1` to
+the secrets env file to make the daily run auto-publish. The unit files it installs
+live in `utils/deploy/`. The manual steps below are the same thing spelled out.
+
+### Deployment on the server (systemd timer, manual)
 
 This is a short periodic job, so a **systemd timer** (oneshot service + timer)
 fits better than a 24/7 service — same server, same `systemd`/`/opt` conventions

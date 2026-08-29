@@ -1,0 +1,15 @@
+[Unit]
+Description=Import campaign BCC mails into the CRM (host-side, persisted DB)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=romain
+WorkingDirectory=/opt/volunteer-apps/apps/website-meeting
+# IMAP_USER / IMAP_APP_PASSWORD live here — and add IMPORT_AUTO_PUBLISH=1 to this
+# file to switch the daily run from the moderation queue to direct publishing.
+EnvironmentFile=/opt/volunteer-apps/secrets/website-meeting.env
+# The DB is the same file the Dockerised app uses (bind-mounted into the container).
+Environment=IMAP_DB_PATH=/opt/volunteer-apps/data/website-meeting-data/meetings.db
+ExecStart=/usr/bin/python3 /opt/volunteer-apps/apps/website-meeting/utils/import_campaign_mails.py
