@@ -299,6 +299,9 @@ def main():
     parser.add_argument("--auto-publish", action="store_true",
                         help="publish directly to the real mails table instead of "
                              "the moderation queue (also enabled by IMPORT_AUTO_PUBLISH=1)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print subject and recipient addresses of unmatched "
+                             "messages (to diagnose why they don't match a person)")
     args = parser.parse_args()
 
     auto_publish = args.auto_publish or os.environ.get("IMPORT_AUTO_PUBLISH") == "1"
@@ -339,6 +342,12 @@ def main():
                     imported += 1
                 else:
                     unmatched += 1
+                    if args.verbose:
+                        addrs = sorted({a.lower() for _d, a in getaddresses(
+                            sum((msg.get_all(h, []) for h in RECIPIENT_HEADERS), []))
+                            if a})
+                        log(f"  [no match] {decoded(msg.get('Subject'))!r} "
+                            f"-> {', '.join(addrs) or '(no recipient header)'}")
             max_uid = max(max_uid, uid)
 
         if not args.dry_run:
