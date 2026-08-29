@@ -71,7 +71,42 @@ python3 utils/insert_gouvernement.py
 Copy `meetings.db` first: the government insert is the only one that *updates*
 existing rows.
 
-## 4. Campaign-mail import (`import_campaign_mails.py`)
+## 4. Sync élu·e emails from the sending tool (`sync_emails_from_elus.py`)
+
+The CRM seeds `persons.email` **statically** at import time, and only deputies
+were filled — senators (≈348) and government members have none. So mails to
+senators never match in the importer below.
+
+The "Écrire à mes élus" site (repo **pauseai-france**) already solves this: its
+`scripts/generate-elus.js` builds `src/lib/data/elus.json` from **official open
+data** — the data.gouv Assemblée nationale dataset (deputies) and the Sénat ODSEN
+dataset (senators) — with a cross-checked `emailConfidence` per address. That file
+is the exact source of the address the tool puts in a mail's `To:`. Syncing the
+CRM from it makes CRM addresses line up with what is actually sent, so matching
+is reliable.
+
+```bash
+# From a local checkout of the sending tool (recommended on the server):
+python3 utils/sync_emails_from_elus.py --elus ../pauseai-france/src/lib/data/elus.json --dry-run
+python3 utils/sync_emails_from_elus.py --elus ../pauseai-france/src/lib/data/elus.json
+
+# Or fetch the committed file straight from GitHub (needs network):
+python3 utils/sync_emails_from_elus.py --dry-run
+```
+
+Defaults are conservative: only **fills empty** emails, only trusts
+**`high`** confidence, matches by normalised full name (both datasets build
+`"Prénom Nom"` from the same official sources, so it is exact in practice), and
+**never guesses** — a name not matched to a single elus entry is reported. Use
+`--overwrite` to also replace a differing address, `--min-confidence medium|low`
+to widen, `--db` / `IMAP_DB_PATH` for the DB path. Run this **before** the first
+campaign-mail backfill so senator mails match.
+
+> Senators who publish no email anywhere (≈15) stay without one — the sending
+> tool falls back to their official contact form, and nothing can match them by
+> address. That is expected, not a bug.
+
+## 5. Campaign-mail import (`import_campaign_mails.py`)
 
 Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from
 the follow-up mailbox that receives a BCC of every mail citizens send to their
