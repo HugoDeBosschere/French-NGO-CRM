@@ -290,8 +290,52 @@ def fetch_uids(conn, mailbox, last_uid, backfill):
     return sorted(uids)
 
 
+def handle_message(db, msg, uid, mailbox, email_index, dry_run, auto_publish,
+                   verbose):
+    """Process one parsed message. Returns 'dup', 'staged' or 'unmatched'."""
+    message_id = (msg.get("Message-ID") or "").strip()
+    if already_imported(db, message_id):
+        return "dup"
+    matches = match_recipients(msg, db, email_index)
+    if matches:
+        stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish)
+        return "staged"
+    if verbose:
+        addrs = sorted({a.lower() for _d, a in getaddresses(
+            sum((msg.get_all(h, []) for h in RECIPIENT_HEADERS), [])) if a})
+        log(f"  [no match] {decoded(msg.get('Subject'))!r} "
+            f"-> {', '.join(addrs) or '(no recipient header)'}")
+    return "unmatched"
+
+
+def run_mbox(db, path, email_index, dry_run, auto_publish, verbose):
+    """Import from a local .mbox export (e.g. Google Takeout of the group's
+    archive) — the messages keep their original To: headers, unlike a manual
+    Gmail forward. Dedup is by Message-ID only (no IMAP UIDs here)."""
+    import mailbox as mailbox_mod
+    box = mailbox_mod.mbox(path)
+    log(f"mbox {path!r}: {len(box)} message(s) to inspect.")
+    imported = skipped_dup = unmatched = 0
+    for key in box.keys():
+        msg = box[key]  # email.message.Message
+        result = handle_message(db, msg, None, f"mbox:{os.path.basename(path)}",
+                                email_index, dry_run, auto_publish, verbose)
+        imported += result == "staged"
+        skipped_dup += result == "dup"
+        unmatched += result == "unmatched"
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
+        f"{skipped_dup} | no match: {unmatched}.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mbox",
+                        help="import from a local .mbox file (Google Takeout of "
+                             "the group's archive) instead of IMAP — for the "
+                             "one-off historical backfill")
     parser.add_argument("--backfill", action="store_true",
                         help="sweep the whole mailbox instead of only new UIDs")
     parser.add_argument("--dry-run", action="store_true",
@@ -314,15 +358,24 @@ def main():
     ensure_state_table(db)
     email_index = load_email_index(db)
     log(f"Loaded {len(email_index)} distinct person e-mail(s) from {db_path}.")
+    mode = "auto-publish (real mails)" if auto_publish else "moderation queue"
+    log(f"Output: {mode}.")
+
+    # Historical backfill from a local .mbox export — no IMAP.
+    if args.mbox:
+        try:
+            run_mbox(db, args.mbox, email_index, args.dry_run, auto_publish,
+                     args.verbose)
+        finally:
+            db.close()
+        return
 
     conn = connect_imap()
     try:
-        mode = "auto-publish (real mails)" if auto_publish else "moderation queue"
         last_uid = get_last_uid(db, mailbox)
         uids = fetch_uids(conn, mailbox, last_uid, args.backfill)
         log(f"Mailbox {mailbox!r}: {len(uids)} message(s) to inspect "
-            f"({'backfill' if args.backfill else f'UID > {last_uid}'}) "
-            f"-> {mode}.")
+            f"({'backfill' if args.backfill else f'UID > {last_uid}'}).")
 
         imported, skipped_dup, unmatched, max_uid = 0, 0, 0, last_uid
         for uid in uids:
@@ -330,24 +383,11 @@ def main():
             if status != "OK" or not data or data[0] is None:
                 continue
             msg = email.message_from_bytes(data[0][1])
-            message_id = (msg.get("Message-ID") or "").strip()
-
-            if already_imported(db, message_id):
-                skipped_dup += 1
-            else:
-                matches = match_recipients(msg, db, email_index)
-                if matches:
-                    stage_message(db, msg, uid, mailbox, matches,
-                                  args.dry_run, auto_publish)
-                    imported += 1
-                else:
-                    unmatched += 1
-                    if args.verbose:
-                        addrs = sorted({a.lower() for _d, a in getaddresses(
-                            sum((msg.get_all(h, []) for h in RECIPIENT_HEADERS), []))
-                            if a})
-                        log(f"  [no match] {decoded(msg.get('Subject'))!r} "
-                            f"-> {', '.join(addrs) or '(no recipient header)'}")
+            result = handle_message(db, msg, uid, mailbox, email_index,
+                                    args.dry_run, auto_publish, args.verbose)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
             max_uid = max(max_uid, uid)
 
         if not args.dry_run:

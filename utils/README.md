@@ -162,6 +162,25 @@ python3 utils/import_campaign_mails.py
 python3 utils/import_campaign_mails.py --auto-publish
 ```
 
+### Historical backfill from the group (`.mbox`)
+
+`suivi-campagne@pauseia.fr` only receives mail sent **after** it joined the group,
+so the older history lives in the **Google Group archive** (`campagne@pauseia.fr`),
+which IMAP cannot read. **Do not forward the old mails by hand** — a Gmail
+"Transférer" rewrites `To:` to the follow-up mailbox and buries the original
+recipient in the body, so nothing would match.
+
+Instead export the group archive via **Google Takeout** (→ a `.mbox` file, which
+keeps each message's original `To:` header) and import it once:
+
+```bash
+python3 utils/import_campaign_mails.py --mbox groupe-campagne.mbox --dry-run
+python3 utils/import_campaign_mails.py --mbox groupe-campagne.mbox --auto-publish
+```
+
+Same matching and same Message-ID dedup as the IMAP path, so it is safe to run
+alongside (or before) the live IMAP import without double-counting.
+
 Duplicates are avoided two ways: the last processed IMAP UID is remembered per
 mailbox (incremental runs fetch only `UID > last`), and every `Message-ID` is
 recorded, so a mail is never staged twice even across a backfill/daily overlap.
