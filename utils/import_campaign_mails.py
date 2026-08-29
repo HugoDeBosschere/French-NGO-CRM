@@ -62,6 +62,7 @@ import argparse
 import email
 import imaplib
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -70,6 +71,15 @@ from email.utils import getaddresses, parsedate_to_datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.path.join(ROOT, "meetings.db")
+
+# Only élu·es hold addresses on these domains, so finding one in a mail body is a
+# reliable signal — used by --match-body for forwarded threads (an élu's reply a
+# citizen forwarded) where the recipient is quoted in the body, not in a header.
+OFFICIAL_DOMAINS = ("senat.fr", "assemblee-nationale.fr", "europarl.europa.eu")
+_OFFICIAL_RE = re.compile(
+    r"[\w.\-]+@(?:" + "|".join(d.replace(".", r"\.") for d in OFFICIAL_DOMAINS) + r")",
+    re.I,
+)
 
 # Headers that may carry the real recipient address (the Google Group can rewrite
 # some of them, hence the belt-and-braces list).
@@ -151,10 +161,26 @@ def person_by_id(db, pid):
     return (row[0], row[1]) if row else None
 
 
-def match_recipients(msg, db, email_index):
+def body_text(msg):
+    """Concatenated text/plain + text/html payloads of a message (decoded)."""
+    chunks = []
+    for part in msg.walk():
+        if part.get_content_type() in ("text/plain", "text/html"):
+            try:
+                chunks.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+    return "\n".join(chunks)
+
+
+def match_recipients(msg, db, email_index, match_body=False):
     """Return the list of (person_id, name) this message is addressed to.
 
-    Deduplicated by person_id, preserving discovery order.
+    Deduplicated by person_id, preserving discovery order. With `match_body`,
+    also match official-domain addresses found in the body — for forwarded
+    threads where the élu·e is quoted in the text, not in a header. Off by default
+    so the live pipeline stays header-only (precise).
     """
     matches, seen = [], set()
 
@@ -179,6 +205,14 @@ def match_recipients(msg, db, email_index):
             if pid not in seen:
                 seen.add(pid)
                 matches.append((pid, name))
+
+    # 3) Optional: official-domain addresses quoted in the body.
+    if match_body:
+        for addr in {a.lower() for a in _OFFICIAL_RE.findall(body_text(msg))}:
+            for pid, name in email_index.get(addr, []):
+                if pid not in seen:
+                    seen.add(pid)
+                    matches.append((pid, name))
     return matches
 
 
@@ -296,12 +330,12 @@ def fetch_uids(conn, mailbox, last_uid, backfill):
 
 
 def handle_message(db, msg, uid, mailbox, email_index, dry_run, auto_publish,
-                   verbose):
+                   verbose, match_body=False):
     """Process one parsed message. Returns 'dup', 'staged' or 'unmatched'."""
     message_id = (msg.get("Message-ID") or "").strip()
     if already_imported(db, message_id):
         return "dup"
-    matches = match_recipients(msg, db, email_index)
+    matches = match_recipients(msg, db, email_index, match_body=match_body)
     if matches:
         stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish)
         return "staged"
@@ -357,8 +391,41 @@ def run_mbox(db, path, email_index, dry_run, auto_publish, verbose):
         f"{skipped_dup} | no match: {unmatched}.")
 
 
+def run_eml_dir(db, path, email_index, dry_run, auto_publish, verbose, match_body):
+    """Import a directory of .eml files (e.g. a Takeout of individual messages).
+
+    Digests are exploded like in the mbox path. With `match_body`, forwarded
+    threads whose élu·e address sits in the body are matched too — used for the
+    historical 'Fw:' exports where the recipient header is gone.
+    """
+    files = sorted(f for f in os.listdir(path) if f.lower().endswith(".eml"))
+    log(f"eml dir {path!r}: {len(files)} .eml file(s) to inspect"
+        + (" (matching body addresses)" if match_body else "") + ".")
+    imported = skipped_dup = unmatched = 0
+    for name in files:
+        with open(os.path.join(path, name), "rb") as fh:
+            top = email.message_from_binary_file(fh)
+        for msg in iter_leaf_messages(top):
+            result = handle_message(db, msg, None, f"eml:{name}", email_index,
+                                    dry_run, auto_publish, verbose, match_body)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
+        f"{skipped_dup} | no match: {unmatched}.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--eml-dir",
+                        help="import a directory of .eml files instead of IMAP "
+                             "(one-off historical backfill from a Takeout)")
+    parser.add_argument("--match-body", action="store_true",
+                        help="also match official-domain élu·e addresses quoted in "
+                             "the body (for forwarded threads; use with --eml-dir)")
     parser.add_argument("--mbox",
                         help="import from a local .mbox file (Google Takeout of "
                              "the group's archive) instead of IMAP — for the "
@@ -389,11 +456,15 @@ def main():
     mode = "auto-publish (real mails)" if auto_publish else "moderation queue"
     log(f"Output: {mode}.")
 
-    # Historical backfill from a local .mbox export — no IMAP.
-    if args.mbox:
+    # Historical backfill from local files — no IMAP.
+    if args.mbox or args.eml_dir:
         try:
-            run_mbox(db, args.mbox, email_index, args.dry_run, auto_publish,
-                     args.verbose)
+            if args.mbox:
+                run_mbox(db, args.mbox, email_index, args.dry_run, auto_publish,
+                         args.verbose)
+            if args.eml_dir:
+                run_eml_dir(db, args.eml_dir, email_index, args.dry_run,
+                            auto_publish, args.verbose, args.match_body)
         finally:
             db.close()
         return

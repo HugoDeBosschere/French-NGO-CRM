@@ -19,7 +19,10 @@
 #     AUTO=1 bash utils/deploy/deploy.sh           # real run, auto-publish
 #     MBOX=~/groupe-campagne.mbox bash utils/deploy/deploy.sh   # + group history
 #
-# Overridable: CONTAINER, CONTAINER_DB, ENV_FILE, AUTO, MBOX, DRY_RUN.
+# Overridable: CONTAINER, CONTAINER_DB, ENV_FILE, AUTO, MBOX, EMLDIR, DRY_RUN.
+#   MBOX=path      one-off historical import from a Google Takeout .mbox
+#   EMLDIR=path    one-off historical import from a directory of .eml files
+#                  (uses --match-body: matches élu·e addresses quoted in the body)
 set -euo pipefail
 
 CONTAINER=${CONTAINER:-website-meeting-app}
@@ -27,6 +30,7 @@ CONTAINER_DB=${CONTAINER_DB:-/app/meetings.db}      # DB path *inside* the conta
 ENV_FILE=${ENV_FILE:-/opt/volunteer-apps/secrets/website-meeting.env}
 AUTO=${AUTO:-0}
 MBOX=${MBOX:-}
+EMLDIR=${EMLDIR:-}
 DRY_RUN=${DRY_RUN:-0}
 
 # docker needs root here; the container's own user still owns any file it writes.
@@ -67,6 +71,14 @@ if [ -n "$MBOX" ]; then
     echo "== 4a/5 Historical backfill from mbox: $MBOX =="
     $DOCKER cp "$MBOX" "$CONTAINER":/tmp/backfill.mbox
     in_container import_campaign_mails.py --mbox /tmp/backfill.mbox $PUB $DRY
+fi
+
+if [ -n "$EMLDIR" ]; then
+    echo "== 4c/5 Historical backfill from .eml dir: $EMLDIR =="
+    $DOCKER exec "$CONTAINER" rm -rf /tmp/histmails
+    $DOCKER cp "$EMLDIR" "$CONTAINER":/tmp/histmails
+    # --match-body: forwarded threads whose élu·e address is in the body only.
+    in_container import_campaign_mails.py --eml-dir /tmp/histmails --match-body $PUB $DRY
 fi
 
 echo "== 4b/5 IMAP backfill of the follow-up mailbox =="
