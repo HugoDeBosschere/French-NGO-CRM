@@ -35,8 +35,24 @@ DRY_RUN=${DRY_RUN:-0}
 
 cd "$APP_DIR"
 export IMAP_DB_PATH="$DB"
-# Load IMAP_USER / IMAP_APP_PASSWORD (and any IMAP_* overrides) from the secrets file.
-set -a; . "$ENV_FILE"; set +a
+# Load IMAP_* / IMPORT_* from the secrets file. It is usually root-only, so read
+# it via sudo and export just those keys — this keeps Python running as the
+# current user (running it as root would leave the DB root-owned and break the
+# app, which runs as uid 1000).
+if [ -r "$ENV_FILE" ]; then
+    reader() { cat "$ENV_FILE"; }
+else
+    echo "   (secrets file not readable directly — reading it via sudo)"
+    reader() { sudo cat "$ENV_FILE"; }
+fi
+while IFS= read -r line; do
+    export "$line"
+done < <(reader | grep -E '^(IMAP_|IMPORT_)[A-Za-z_]+=')
+if [ -z "${IMAP_USER:-}" ] || [ -z "${IMAP_APP_PASSWORD:-}" ]; then
+    echo "ERROR: IMAP_USER / IMAP_APP_PASSWORD missing from $ENV_FILE." >&2
+    echo "Add them (sudo nano $ENV_FILE) then re-run." >&2
+    exit 1
+fi
 
 DRY=""; [ "$DRY_RUN" = "1" ] && DRY="--dry-run"
 PUB=""; [ "$AUTO" = "1" ] && PUB="--auto-publish"
