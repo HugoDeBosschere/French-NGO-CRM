@@ -117,9 +117,12 @@ def ensure_state_table(db):
 
 
 def get_last_uid(db, mailbox):
-    row = db.execute(
-        "SELECT last_uid FROM imported_mail_state WHERE mailbox = ?", (mailbox,)
-    ).fetchone()
+    try:
+        row = db.execute(
+            "SELECT last_uid FROM imported_mail_state WHERE mailbox = ?", (mailbox,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0  # state table not created yet (e.g. a dry-run before first write)
     return row[0] if row else 0
 
 
@@ -253,9 +256,12 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
 def already_imported(db, message_id):
     if not message_id:
         return False
-    return db.execute(
-        "SELECT 1 FROM imported_mails WHERE message_id = ?", (message_id,)
-    ).fetchone() is not None
+    try:
+        return db.execute(
+            "SELECT 1 FROM imported_mails WHERE message_id = ?", (message_id,)
+        ).fetchone() is not None
+    except sqlite3.OperationalError:
+        return False  # state table not created yet (e.g. a dry-run before first write)
 
 
 def connect_imap():
@@ -355,7 +361,8 @@ def main():
 
     db = sqlite3.connect(db_path)
     db.execute("PRAGMA foreign_keys = ON")
-    ensure_state_table(db)
+    if not args.dry_run:
+        ensure_state_table(db)  # creating tables is a write — skip it in dry-run
     email_index = load_email_index(db)
     log(f"Loaded {len(email_index)} distinct person e-mail(s) from {db_path}.")
     mode = "auto-publish (real mails)" if auto_publish else "moderation queue"

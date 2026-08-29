@@ -1,83 +1,74 @@
 #!/usr/bin/env bash
 #
-# Turnkey deployment for the campaign-mail import (run ON THE SERVER, as the app
-# owner, e.g. `romain`). Host-side: the scripts are stdlib-only Python and write
-# to the persisted SQLite DB that the Dockerised app also uses — no docker exec,
-# no file mounting.
+# Turnkey deployment for the campaign-mail import (run ON THE SERVER).
 #
-# Prerequisite: the app repo checkout on the server is already up to date with
-# this branch (git pull + docker-compose build/up per DEPLOYMENT_DOCUMENTATION),
-# so utils/ carries the three scripts. The secrets env file must contain
-# IMAP_USER and IMAP_APP_PASSWORD.
+# The scripts run INSIDE the app container, via `docker exec`, so they run as the
+# same user that owns and writes meetings.db (running them on the host as a
+# different user hits "attempt to write a readonly database"). The container
+# image does not ship utils/, so we `docker cp` the scripts in first. Everything
+# is stdlib-only Python; the only requirement is that the container has outbound
+# network (for IMAP and the elus.json fetch), which it does.
 #
-# Usage:
-#     # Preview everything, write nothing:
-#     DRY_RUN=1 bash utils/deploy/deploy.sh
+# Prerequisite: the server checkout carries this branch's utils/ (e.g.
+#   git fetch romain && git checkout romain/<branch> -- utils/ )
+# and the secrets env file contains IMAP_USER and IMAP_APP_PASSWORD.
 #
-#     # Real run, drafts go to the moderation queue (recommended first time):
-#     bash utils/deploy/deploy.sh
+# Usage (from the app dir, /opt/volunteer-apps/apps/website-meeting):
+#     DRY_RUN=1 bash utils/deploy/deploy.sh        # preview, writes nothing
+#     bash utils/deploy/deploy.sh                  # real run, moderation queue
+#     AUTO=1 bash utils/deploy/deploy.sh           # real run, auto-publish
+#     MBOX=~/groupe-campagne.mbox bash utils/deploy/deploy.sh   # + group history
 #
-#     # Real run, publish straight to the mails table:
-#     AUTO=1 bash utils/deploy/deploy.sh
-#
-#     # Also replay the group's history from a Google Takeout .mbox:
-#     MBOX=~/groupe-campagne.mbox bash utils/deploy/deploy.sh
-#
-# Overridable: APP_DIR, DB, ENV_FILE, AUTO, MBOX, DRY_RUN.
+# Overridable: CONTAINER, CONTAINER_DB, ENV_FILE, AUTO, MBOX, DRY_RUN.
 set -euo pipefail
 
-APP_DIR=${APP_DIR:-/opt/volunteer-apps/apps/website-meeting}
-DB=${DB:-/opt/volunteer-apps/data/website-meeting-data/meetings.db}
+CONTAINER=${CONTAINER:-website-meeting-app}
+CONTAINER_DB=${CONTAINER_DB:-/app/meetings.db}      # DB path *inside* the container
 ENV_FILE=${ENV_FILE:-/opt/volunteer-apps/secrets/website-meeting.env}
 AUTO=${AUTO:-0}
 MBOX=${MBOX:-}
 DRY_RUN=${DRY_RUN:-0}
 
-cd "$APP_DIR"
-export IMAP_DB_PATH="$DB"
-# Load IMAP_* / IMPORT_* from the secrets file. It is usually root-only, so read
-# it via sudo and export just those keys — this keeps Python running as the
-# current user (running it as root would leave the DB root-owned and break the
-# app, which runs as uid 1000).
-if [ -r "$ENV_FILE" ]; then
-    reader() { cat "$ENV_FILE"; }
-else
-    echo "   (secrets file not readable directly — reading it via sudo)"
-    reader() { sudo cat "$ENV_FILE"; }
-fi
-while IFS= read -r line; do
-    export "$line"
-done < <(reader | grep -E '^(IMAP_|IMPORT_)[A-Za-z_]+=')
-if [ -z "${IMAP_USER:-}" ] || [ -z "${IMAP_APP_PASSWORD:-}" ]; then
-    echo "ERROR: IMAP_USER / IMAP_APP_PASSWORD missing from $ENV_FILE." >&2
-    echo "Add them (sudo nano $ENV_FILE) then re-run." >&2
-    exit 1
-fi
+# docker needs root here; the container's own user still owns any file it writes.
+DOCKER="sudo docker"
 
 DRY=""; [ "$DRY_RUN" = "1" ] && DRY="--dry-run"
 PUB=""; [ "$AUTO" = "1" ] && PUB="--auto-publish"
 [ -n "$PUB" ] && echo ">>> AUTO-PUBLISH is ON (writes to the real mails table)." \
               || echo ">>> Moderation mode (drafts land in /moderation)."
 
-echo "== 1/4  Backup the database =="
+# Run a utils script inside the container, passing the secrets as env and the
+# in-container DB path. --env-file loads IMAP_USER / IMAP_APP_PASSWORD etc.
+in_container() {
+    $DOCKER exec --env-file "$ENV_FILE" -e IMAP_DB_PATH="$CONTAINER_DB" \
+        "$CONTAINER" python3 "/app/utils/$@"
+}
+
+echo "== 1/5  Copy scripts into the container =="
+$DOCKER cp utils "$CONTAINER":/app/utils
+echo "   utils/ copied to $CONTAINER:/app/utils"
+
+echo "== 2/5  Backup the database =="
 if [ "$DRY_RUN" = "1" ]; then
-    echo "   [dry-run] would copy $DB -> $DB.bak-<timestamp>"
+    echo "   [dry-run] would copy $CONTAINER_DB -> $CONTAINER_DB.bak-<timestamp> (in container)"
 else
-    cp -v "$DB" "$DB.bak-$(date +%F-%H%M%S)"
+    $DOCKER exec "$CONTAINER" cp "$CONTAINER_DB" "$CONTAINER_DB.bak-$(date +%F-%H%M%S)"
+    echo "   backed up alongside $CONTAINER_DB"
 fi
 
-echo "== 2/4  Sync élu·e emails from elus.json (fills senators) =="
-python3 utils/sync_emails_from_elus.py --db "$DB" $DRY
+echo "== 3/5  Sync élu·e emails from elus.json (fills senators) =="
+in_container sync_emails_from_elus.py --db "$CONTAINER_DB" $DRY
 
 if [ -n "$MBOX" ]; then
-    echo "== 3a/4 Historical backfill from mbox: $MBOX =="
-    python3 utils/import_campaign_mails.py --mbox "$MBOX" $PUB $DRY
+    echo "== 4a/5 Historical backfill from mbox: $MBOX =="
+    $DOCKER cp "$MBOX" "$CONTAINER":/tmp/backfill.mbox
+    in_container import_campaign_mails.py --mbox /tmp/backfill.mbox $PUB $DRY
 fi
 
-echo "== 3b/4 IMAP backfill of the follow-up mailbox =="
-python3 utils/import_campaign_mails.py --backfill $PUB $DRY
+echo "== 4b/5 IMAP backfill of the follow-up mailbox =="
+in_container import_campaign_mails.py --backfill $PUB $DRY
 
-echo "== 4/4  Install & enable the daily systemd timer =="
+echo "== 5/5  Install & enable the daily systemd timer =="
 if [ "$DRY_RUN" = "1" ]; then
     echo "   [dry-run] would install import-campaign-mails.{service,timer} and enable the timer"
 else
@@ -91,6 +82,6 @@ fi
 echo
 echo "Done."
 echo "Reminder: the daily timer runs in MODERATION mode by default. To make the"
-echo "daily run auto-publish, add this line to $ENV_FILE and it takes effect next run:"
+echo "daily run auto-publish, add this line to $ENV_FILE (takes effect next run):"
 echo "    IMPORT_AUTO_PUBLISH=1"
 echo "Logs:  journalctl -u import-campaign-mails.service -n 50"

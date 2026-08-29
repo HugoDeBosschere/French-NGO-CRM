@@ -203,10 +203,12 @@ separate from the app schema.
 
 ### Turnkey deployment (`deploy/deploy.sh`)
 
-On the server (as the app owner, after the repo checkout is up to date), one
-script does the whole rollout — DB backup, email sync, backfill, and the systemd
-timer. It runs **host-side** (stdlib-only Python on the persisted DB — no docker
-exec):
+On the server, one script does the whole rollout — DB backup, email sync,
+backfill, and the systemd timer. It runs the Python **inside the app container**
+(via `docker cp` + `docker exec`) so it executes as the user that owns
+`meetings.db`; running it on the host as another user fails with "attempt to
+write a readonly database". The container needs outbound network (for IMAP and
+the elus.json fetch), which it has:
 
 ```bash
 cd /opt/volunteer-apps/apps/website-meeting
