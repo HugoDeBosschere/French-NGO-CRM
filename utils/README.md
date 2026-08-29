@@ -70,3 +70,73 @@ python3 utils/insert_gouvernement.py
 
 Copy `meetings.db` first: the government insert is the only one that *updates*
 existing rows.
+
+## 4. Campaign-mail import (`import_campaign_mails.py`)
+
+Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from
+the follow-up mailbox that receives a BCC of every mail citizens send to their
+élu·e through the site. It matches each mail's recipient against `persons.email`
+and stages one draft per matched person in `pending_mails` — the same moderation
+queue as anonymous "declarer" submissions — so a certified (Tier 2) member
+validates each import on `/moderation`. Nothing is published automatically.
+
+Only the Python standard library is used (`imaplib`, `email`) — no extra
+dependency.
+
+### Configuration (env, never hard-coded)
+
+Add to the server env file (`/opt/volunteer-apps/secrets/website-meeting.env`),
+reading the app password from Vaultwarden:
+
+```
+IMAP_HOST=imap.gmail.com
+IMAP_USER=suivi-campagne@pauseia.fr
+IMAP_APP_PASSWORD=xxxxxxxxxxxxxxxx
+# optional: IMAP_PORT (993), IMAP_MAILBOX (INBOX), IMAP_DB_PATH (<repo>/meetings.db)
+```
+
+`suivi-campagne@pauseia.fr` is a member of the group `campagne@pauseia.fr` (the
+BCC target), set to receive every message.
+
+### Running
+
+```bash
+# One-off first pass over the whole mailbox history:
+python3 utils/import_campaign_mails.py --backfill
+
+# Preview without writing:
+python3 utils/import_campaign_mails.py --backfill --dry-run
+
+# Daily incremental (only IMAP UIDs newer than the last processed one):
+python3 utils/import_campaign_mails.py
+```
+
+Duplicates are avoided two ways: the last processed IMAP UID is remembered per
+mailbox (incremental runs fetch only `UID > last`), and every `Message-ID` is
+recorded, so a mail is never staged twice even across a backfill/daily overlap.
+Both live in tables this script owns (`imported_mail_state`, `imported_mails`),
+separate from the app schema.
+
+### Matching
+
+- **Primary:** an `X-Elu-Id` / `X-Depute-Id` header carrying a `persons.id`, if
+  the site injects one when generating the mail — match-certain even if the
+  official address changes.
+- **Fallback:** every address in `To`, `Cc`, `X-Original-To` and `Delivered-To`
+  matched case-insensitively against `persons.email`. One draft per matched
+  person (a mail may target several élu·es).
+
+> ⚠️ **Validate the `To:` test first.** If the Google Group rewrites the `To:`
+> header, the address fallback breaks — check `X-Original-To` / `Delivered-To`
+> in a real received message, or have the site inject the `X-Elu-Id` marker. This
+> conditions the whole matching logic.
+
+### Cron (daily, inside the Docker host)
+
+```bash
+# Run inside the container so the DB path matches (/app/meetings.db), loading the
+# secrets env file. Example crontab line on the host:
+0 6 * * *  docker exec --env-file /opt/volunteer-apps/secrets/website-meeting.env \
+             website-meeting-app python3 /app/utils/import_campaign_mails.py \
+             >> /var/log/import_campaign_mails.log 2>&1
+```
