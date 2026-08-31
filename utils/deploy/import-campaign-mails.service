@@ -12,6 +12,10 @@ Type=oneshot
 # and would leave stale code behind.
 ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
 ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Keep élu·e emails fresh from the official source before importing (fills empty
+# addresses only, high confidence). Non-blocking (leading '-'): if elus.json is
+# unreachable, the import below still runs.
+ExecStartPre=-/usr/bin/docker exec website-meeting-app python3 /app/utils/sync_emails_from_elus.py --db /app/meetings.db
 # Run inside the container, as the user that owns meetings.db. The secrets file
 # supplies IMAP_USER / IMAP_APP_PASSWORD; add IMPORT_AUTO_PUBLISH=1 there to
 # switch the daily run from the moderation queue to direct publishing.
