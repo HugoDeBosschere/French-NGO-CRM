@@ -31,6 +31,7 @@ ENV_FILE=${ENV_FILE:-/opt/volunteer-apps/secrets/website-meeting.env}
 AUTO=${AUTO:-0}
 MBOX=${MBOX:-}
 EMLDIR=${EMLDIR:-}
+PASTED=${PASTED:-}       # one-off import from text pasted out of the Groups web view
 DRY_RUN=${DRY_RUN:-0}
 
 # docker needs root here; the container's own user still owns any file it writes.
@@ -79,6 +80,12 @@ if [ -n "$EMLDIR" ]; then
     $DOCKER cp "$EMLDIR" "$CONTAINER":/tmp/histmails
     # --match-body: forwarded threads whose élu·e address is in the body only.
     in_container import_campaign_mails.py --eml-dir /tmp/histmails --match-body $PUB $DRY
+fi
+
+if [ -n "$PASTED" ]; then
+    echo "== 4d/5 Historical backfill from pasted text: $PASTED =="
+    $DOCKER cp "$PASTED" "$CONTAINER":/tmp/pasted.txt
+    in_container import_campaign_mails.py --pasted /tmp/pasted.txt $PUB $DRY
 fi
 
 echo "== 4b/5 IMAP backfill of the follow-up mailbox =="
