@@ -391,6 +391,100 @@ def run_mbox(db, path, email_index, dry_run, auto_publish, verbose):
         f"{skipped_dup} | no match: {unmatched}.")
 
 
+_MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_IDX = {m: i for i, m in enumerate(_MONTHS) if m}
+_PASTE_DATE = re.compile(r"\b(" + "|".join(_MONTHS[1:]) + r") (\d{1,2}), (20\d\d)")
+
+
+def extract_pasted_recipients(text):
+    """Parse text copy-pasted from the Google Groups web view.
+
+    Each message shows a `to <addr>` line (Gmail) or `À : <addr>` line
+    (forwarded), sometimes several comma-separated. We keep only official-domain
+    addresses (élu·es) seen in those recipient lines, tagged with the nearest
+    preceding date. Returns an ordered list of (address, date_iso|None).
+    """
+    current = None
+    out = []
+    for line in text.splitlines():
+        dm = _PASTE_DATE.search(line)
+        if dm:
+            current = f"{dm.group(3)}-{_MONTH_IDX[dm.group(1)]:02d}-{int(dm.group(2)):02d}"
+        s = line.strip()
+        low = s.lower()
+        is_recipient = (low.startswith("to ") or s.startswith("À :")
+                        or low.startswith("à :") or s.startswith("A : "))
+        if is_recipient:
+            for addr in {a.lower() for a in _OFFICIAL_RE.findall(line)}:
+                out.append((addr, current))
+    return out
+
+
+def run_pasted(db, path, email_index, dry_run, auto_publish, verbose):
+    """Import mails from text pasted out of the Groups web view (last resort when
+    no mbox/eml export is possible). Matches the `to:` élu address, skips media,
+    and skips anything already recorded for the same person on the same date
+    (so it won't duplicate the mbox/IMAP imports)."""
+    import hashlib
+    from email.message import EmailMessage
+
+    text = open(path, encoding="utf-8", errors="replace").read()
+    entries = extract_pasted_recipients(text)
+    log(f"pasted {path!r}: {len(entries)} recipient occurrence(s) with an official domain.")
+
+    existing = set()
+    try:
+        for pid, d in db.execute(
+            "SELECT xp.person_id, m.mail_date FROM mails m "
+            "JOIN mail_persons xp ON xp.mail_id = m.id "
+            "WHERE m.summary LIKE 'Mail d''un citoyen%'"
+        ):
+            existing.add((pid, d))
+    except sqlite3.OperationalError:
+        pass
+
+    imported = dup = overlap = unmatched = 0
+    seen = set()
+    for idx, (addr, date_iso) in enumerate(entries):
+        people = email_index.get(addr, [])
+        if not people:
+            unmatched += 1
+            if verbose:
+                log(f"  [no match] {addr} ({date_iso})")
+            continue
+        pid, name = people[0]
+        key = (pid, date_iso)
+        if date_iso and (key in existing or key in seen):
+            overlap += 1
+            continue
+        seen.add(key)
+        mid = "<pasted-%s@campagne>" % hashlib.sha1(
+            f"{addr}|{date_iso}|{idx}".encode()).hexdigest()[:16]
+        if already_imported(db, mid):
+            dup += 1
+            continue
+        msg = EmailMessage()
+        msg["To"] = addr
+        msg["Message-ID"] = mid
+        msg["Subject"] = "Mail campagne (import historique)"
+        if date_iso:
+            y, m, d = date_iso.split("-")
+            msg["Date"] = f"{int(d)} {_MONTHS[int(m)]} {y} 00:00:00 +0000"
+        if dry_run:
+            log(f"  [dry-run] {'publish' if auto_publish else 'stage'} -> {name} | {date_iso}")
+        else:
+            stage_message(db, msg, None, f"pasted:{os.path.basename(path)}",
+                          [(pid, name)], dry_run, auto_publish)
+        imported += 1
+
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: {dup} | "
+        f"overlap with existing skipped: {overlap} | no match: {unmatched}.")
+
+
 def run_eml_dir(db, path, email_index, dry_run, auto_publish, verbose, match_body):
     """Import a directory of .eml files (e.g. a Takeout of individual messages).
 
@@ -423,6 +517,10 @@ def main():
     parser.add_argument("--eml-dir",
                         help="import a directory of .eml files instead of IMAP "
                              "(one-off historical backfill from a Takeout)")
+    parser.add_argument("--pasted",
+                        help="import from text copy-pasted out of the Groups web "
+                             "view (parses the 'to: <élu>' lines; last-resort "
+                             "historical backfill)")
     parser.add_argument("--match-body", action="store_true",
                         help="also match official-domain élu·e addresses quoted in "
                              "the body (for forwarded threads; use with --eml-dir)")
@@ -457,7 +555,7 @@ def main():
     log(f"Output: {mode}.")
 
     # Historical backfill from local files — no IMAP.
-    if args.mbox or args.eml_dir:
+    if args.mbox or args.eml_dir or args.pasted:
         try:
             if args.mbox:
                 run_mbox(db, args.mbox, email_index, args.dry_run, auto_publish,
@@ -465,6 +563,9 @@ def main():
             if args.eml_dir:
                 run_eml_dir(db, args.eml_dir, email_index, args.dry_run,
                             auto_publish, args.verbose, args.match_body)
+            if args.pasted:
+                run_pasted(db, args.pasted, email_index, args.dry_run,
+                           auto_publish, args.verbose)
         finally:
             db.close()
         return

@@ -187,6 +187,23 @@ deliveries — which bundle several posts into one email — are automatically
 exploded into their embedded `message/rfc822` messages, so each post is matched
 on its real recipient.
 
+### Last resort: text pasted from the Groups web view (`--pasted`)
+
+When no export is possible at all (no Vault, no admin export, digest-only
+mailboxes), the group's web archive can still be **copy-pasted** into a text
+file. `--pasted FILE` parses the `to: <élu>` / `À : <élu>` lines, keeps only
+official-domain addresses (élu·es), ignores media recipients, and skips anything
+already recorded for the same person on the same date (so it won't duplicate the
+mbox/IMAP/eml imports).
+
+```bash
+python3 utils/import_campaign_mails.py --pasted campagne.txt --dry-run --verbose
+python3 utils/import_campaign_mails.py --pasted campagne.txt --auto-publish
+```
+
+It only recovers the recipient, date and the fact a mail was sent — not a precise
+subject — but that is enough for the CRM's "which élu·e was contacted, and when".
+
 Duplicates are avoided two ways: the last processed IMAP UID is remembered per
 mailbox (incremental runs fetch only `UID > last`), and every `Message-ID` is
 recorded, so a mail is never staged twice even across a backfill/daily overlap.
