@@ -397,15 +397,21 @@ _MONTH_IDX = {m: i for i, m in enumerate(_MONTHS) if m}
 _PASTE_DATE = re.compile(r"\b(" + "|".join(_MONTHS[1:]) + r") (\d{1,2}), (20\d\d)")
 
 
+_TOPIC_MARKER = re.compile(r"^\d+ of \d+$")
+
+
 def extract_pasted_recipients(text):
     """Parse text copy-pasted from the Google Groups web view.
 
-    Each message shows a `to <addr>` line (Gmail) or `À : <addr>` line
-    (forwarded), sometimes several comma-separated. We keep only official-domain
-    addresses (élu·es) seen in those recipient lines, tagged with the nearest
-    preceding date. Returns an ordered list of (address, date_iso|None).
+    Each message shows a `to <addr>` / `À : <addr>` recipient line. We keep only
+    official-domain (élu·e) addresses, each tagged with the nearest preceding
+    date and the current topic title as its subject. The topic title is the line
+    just after a "N of M" marker; forwarded blocks carry an "Objet :" line.
+    Returns an ordered list of (address, date_iso|None, subject|None).
     """
     current = None
+    subject = None
+    expect_subject = False
     out = []
     for line in text.splitlines():
         dm = _PASTE_DATE.search(line)
@@ -413,11 +419,20 @@ def extract_pasted_recipients(text):
             current = f"{dm.group(3)}-{_MONTH_IDX[dm.group(1)]:02d}-{int(dm.group(2)):02d}"
         s = line.strip()
         low = s.lower()
+        if _TOPIC_MARKER.match(s):
+            expect_subject = True
+            continue
+        if expect_subject and s:
+            subject = s
+            expect_subject = False
+            continue
+        if low.startswith("objet :") or low.startswith("objet:"):
+            subject = s.split(":", 1)[1].strip() or subject
         is_recipient = (low.startswith("to ") or s.startswith("À :")
                         or low.startswith("à :") or s.startswith("A : "))
         if is_recipient:
             for addr in {a.lower() for a in _OFFICIAL_RE.findall(line)}:
-                out.append((addr, current))
+                out.append((addr, current, subject))
     return out
 
 
@@ -446,7 +461,7 @@ def run_pasted(db, path, email_index, dry_run, auto_publish, verbose):
 
     imported = dup = overlap = unmatched = 0
     seen = set()
-    for idx, (addr, date_iso) in enumerate(entries):
+    for idx, (addr, date_iso, subject) in enumerate(entries):
         people = email_index.get(addr, [])
         if not people:
             unmatched += 1
@@ -467,7 +482,7 @@ def run_pasted(db, path, email_index, dry_run, auto_publish, verbose):
         msg = EmailMessage()
         msg["To"] = addr
         msg["Message-ID"] = mid
-        msg["Subject"] = "Mail campagne (import historique)"
+        msg["Subject"] = subject or "Mail campagne (import historique)"
         if date_iso:
             y, m, d = date_iso.split("-")
             msg["Date"] = f"{int(d)} {_MONTHS[int(m)]} {y} 00:00:00 +0000"
