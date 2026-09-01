@@ -1,0 +1,625 @@
+#!/usr/bin/env python3
+"""Import campaign BCC mails into the CRM's moderation queue — cron-friendly.
+
+Context (see the "Automatisation import des mails campagne → CRM" brief):
+citizens use the site to write to their MP, and put a follow-up mailbox in BCC.
+The copy landing in that mailbox keeps the MP's real address in the `To:` header,
+so we can tell which parlementaire received a mail and when — without any manual
+entry. This script reads that mailbox over IMAP, matches recipients against
+`persons.email` (already filled for députés/sénateurs/eurodéputés by the insert
+scripts), and stages one draft per matched person in `pending_mails`.
+
+Nothing is published straight to the public record: drafts land in the very same
+`pending_mails` queue as anonymous "declarer" submissions, so a certified (Tier 2)
+member reviews each import on /moderation before it becomes a real mail. That is a
+free safety net and reuses the existing flow.
+
+Two output modes:
+- Moderation (default): stage a draft in `pending_mails` for a Tier 2 member to
+  validate on /moderation. Safest — use it while confirming matching is reliable.
+- Auto-publish (`--auto-publish` or IMPORT_AUTO_PUBLISH=1): write straight into
+  the real `mails` table with a structured `mail_persons` link to every matched
+  person. Because matching yields a certain `persons.id` (email match or the
+  X-Elu-Id marker), this is a clean full automation once the To: test is trusted.
+
+Usage:
+    # First run: sweep the whole mailbox history (into the moderation queue).
+    python3 utils/import_campaign_mails.py --backfill
+
+    # Daily cron: only messages with a higher IMAP UID than the last processed one.
+    python3 utils/import_campaign_mails.py
+
+    # See what would be staged/published without writing anything.
+    python3 utils/import_campaign_mails.py --backfill --dry-run
+
+    # Full automation: publish directly to the real mails table.
+    python3 utils/import_campaign_mails.py --auto-publish
+
+Configuration (never hard-code the password — read it from the server env file,
+e.g. /opt/volunteer-apps/secrets/website-meeting.env):
+    IMAP_HOST          IMAP server            (default: imap.gmail.com)
+    IMAP_PORT          IMAP SSL port          (default: 993)
+    IMAP_USER          mailbox login          (e.g. suivi-campagne@pauseia.fr)
+    IMAP_APP_PASSWORD  app password           (from Vaultwarden)
+    IMAP_MAILBOX       folder to read         (default: INBOX)
+    IMAP_DB_PATH       path to meetings.db    (default: <repo>/meetings.db)
+
+Anti-duplicate strategy (both belt and braces):
+- Incremental runs remember the last IMAP UID processed per mailbox and only fetch
+  UIDs above it (robust to timezones / missed days, unlike a date filter).
+- Every message's Message-ID is recorded, so the same mail is never staged twice
+  even if UIDs reset (mailbox recreated) or a backfill overlaps a daily run.
+
+Matching:
+- Primary: an explicit marker header injected by the site — `X-Elu-Id` /
+  `X-Depute-Id` carrying a `persons.id`. This is match-certain even if the
+  official address changes.
+- Fallback: every address found in `To`, `Cc`, `X-Original-To` and `Delivered-To`
+  is matched case-insensitively against `persons.email`. One draft per matched
+  person (a single mail may target several élu·es).
+"""
+import argparse
+import email
+import imaplib
+import os
+import re
+import sqlite3
+import sys
+from datetime import datetime, timezone
+from email.header import decode_header, make_header
+from email.utils import getaddresses, parsedate_to_datetime
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DB = os.path.join(ROOT, "meetings.db")
+
+# Only élu·es hold addresses on these domains, so finding one in a mail body is a
+# reliable signal — used by --match-body for forwarded threads (an élu's reply a
+# citizen forwarded) where the recipient is quoted in the body, not in a header.
+OFFICIAL_DOMAINS = ("senat.fr", "assemblee-nationale.fr", "europarl.europa.eu")
+_OFFICIAL_RE = re.compile(
+    r"[\w.\-]+@(?:" + "|".join(d.replace(".", r"\.") for d in OFFICIAL_DOMAINS) + r")",
+    re.I,
+)
+
+# Headers that may carry the real recipient address (the Google Group can rewrite
+# some of them, hence the belt-and-braces list).
+RECIPIENT_HEADERS = ("To", "Cc", "X-Original-To", "Delivered-To")
+# Headers that may carry an explicit person id injected by the site.
+MARKER_HEADERS = ("X-Elu-Id", "X-Depute-Id")
+
+# Value written to pending_mails.submitted_by so a moderator can see the origin.
+IMPORT_SOURCE = "Import automatique (mail campagne)"
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def decoded(value):
+    """RFC 2047-decode a header value into a plain str (never raises)."""
+    if not value:
+        return ""
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
+
+
+def ensure_state_table(db):
+    """Tables owned by this script (kept separate from the app schema)."""
+    db.executescript(
+        """
+        -- Last IMAP UID processed, per mailbox, for incremental runs.
+        CREATE TABLE IF NOT EXISTS imported_mail_state (
+            mailbox  TEXT PRIMARY KEY,
+            last_uid INTEGER NOT NULL DEFAULT 0
+        );
+        -- Every message we have already handled, so we never stage it twice.
+        CREATE TABLE IF NOT EXISTS imported_mails (
+            message_id  TEXT PRIMARY KEY,
+            uid         INTEGER,
+            mailbox     TEXT,
+            imported_at TEXT NOT NULL
+        );
+        """
+    )
+    db.commit()
+
+
+def get_last_uid(db, mailbox):
+    try:
+        row = db.execute(
+            "SELECT last_uid FROM imported_mail_state WHERE mailbox = ?", (mailbox,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0  # state table not created yet (e.g. a dry-run before first write)
+    return row[0] if row else 0
+
+
+def set_last_uid(db, mailbox, uid):
+    db.execute(
+        """
+        INSERT INTO imported_mail_state (mailbox, last_uid) VALUES (?, ?)
+        ON CONFLICT(mailbox) DO UPDATE SET last_uid = excluded.last_uid
+        """,
+        (mailbox, uid),
+    )
+
+
+def load_email_index(db):
+    """persons.email (lower-cased) -> list of (id, name). Skips blank emails."""
+    index = {}
+    for pid, name, mail in db.execute(
+        "SELECT id, name, email FROM persons WHERE email IS NOT NULL AND email != ''"
+    ):
+        index.setdefault(mail.strip().lower(), []).append((pid, name))
+    return index
+
+
+def person_by_id(db, pid):
+    row = db.execute("SELECT id, name FROM persons WHERE id = ?", (pid,)).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def body_text(msg):
+    """Concatenated text/plain + text/html payloads of a message (decoded)."""
+    chunks = []
+    for part in msg.walk():
+        if part.get_content_type() in ("text/plain", "text/html"):
+            try:
+                chunks.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+    return "\n".join(chunks)
+
+
+def match_recipients(msg, db, email_index, match_body=False):
+    """Return the list of (person_id, name) this message is addressed to.
+
+    Deduplicated by person_id, preserving discovery order. With `match_body`,
+    also match official-domain addresses found in the body — for forwarded
+    threads where the élu·e is quoted in the text, not in a header. Off by default
+    so the live pipeline stays header-only (precise).
+    """
+    matches, seen = [], set()
+
+    # 1) Explicit marker header wins (match-certain).
+    for header in MARKER_HEADERS:
+        for raw in msg.get_all(header, []):
+            digits = "".join(c for c in str(raw) if c.isdigit())
+            if not digits:
+                continue
+            hit = person_by_id(db, int(digits))
+            if hit and hit[0] not in seen:
+                seen.add(hit[0])
+                matches.append(hit)
+
+    # 2) Address headers matched against persons.email.
+    pairs = []
+    for header in RECIPIENT_HEADERS:
+        pairs.extend(getaddresses(msg.get_all(header, [])))
+    for _display, addr in pairs:
+        addr = (addr or "").strip().lower()
+        for pid, name in email_index.get(addr, []):
+            if pid not in seen:
+                seen.add(pid)
+                matches.append((pid, name))
+
+    # 3) Optional: official-domain addresses quoted in the body.
+    if match_body:
+        for addr in {a.lower() for a in _OFFICIAL_RE.findall(body_text(msg))}:
+            for pid, name in email_index.get(addr, []):
+                if pid not in seen:
+                    seen.add(pid)
+                    matches.append((pid, name))
+    return matches
+
+
+def mail_date_iso(msg):
+    """`Date:` header -> YYYY-MM-DD (falls back to today on a missing/bad date)."""
+    raw = msg.get("Date")
+    if raw:
+        try:
+            return parsedate_to_datetime(raw).date().isoformat()
+        except Exception:
+            pass
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
+    """Record one mail (to all matched persons) and remember its Message-ID.
+
+    Moderation mode -> one `pending_mails` draft, names joined in proposed_people.
+    Auto-publish     -> one real `mails` row + a `mail_persons` link per person.
+    A single citizen mail is one mail with several recipients, never duplicated.
+    """
+    message_id = (msg.get("Message-ID") or "").strip()
+    subject = decoded(msg.get("Subject")) or "(sans objet)"
+    mail_date = mail_date_iso(msg)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    names = [name for _pid, name in matches]
+    # RGPD minimisation: keep the subject (campaign context) but NOT the citizen's
+    # identity — we record that the élu·e received a mail, its date and its object,
+    # not who sent it. The From header is deliberately never read or stored.
+    summary = f"Mail d'un citoyen à {', '.join(names)} — « {subject} »"
+
+    if dry_run:
+        mode = "publish" if auto_publish else "stage"
+        log(f"  [dry-run] {mode} -> {', '.join(names)} | {mail_date} | {subject!r}")
+        return
+
+    if auto_publish:
+        cur = db.execute(
+            """
+            INSERT INTO mails (
+                mail_date, direction, important, summary, follow_up_date,
+                received_by, validated_by, document_stored_name,
+                document_orig_name, created_at
+            ) VALUES (?, 'sent', 0, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            """,
+            (mail_date, summary, now),
+        )
+        db.executemany(
+            "INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
+            [(cur.lastrowid, pid) for pid, _name in matches],
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO pending_mails (
+                mail_date, direction, important, summary, follow_up_date,
+                proposed_people, submitted_by, document_stored_name,
+                document_orig_name, created_at
+            ) VALUES (?, 'sent', 0, ?, NULL, ?, ?, NULL, NULL, ?)
+            """,
+            (mail_date, summary, ", ".join(names), IMPORT_SOURCE, now),
+        )
+
+    if message_id:
+        db.execute(
+            """
+            INSERT OR IGNORE INTO imported_mails (message_id, uid, mailbox, imported_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (message_id, uid, mailbox, now),
+        )
+
+
+def already_imported(db, message_id):
+    if not message_id:
+        return False
+    try:
+        return db.execute(
+            "SELECT 1 FROM imported_mails WHERE message_id = ?", (message_id,)
+        ).fetchone() is not None
+    except sqlite3.OperationalError:
+        return False  # state table not created yet (e.g. a dry-run before first write)
+
+
+def connect_imap():
+    host = os.environ.get("IMAP_HOST", "imap.gmail.com")
+    port = int(os.environ.get("IMAP_PORT", "993"))
+    user = os.environ.get("IMAP_USER")
+    password = os.environ.get("IMAP_APP_PASSWORD")
+    if not user or not password:
+        sys.exit(
+            "IMAP_USER and IMAP_APP_PASSWORD must be set (read them from the server "
+            "env file, e.g. /opt/volunteer-apps/secrets/website-meeting.env)."
+        )
+    conn = imaplib.IMAP4_SSL(host, port)
+    conn.login(user, password)
+    return conn
+
+
+def fetch_uids(conn, mailbox, last_uid, backfill):
+    """Return the sorted list of UIDs to process."""
+    status, _ = conn.select(mailbox, readonly=True)
+    if status != "OK":
+        sys.exit(f"Cannot select mailbox {mailbox!r}.")
+    criterion = "ALL" if backfill else f"UID {last_uid + 1}:*"
+    status, data = conn.uid("search", None, criterion)
+    if status != "OK":
+        sys.exit("IMAP search failed.")
+    uids = [int(x) for x in data[0].split()]
+    # An open-ended `UID n:*` search always returns at least the last message even
+    # when none is newer; drop anything we have already passed.
+    if not backfill:
+        uids = [u for u in uids if u > last_uid]
+    return sorted(uids)
+
+
+def handle_message(db, msg, uid, mailbox, email_index, dry_run, auto_publish,
+                   verbose, match_body=False):
+    """Process one parsed message. Returns 'dup', 'staged' or 'unmatched'."""
+    message_id = (msg.get("Message-ID") or "").strip()
+    if already_imported(db, message_id):
+        return "dup"
+    matches = match_recipients(msg, db, email_index, match_body=match_body)
+    if matches:
+        stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish)
+        return "staged"
+    if verbose:
+        addrs = sorted({a.lower() for _d, a in getaddresses(
+            sum((msg.get_all(h, []) for h in RECIPIENT_HEADERS), [])) if a})
+        log(f"  [no match] {decoded(msg.get('Subject'))!r} "
+            f"-> {', '.join(addrs) or '(no recipient header)'}")
+    return "unmatched"
+
+
+def iter_leaf_messages(msg):
+    """Yield the real messages to process from an mbox entry.
+
+    A Google Groups *digest* / *abridged* delivery bundles several posts into one
+    email, each embedded as a `message/rfc822` part that preserves the original
+    To: header. Explode those into individual messages so digest-mode history is
+    matched like individual deliveries. A normal (individual) mail has no such
+    part and is yielded as-is.
+    """
+    embedded = [
+        part.get_payload(0)
+        for part in msg.walk()
+        if part.get_content_type() == "message/rfc822"
+    ]
+    if embedded:
+        yield from embedded
+    else:
+        yield msg
+
+
+def run_mbox(db, path, email_index, dry_run, auto_publish, verbose):
+    """Import from a local .mbox export (e.g. Google Takeout of a mailbox that
+    received the group). Individual deliveries keep the original To: header;
+    digest/abridged deliveries are exploded into their embedded messages. Dedup
+    is by Message-ID only (no IMAP UIDs here)."""
+    import mailbox as mailbox_mod
+    box = mailbox_mod.mbox(path)
+    log(f"mbox {path!r}: {len(box)} mbox entrie(s) to inspect "
+        "(digests are exploded into individual messages).")
+    imported = skipped_dup = unmatched = 0
+    for key in box.keys():
+        for msg in iter_leaf_messages(box[key]):
+            result = handle_message(db, msg, None, f"mbox:{os.path.basename(path)}",
+                                    email_index, dry_run, auto_publish, verbose)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
+        f"{skipped_dup} | no match: {unmatched}.")
+
+
+_MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_IDX = {m: i for i, m in enumerate(_MONTHS) if m}
+_PASTE_DATE = re.compile(r"\b(" + "|".join(_MONTHS[1:]) + r") (\d{1,2}), (20\d\d)")
+
+
+_TOPIC_MARKER = re.compile(r"^\d+ of \d+$")
+
+
+def extract_pasted_recipients(text):
+    """Parse text copy-pasted from the Google Groups web view.
+
+    Each message shows a `to <addr>` / `À : <addr>` recipient line. We keep only
+    official-domain (élu·e) addresses, each tagged with the nearest preceding
+    date and the current topic title as its subject. The topic title is the line
+    just after a "N of M" marker; forwarded blocks carry an "Objet :" line.
+    Returns an ordered list of (address, date_iso|None, subject|None).
+    """
+    current = None
+    subject = None
+    expect_subject = False
+    out = []
+    for line in text.splitlines():
+        dm = _PASTE_DATE.search(line)
+        if dm:
+            current = f"{dm.group(3)}-{_MONTH_IDX[dm.group(1)]:02d}-{int(dm.group(2)):02d}"
+        s = line.strip()
+        low = s.lower()
+        if _TOPIC_MARKER.match(s):
+            expect_subject = True
+            continue
+        if expect_subject and s:
+            subject = s
+            expect_subject = False
+            continue
+        if low.startswith("objet :") or low.startswith("objet:"):
+            subject = s.split(":", 1)[1].strip() or subject
+        is_recipient = (low.startswith("to ") or s.startswith("À :")
+                        or low.startswith("à :") or s.startswith("A : "))
+        if is_recipient:
+            for addr in {a.lower() for a in _OFFICIAL_RE.findall(line)}:
+                out.append((addr, current, subject))
+    return out
+
+
+def run_pasted(db, path, email_index, dry_run, auto_publish, verbose):
+    """Import mails from text pasted out of the Groups web view (last resort when
+    no mbox/eml export is possible). Matches the `to:` élu address, skips media,
+    and skips anything already recorded for the same person on the same date
+    (so it won't duplicate the mbox/IMAP imports)."""
+    import hashlib
+    from email.message import EmailMessage
+
+    text = open(path, encoding="utf-8", errors="replace").read()
+    entries = extract_pasted_recipients(text)
+    log(f"pasted {path!r}: {len(entries)} recipient occurrence(s) with an official domain.")
+
+    existing = set()
+    try:
+        for pid, d in db.execute(
+            "SELECT xp.person_id, m.mail_date FROM mails m "
+            "JOIN mail_persons xp ON xp.mail_id = m.id "
+            "WHERE m.summary LIKE 'Mail d''un citoyen%'"
+        ):
+            existing.add((pid, d))
+    except sqlite3.OperationalError:
+        pass
+
+    imported = dup = overlap = unmatched = 0
+    seen = set()
+    for idx, (addr, date_iso, subject) in enumerate(entries):
+        people = email_index.get(addr, [])
+        if not people:
+            unmatched += 1
+            if verbose:
+                log(f"  [no match] {addr} ({date_iso})")
+            continue
+        pid, name = people[0]
+        key = (pid, date_iso)
+        if date_iso and (key in existing or key in seen):
+            overlap += 1
+            continue
+        seen.add(key)
+        mid = "<pasted-%s@campagne>" % hashlib.sha1(
+            f"{addr}|{date_iso}|{idx}".encode()).hexdigest()[:16]
+        if already_imported(db, mid):
+            dup += 1
+            continue
+        msg = EmailMessage()
+        msg["To"] = addr
+        msg["Message-ID"] = mid
+        msg["Subject"] = subject or "Mail campagne (import historique)"
+        if date_iso:
+            y, m, d = date_iso.split("-")
+            msg["Date"] = f"{int(d)} {_MONTHS[int(m)]} {y} 00:00:00 +0000"
+        if dry_run:
+            log(f"  [dry-run] {'publish' if auto_publish else 'stage'} -> {name} | {date_iso}")
+        else:
+            stage_message(db, msg, None, f"pasted:{os.path.basename(path)}",
+                          [(pid, name)], dry_run, auto_publish)
+        imported += 1
+
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: {dup} | "
+        f"overlap with existing skipped: {overlap} | no match: {unmatched}.")
+
+
+def run_eml_dir(db, path, email_index, dry_run, auto_publish, verbose, match_body):
+    """Import a directory of .eml files (e.g. a Takeout of individual messages).
+
+    Digests are exploded like in the mbox path. With `match_body`, forwarded
+    threads whose élu·e address sits in the body are matched too — used for the
+    historical 'Fw:' exports where the recipient header is gone.
+    """
+    files = sorted(f for f in os.listdir(path) if f.lower().endswith(".eml"))
+    log(f"eml dir {path!r}: {len(files)} .eml file(s) to inspect"
+        + (" (matching body addresses)" if match_body else "") + ".")
+    imported = skipped_dup = unmatched = 0
+    for name in files:
+        with open(os.path.join(path, name), "rb") as fh:
+            top = email.message_from_binary_file(fh)
+        for msg in iter_leaf_messages(top):
+            result = handle_message(db, msg, None, f"eml:{name}", email_index,
+                                    dry_run, auto_publish, verbose, match_body)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
+    if not dry_run:
+        db.commit()
+    verb = "published" if auto_publish else "staged"
+    log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
+        f"{skipped_dup} | no match: {unmatched}.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--eml-dir",
+                        help="import a directory of .eml files instead of IMAP "
+                             "(one-off historical backfill from a Takeout)")
+    parser.add_argument("--pasted",
+                        help="import from text copy-pasted out of the Groups web "
+                             "view (parses the 'to: <élu>' lines; last-resort "
+                             "historical backfill)")
+    parser.add_argument("--match-body", action="store_true",
+                        help="also match official-domain élu·e addresses quoted in "
+                             "the body (for forwarded threads; use with --eml-dir)")
+    parser.add_argument("--mbox",
+                        help="import from a local .mbox file (Google Takeout of "
+                             "the group's archive) instead of IMAP — for the "
+                             "one-off historical backfill")
+    parser.add_argument("--backfill", action="store_true",
+                        help="sweep the whole mailbox instead of only new UIDs")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="show what would be staged without writing anything")
+    parser.add_argument("--auto-publish", action="store_true",
+                        help="publish directly to the real mails table instead of "
+                             "the moderation queue (also enabled by IMPORT_AUTO_PUBLISH=1)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print subject and recipient addresses of unmatched "
+                             "messages (to diagnose why they don't match a person)")
+    args = parser.parse_args()
+
+    auto_publish = args.auto_publish or os.environ.get("IMPORT_AUTO_PUBLISH") == "1"
+
+    db_path = os.environ.get("IMAP_DB_PATH", DEFAULT_DB)
+    mailbox = os.environ.get("IMAP_MAILBOX", "INBOX")
+
+    db = sqlite3.connect(db_path)
+    db.execute("PRAGMA foreign_keys = ON")
+    if not args.dry_run:
+        ensure_state_table(db)  # creating tables is a write — skip it in dry-run
+    email_index = load_email_index(db)
+    log(f"Loaded {len(email_index)} distinct person e-mail(s) from {db_path}.")
+    mode = "auto-publish (real mails)" if auto_publish else "moderation queue"
+    log(f"Output: {mode}.")
+
+    # Historical backfill from local files — no IMAP.
+    if args.mbox or args.eml_dir or args.pasted:
+        try:
+            if args.mbox:
+                run_mbox(db, args.mbox, email_index, args.dry_run, auto_publish,
+                         args.verbose)
+            if args.eml_dir:
+                run_eml_dir(db, args.eml_dir, email_index, args.dry_run,
+                            auto_publish, args.verbose, args.match_body)
+            if args.pasted:
+                run_pasted(db, args.pasted, email_index, args.dry_run,
+                           auto_publish, args.verbose)
+        finally:
+            db.close()
+        return
+
+    conn = connect_imap()
+    try:
+        last_uid = get_last_uid(db, mailbox)
+        uids = fetch_uids(conn, mailbox, last_uid, args.backfill)
+        log(f"Mailbox {mailbox!r}: {len(uids)} message(s) to inspect "
+            f"({'backfill' if args.backfill else f'UID > {last_uid}'}).")
+
+        imported, skipped_dup, unmatched, max_uid = 0, 0, 0, last_uid
+        for uid in uids:
+            status, data = conn.uid("fetch", str(uid), "(RFC822)")
+            if status != "OK" or not data or data[0] is None:
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            result = handle_message(db, msg, uid, mailbox, email_index,
+                                    args.dry_run, auto_publish, args.verbose)
+            imported += result == "staged"
+            skipped_dup += result == "dup"
+            unmatched += result == "unmatched"
+            max_uid = max(max_uid, uid)
+
+        if not args.dry_run:
+            set_last_uid(db, mailbox, max_uid)
+            db.commit()
+
+        verb = "published" if auto_publish else "staged"
+        log(f"Done. Mails {verb}: {imported} | already-imported skipped: "
+            f"{skipped_dup} | no match: {unmatched} | last UID now: "
+            f"{max_uid if not args.dry_run else last_uid}.")
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
