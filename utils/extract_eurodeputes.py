@@ -49,11 +49,27 @@ def get(path, **params):
     url = f"{API}/{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"Accept": "application/ld+json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        if r.status == 204:  # the API answers "no match" with an empty body
-            return {"data": []}
-        return json.loads(r.read().decode("utf-8"))
+    # Under rapid sequential calls the API occasionally answers a detail request
+    # with an empty body and a 200 status, which json.loads rejects. Retry a few
+    # times with a growing pause before giving up, so one hiccup doesn't abort a
+    # whole run of 81 members. (204 is its documented "no match" answer.)
+    last_err = None
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(
+                url, headers={"Accept": "application/ld+json"}
+            )
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                if r.status == 204:
+                    return {"data": []}
+                body = r.read().decode("utf-8").strip()
+            if not body:
+                raise ValueError("empty body (HTTP 200)")
+            return json.loads(body)  # JSONDecodeError is a ValueError
+        except (urllib.error.URLError, ValueError) as exc:
+            last_err = exc
+            time.sleep(0.5 * (attempt + 1))
+    raise last_err
 
 
 def main():
@@ -72,7 +88,7 @@ def main():
         ident = m["identifier"]
         try:
             detail = get(f"meps/{ident}")["data"][0]
-        except (urllib.error.URLError, KeyError, IndexError) as exc:
+        except (urllib.error.URLError, KeyError, IndexError, ValueError) as exc:
             # One unreachable member must not cost us the other 80.
             print(f"  ! {m.get('label', ident)}: detail unavailable ({exc})")
             detail = {}
