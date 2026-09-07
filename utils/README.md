@@ -152,6 +152,18 @@ New data lives in `members` and `mail_members` (created by the script); the mail
 summary also names the member and the élu·e, so it shows in the existing UI
 without any change to `app.py`.
 
+**Member address format** doesn't matter: the full address is taken verbatim
+from the header (`prenom@`, `prenom.n@`, `p.nom@`, …), so disambiguated logins
+work with no special handling. Only the domain (`@pauseia.fr`) and the
+group-exclusion list matter.
+
+**Élu·e replies from a non-official address** (personal, cabinet, attaché) are
+still attributed: the importer records each thread's Message-ID → élu·e, then
+uses a reply's `In-Reply-To` / `References` to inherit the right élu·e even when
+the sending address isn't in `persons.email` (`thread_persons` table). A member
+writing to a brand-new *non-official* élu address with no prior thread is the
+only case left unmatched — add that address to the person's record if it recurs.
+
 ## 5. Campaign-mail import (`import_campaign_mails.py`)
 
 Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from

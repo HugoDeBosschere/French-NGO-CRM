@@ -40,6 +40,7 @@ import argparse
 import email
 import imaplib
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -95,9 +96,53 @@ def ensure_member_tables(db):
             member_id INTEGER NOT NULL REFERENCES members(id)  ON DELETE CASCADE,
             PRIMARY KEY (mail_id, member_id)
         );
+        -- Message-ID -> élu·e person ids (CSV), so a reply from a NON-official
+        -- address can still be attributed to the right élu·e via In-Reply-To /
+        -- References (thread linking).
+        CREATE TABLE IF NOT EXISTS thread_persons (
+            message_id TEXT PRIMARY KEY,
+            person_ids TEXT NOT NULL
+        );
         """
     )
     db.commit()
+
+
+def _referenced_ids(msg):
+    """Message-IDs this message replies to (In-Reply-To + References)."""
+    raw = " ".join(msg.get_all("In-Reply-To", []) + msg.get_all("References", []))
+    return set(re.findall(r"<[^>]+>", raw))
+
+
+def remember_thread(db, message_id, person_ids):
+    if message_id and person_ids:
+        db.execute(
+            "INSERT OR REPLACE INTO thread_persons (message_id, person_ids) VALUES (?, ?)",
+            (message_id, ",".join(str(p) for p in person_ids)),
+        )
+
+
+def thread_persons_lookup(db, msg):
+    """Return [(pid, name)] inherited from the thread this message replies to."""
+    refs = _referenced_ids(msg)
+    if not refs:
+        return []
+    pids = []
+    for ref in refs:
+        row = db.execute(
+            "SELECT person_ids FROM thread_persons WHERE message_id = ?", (ref,)
+        ).fetchone()
+        if row:
+            pids.extend(int(x) for x in row[0].split(",") if x)
+    out, seen = [], set()
+    for pid in pids:
+        if pid in seen:
+            continue
+        r = db.execute("SELECT id, name FROM persons WHERE id = ?", (pid,)).fetchone()
+        if r:
+            seen.add(pid)
+            out.append((r[0], r[1]))
+    return out
 
 
 def upsert_member(db, email_addr, display, now):
@@ -119,12 +164,14 @@ def upsert_member(db, email_addr, display, now):
     return mid
 
 
-def classify(msg, email_index):
+def classify(msg, db, email_index):
     """Work out (direction, élu matches, (member_email, member_display)).
 
     direction 'sent'     = a member wrote to an élu·e (member in From, élu in To/Cc)
     direction 'received' = an élu·e wrote to a member (élu in From, member in To/Cc)
-    Returns (None, [], None) when it isn't a clear member↔élu message.
+    Falls back to thread linking so a reply from a NON-official élu·e address is
+    still attributed via In-Reply-To / References. Returns (None, [], None) when
+    it isn't a clear member↔élu message.
     """
     from_pairs = addr_pairs(msg, "From")
     to_pairs = addr_pairs(msg, "To", "Cc")
@@ -134,22 +181,34 @@ def classify(msg, email_index):
     from_member = [(d, a) for d, a in from_pairs if is_member(a)]
     to_member = [(d, a) for d, a in to_pairs if is_member(a)]
 
-    if from_member and to_official:
-        direction, elu_addrs, member = "sent", to_official, from_member[0]
-    elif from_official and to_member:
-        direction, elu_addrs, member = "received", from_official, to_member[0]
-    else:
-        return None, [], None
+    def resolve(addrs):
+        out, seen = [], set()
+        for a in addrs:
+            for pid, name in email_index.get(a, []):
+                if pid not in seen:
+                    seen.add(pid)
+                    out.append((pid, name))
+        return out
 
-    matches, seen = [], set()
-    for a in elu_addrs:
-        for pid, name in email_index.get(a, []):
-            if pid not in seen:
-                seen.add(pid)
-                matches.append((pid, name))
-    if not matches:
-        return None, [], None
-    return direction, matches, (member[1], member[0])
+    # 1) Address-based (official élu·e domain in the headers).
+    if from_member and to_official:
+        matches = resolve(to_official)
+        if matches:
+            return "sent", matches, (from_member[0][1], from_member[0][0])
+    if from_official and to_member:
+        matches = resolve(from_official)
+        if matches:
+            return "received", matches, (to_member[0][1], to_member[0][0])
+
+    # 2) Thread linking: a reply involving a member, from/to an address we can't
+    #    match directly — inherit the élu·e from the mail it replies to.
+    inherited = thread_persons_lookup(db, msg)
+    if inherited:
+        if to_member and not from_member:          # élu·e (other address) → member
+            return "received", inherited, (to_member[0][1], to_member[0][0])
+        if from_member:                            # member follow-up in the thread
+            return "sent", inherited, (from_member[0][1], from_member[0][0])
+    return None, [], None
 
 
 def record(db, msg, direction, matches, member, dry_run, auto_publish):
@@ -187,6 +246,7 @@ def record(db, msg, direction, matches, member, dry_run, auto_publish):
                        [(mail_id, pid) for pid, _n in matches])
         db.execute("INSERT OR IGNORE INTO mail_members (mail_id, member_id) "
                    "VALUES (?, ?)", (mail_id, member_id))
+        remember_thread(db, message_id, [pid for pid, _n in matches])
     else:
         db.execute(
             """
@@ -197,6 +257,7 @@ def record(db, msg, direction, matches, member, dry_run, auto_publish):
             """,
             (mail_date, direction, summary, elu_names, IMPORT_SOURCE, now),
         )
+        remember_thread(db, message_id, [pid for pid, _n in matches])
 
     if message_id:
         db.execute(
@@ -260,7 +321,7 @@ def main():
                 if already_imported(db, mid):
                     dup += 1
                 else:
-                    direction, matches, member = classify(msg, email_index)
+                    direction, matches, member = classify(msg, db, email_index)
                     if direction:
                         record(db, msg, direction, matches, member,
                                args.dry_run, auto_publish)
