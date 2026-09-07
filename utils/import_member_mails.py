@@ -43,6 +43,7 @@ import os
 import re
 import sqlite3
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from email.utils import getaddresses
 
@@ -132,6 +133,48 @@ def load_email_index_with_aliases(db):
     return index
 
 
+def _canon(s):
+    """Lower-case, strip accents, reduce every non-letter run to a single dot."""
+    s = "".join(c for c in unicodedata.normalize("NFKD", s or "")
+                if not unicodedata.combining(c))
+    return re.sub(r"\.+", ".", re.sub(r"[^a-z]+", ".", s.lower())).strip(".")
+
+
+def build_name_pattern_index(db):
+    """Unambiguous name-pattern → (id, name) maps for élu·es:
+    `prenom.nom` (0 collisions in practice) and `p.nom` (initial + surname).
+    Ambiguous keys (homonyms) are dropped so a pattern never matches two people.
+    """
+    pn, pnom, name_of = {}, {}, {}
+    amb_pn, amb_pnom = set(), set()
+    for pid, name in db.execute("SELECT id, name FROM persons"):
+        toks = _canon(name).split(".")
+        if len(toks) < 2 or not all(toks):
+            continue
+        name_of[pid] = name
+        prenom, nom = toks[0], ".".join(toks[1:])
+        for key, d, amb in ((f"{prenom}.{nom}", pn, amb_pn),
+                            (f"{prenom[0]}.{nom}", pnom, amb_pnom)):
+            if key in d and d[key] != pid:
+                amb.add(key)
+            else:
+                d[key] = pid
+    for k in amb_pn:
+        pn.pop(k, None)
+    for k in amb_pnom:
+        pnom.pop(k, None)
+    return pn, pnom, name_of
+
+
+def name_pattern_match(local_part, patterns):
+    """Return (id, name) if the address local-part matches a unique élu·e name
+    pattern, else None. `patterns` is (pn, pnom, name_of)."""
+    pn, pnom, name_of = patterns
+    key = _canon(local_part)
+    pid = pn.get(key) or pnom.get(key)
+    return (pid, name_of[pid]) if pid else None
+
+
 def learn_alias(db, email_addr, person_id, now):
     db.execute(
         "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at) "
@@ -196,8 +239,8 @@ def upsert_member(db, email_addr, display, now):
     return mid
 
 
-def classify(msg, db, email_index):
-    """Work out (direction, élu matches, (member_email, member_display)).
+def classify(msg, db, email_index, name_patterns=None):
+    """Work out (direction, matches, member, learn, low_confidence).
 
     direction 'sent'     = a member wrote to an élu·e (member in From, élu in To/Cc)
     direction 'received' = an élu·e wrote to a member (élu in From, member in To/Cc)
@@ -225,9 +268,9 @@ def classify(msg, db, email_index):
     to_matches = resolve(a for _d, a in to_pairs)
     from_matches = resolve(a for _d, a in from_pairs)
     if from_member and to_matches:
-        return "sent", to_matches, (from_member[0][1], from_member[0][0]), None
+        return "sent", to_matches, (from_member[0][1], from_member[0][0]), None, False
     if from_matches and to_member:
-        return "received", from_matches, (to_member[0][1], to_member[0][0]), None
+        return "received", from_matches, (to_member[0][1], to_member[0][0]), None, False
 
     # 2) Body scan: a reply usually quotes the original, which carries the élu·e's
     #    official address even when the reply's From is something else.
@@ -235,7 +278,7 @@ def classify(msg, db, email_index):
         body_official = {a.lower() for a in _OFFICIAL_RE.findall(body_text(msg))}
         matches = resolve(body_official)
         if matches:
-            return "received", matches, (to_member[0][1], to_member[0][0]), None
+            return "received", matches, (to_member[0][1], to_member[0][0]), None, False
 
     # 3) Thread linking: inherit the élu·e from the mail this one replies to, and
     #    LEARN the reply's non-official From address as an alias of that élu·e.
@@ -247,13 +290,34 @@ def classify(msg, db, email_index):
                                  if not is_official(a) and not is_member(a)]
             if len(inherited) == 1 and non_official_from:
                 learn = (non_official_from[0], inherited[0][0])
-            return "received", inherited, (to_member[0][1], to_member[0][0]), learn
+            return "received", inherited, (to_member[0][1], to_member[0][0]), learn, False
         if from_member:                            # member follow-up in the thread
-            return "sent", inherited, (from_member[0][1], from_member[0][0]), None
-    return None, [], None, None
+            return "sent", inherited, (from_member[0][1], from_member[0][0]), None, False
+
+    # 4) Name-pattern (last resort, LOW CONFIDENCE → always moderation): the other
+    #    party's address local-part matches a unique élu·e name (prenom.nom / p.nom).
+    #    Guards against homonyms via the ambiguity-pruned index, but the address
+    #    owner may still not be the élu, so a human confirms.
+    if name_patterns:
+        if from_member and not to_matches:
+            for _d, a in to_pairs:
+                if is_member(a):
+                    continue
+                hit = name_pattern_match(a.split("@", 1)[0], name_patterns)
+                if hit:
+                    return "sent", [hit], (from_member[0][1], from_member[0][0]), None, True
+        if to_member and not from_matches:
+            for _d, a in from_pairs:
+                if is_member(a):
+                    continue
+                hit = name_pattern_match(a.split("@", 1)[0], name_patterns)
+                if hit:
+                    return "received", [hit], (to_member[0][1], to_member[0][0]), None, True
+    return None, [], None, None, False
 
 
-def record(db, msg, direction, matches, member, learn, dry_run, auto_publish):
+def record(db, msg, direction, matches, member, learn, low_confidence,
+           dry_run, auto_publish):
     message_id = (msg.get("Message-ID") or "").strip()
     subject = decoded(msg.get("Subject")) or "(sans objet)"
     mail_date = mail_date_iso(msg)
@@ -265,10 +329,17 @@ def record(db, msg, direction, matches, member, learn, dry_run, auto_publish):
         summary = f"Mail de {member_name} à {elu_names} — « {subject} »"
     else:
         summary = f"Mail de {elu_names} à {member_name} — « {subject} »"
+    if low_confidence:
+        summary += " [à confirmer : élu·e identifié·e par nom]"
+
+    # Low-confidence (name-pattern) matches always go to moderation, even in
+    # auto-publish mode, so a human confirms the élu·e before it is published.
+    publish = auto_publish and not low_confidence
 
     if dry_run:
         note = f" [+alias {learn[0]}]" if learn else ""
-        log(f"  [dry-run] {'publish' if auto_publish else 'stage'} {direction} -> "
+        note += " [MODÉRATION: nom]" if low_confidence else ""
+        log(f"  [dry-run] {'publish' if publish else 'stage'} {direction} -> "
             f"{member_name} / {elu_names} | {mail_date} | {subject!r}{note}")
         return
 
@@ -276,7 +347,7 @@ def record(db, msg, direction, matches, member, learn, dry_run, auto_publish):
         learn_alias(db, learn[0], learn[1], now)  # remember élu·e's non-official addr
     member_id = upsert_member(db, member_email, member_display, now)
 
-    if auto_publish:
+    if publish:
         cur = db.execute(
             """
             INSERT INTO mails (mail_date, direction, important, summary,
@@ -349,6 +420,7 @@ def main():
         ensure_member_tables(db)
     # Aliases read is tolerant of the table not existing yet (e.g. dry-run first run).
     email_index = load_email_index_with_aliases(db)
+    name_patterns = build_name_pattern_index(db)
     log(f"Loaded {len(email_index)} élu·e e-mail(s) from {db_path}. "
         f"Output: {'auto-publish' if auto_publish else 'moderation queue'}.")
 
@@ -367,10 +439,11 @@ def main():
                 if already_imported(db, mid):
                     dup += 1
                 else:
-                    direction, matches, member, learn = classify(msg, db, email_index)
+                    direction, matches, member, learn, low_conf = classify(
+                        msg, db, email_index, name_patterns)
                     if direction:
                         record(db, msg, direction, matches, member, learn,
-                               args.dry_run, auto_publish)
+                               low_conf, args.dry_run, auto_publish)
                         imported += 1
                     else:
                         skipped += 1
