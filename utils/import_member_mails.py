@@ -141,38 +141,63 @@ def _canon(s):
 
 
 def build_name_pattern_index(db):
-    """Unambiguous name-pattern → (id, name) maps for élu·es:
-    `prenom.nom` (0 collisions in practice) and `p.nom` (initial + surname).
-    Ambiguous keys (homonyms) are dropped so a pattern never matches two people.
+    """Index of élu·es for fuzzy address-local-part matching.
+
+    Returns (persons, by_nom) where each entry is (id, name, prenom, nom) with
+    `prenom` the first name and `nom` the surname tokens concatenated (both
+    accent-stripped, lower-cased, letters only). `by_nom` groups them by surname.
     """
-    pn, pnom, name_of = {}, {}, {}
-    amb_pn, amb_pnom = set(), set()
+    persons, by_nom = [], {}
     for pid, name in db.execute("SELECT id, name FROM persons"):
-        toks = _canon(name).split(".")
-        if len(toks) < 2 or not all(toks):
+        toks = [t for t in _canon(name).split(".") if t]
+        if len(toks) < 2:
             continue
-        name_of[pid] = name
-        prenom, nom = toks[0], ".".join(toks[1:])
-        for key, d, amb in ((f"{prenom}.{nom}", pn, amb_pn),
-                            (f"{prenom[0]}.{nom}", pnom, amb_pnom)):
-            if key in d and d[key] != pid:
-                amb.add(key)
-            else:
-                d[key] = pid
-    for k in amb_pn:
-        pn.pop(k, None)
-    for k in amb_pnom:
-        pnom.pop(k, None)
-    return pn, pnom, name_of
+        prenom, nom = toks[0], "".join(toks[1:])
+        entry = (pid, name, prenom, nom)
+        persons.append(entry)
+        by_nom.setdefault(nom, []).append(entry)
+    return persons, by_nom
 
 
-def name_pattern_match(local_part, patterns):
-    """Return (id, name) if the address local-part matches a unique élu·e name
-    pattern, else None. `patterns` is (pn, pnom, name_of)."""
-    pn, pnom, name_of = patterns
-    key = _canon(local_part)
-    pid = pn.get(key) or pnom.get(key)
-    return (pid, name_of[pid]) if pid else None
+def name_pattern_match(local_part, index):
+    """Return (id, name) if the address local-part maps to EXACTLY ONE élu·e by
+    name, else None. Handles: prenom.nom, p.nom, a prefix of the first name +
+    surname (e.g. rom.deleglise), both orders, and the same without a dot
+    (romdeleglise). Requires a unique match, so homonyms are skipped, never
+    guessed — and every hit is routed to moderation anyway.
+    """
+    persons, by_nom = index
+    s = _canon(local_part)
+    toks = [t for t in s.split(".") if t]
+    cand = set()
+
+    def add_prefix(pref, nom):
+        if not pref:
+            return
+        for pid, name, prenom, pnom in by_nom.get(nom, []):
+            if prenom.startswith(pref):
+                cand.add((pid, name))
+
+    if len(toks) == 2:
+        a, b = toks
+        add_prefix(a, b)   # <prefix-prénom>.<nom>
+        add_prefix(b, a)   # <nom>.<prefix-prénom>
+
+    joined = "".join(toks)  # no-dot concatenation, e.g. romdeleglise
+    if joined:
+        for pid, name, prenom, pnom in persons:
+            if not pnom:
+                continue
+            if joined.endswith(pnom):          # <prefix-prénom><nom>
+                pref = joined[:-len(pnom)]
+                if pref and prenom.startswith(pref):
+                    cand.add((pid, name))
+            if joined.startswith(pnom):        # <nom><prefix-prénom>
+                pref = joined[len(pnom):]
+                if pref and prenom.startswith(pref):
+                    cand.add((pid, name))
+
+    return next(iter(cand)) if len(cand) == 1 else None
 
 
 def learn_alias(db, email_addr, person_id, now):
