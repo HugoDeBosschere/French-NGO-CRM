@@ -106,6 +106,52 @@ campaign-mail backfill so senator mails match.
 > tool falls back to their official contact form, and nothing can match them by
 > address. That is expected, not a bug.
 
+## 6. Members' correspondence with élu·es (`import_member_mails.py`)
+
+Tracks the association's own members (@pauseia.fr) exchanging mail with élu·es —
+**both directions** (member → élu = `sent`, élu → member = `received`) — and
+attributes the member. Companion to the campaign importer; shares the same
+matching/dedup helpers and the same DB.
+
+**Capture (no per-member setup, newcomers covered automatically).** A Google
+Workspace **content-compliance / routing rule** copies every message where one
+side is an élu·e address (`@senat.fr` / `@assemblee-nationale.fr` /
+`@europarl.europa.eu`) and the other a `@pauseia.fr` account into one audit
+mailbox (e.g. `suivi-membres@pauseia.fr`). Set it up in
+`admin.google.com → Apps → Google Workspace → Gmail → Compliance → Content
+compliance`: scope = internal sending + receiving, condition = recipient/sender
+matches the élu domains, action = add `suivi-membres@pauseia.fr` in Bcc (or
+"also deliver to"). The rule applies org-wide, so new members need nothing.
+
+**Members table.** Created on the fly from the mail headers (`Name <email>`): a
+member appears the first time they mail an élu·e. Group addresses (`campagne@`,
+`contact@`, `all@`, …) are excluded (`GROUP_ADDRESSES` in the script). An
+optional Google Directory sync could pre-populate members who haven't mailed yet
+— not required for the automation to work.
+
+**Config** (secrets env file): `MEMBER_IMAP_USER`, `MEMBER_IMAP_APP_PASSWORD`
+(the audit mailbox), optional `MEMBER_IMAP_HOST`/`PORT`/`MAILBOX`. Shares
+`IMAP_DB_PATH` and `IMPORT_AUTO_PUBLISH` with the campaign importer.
+
+```bash
+python3 utils/import_member_mails.py --backfill --dry-run --verbose   # preview
+python3 utils/import_member_mails.py --backfill --auto-publish         # first pass
+python3 utils/import_member_mails.py                                   # daily incremental
+```
+
+**Daily run:** install `deploy/import-member-mails.{service,timer}` (06:10) the
+same way as the campaign unit:
+```bash
+sudo cp utils/deploy/import-member-mails.service /etc/systemd/system/
+sudo cp utils/deploy/import-member-mails.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now import-member-mails.timer
+```
+
+New data lives in `members` and `mail_members` (created by the script); the mail
+summary also names the member and the élu·e, so it shows in the existing UI
+without any change to `app.py`.
+
 ## 5. Campaign-mail import (`import_campaign_mails.py`)
 
 Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from
