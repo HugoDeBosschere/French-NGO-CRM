@@ -174,6 +174,54 @@ needed. The system gets more robust on its own over time. The only case still
 unmatched is a member writing to a brand-new non-official address that has never
 appeared in a thread; it resolves itself as soon as one reply threads back.
 
+## 7. Eurodéputé·es — automatic weekly refresh (`extract_` + `insert_eurodeputes.py`)
+
+French MEPs are seeded like the other chambers, but — unlike deputies/senators —
+their list is kept **in sync automatically**, so a mid-term replacement or a new
+intake after a European election appears in the CRM on its own (this closes the
+"MEPs present locally but missing on the deployed app" gap).
+
+- **`extract_eurodeputes.py`** — downloads the members *sitting today* from the
+  European Parliament open-data API (`data.europarl.europa.eu`, endpoint
+  `meps/show-current?country-of-representation=FR`). Emails are **published by
+  the Parliament** (`hasEmail`), never guessed. Writes
+  `actual_dataset/eurodeputes_fr.json`.
+- **`insert_eurodeputes.py`** — upserts them into `persons` (role
+  `Député·e européen·ne`, group mapped to the exact `POLITICAL_GROUPS` label,
+  email as published). Idempotent: new MEPs inserted, missing emails backfilled,
+  departed MEPs **reported but never deleted** (their meeting/mail history is
+  kept).
+
+**Why it stays fast and doesn't get rate-limited.** The per-MEP detail endpoint
+rate-limits (HTTP 429), and a member's email never changes, so `extract` uses the
+previous `eurodeputes_fr.json` as a **cache** and only calls the detail endpoint
+for identifiers it has never resolved (a genuine newcomer). A normal week is one
+list call and **zero** detail calls; the week after an election, only the handful
+of new members. A guard aborts the run (leaving the good file untouched) if more
+than a quarter of members come back without an email — the signature of a
+throttled run — so a degraded fetch can never overwrite good data.
+
+```bash
+python3 utils/extract_eurodeputes.py     # refresh the dataset (cached)
+python3 utils/insert_eurodeputes.py      # upsert into persons
+```
+
+**Weekly run:** install `deploy/sync-eurodeputes.{service,timer}` (Monday 05:50,
+before the mail imports). The service seeds the committed dataset into the
+container first (so a restarted container has a warm cache), then runs
+`extract && insert`:
+
+```bash
+sudo cp utils/deploy/sync-eurodeputes.service /etc/systemd/system/
+sudo cp utils/deploy/sync-eurodeputes.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sync-eurodeputes.timer
+```
+
+> **Automatic:** new/replacement MEPs (with email) and political-group changes.
+> **Deliberately manual:** removing an MEP who has left the Parliament (kept for
+> history), and overwriting an existing official email (never auto-replaced).
+
 ## 5. Campaign-mail import (`import_campaign_mails.py`)
 
 Unlike the seed scripts above, this one is **recurring**. It feeds the CRM from
