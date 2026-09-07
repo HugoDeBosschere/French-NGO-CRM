@@ -158,11 +158,21 @@ work with no special handling. Only the domain (`@pauseia.fr`) and the
 group-exclusion list matter.
 
 **Élu·e replies from a non-official address** (personal, cabinet, attaché) are
-still attributed: the importer records each thread's Message-ID → élu·e, then
-uses a reply's `In-Reply-To` / `References` to inherit the right élu·e even when
-the sending address isn't in `persons.email` (`thread_persons` table). A member
-writing to a brand-new *non-official* élu address with no prior thread is the
-only case left unmatched — add that address to the person's record if it recurs.
+still attributed, by three layered fallbacks:
+
+1. **Address + learned aliases** — every address in the headers is resolved
+   against `persons.email` **and** learned aliases (`person_emails`).
+2. **Body scan** — a reply usually quotes the original, which carries the élu·e's
+   official address; that is matched even if the reply's `From` is something else.
+3. **Thread linking** — `In-Reply-To` / `References` inherit the élu·e from the
+   mail this one replies to (`thread_persons`).
+
+**Auto-learning:** when a reply is tied to an élu·e via the thread but comes from
+a new non-official address, that address is **recorded as an alias**
+(`person_emails`), so all later mails to/from it match directly — no thread
+needed. The system gets more robust on its own over time. The only case still
+unmatched is a member writing to a brand-new non-official address that has never
+appeared in a thread; it resolves itself as soon as one reply threads back.
 
 ## 5. Campaign-mail import (`import_campaign_mails.py`)
 

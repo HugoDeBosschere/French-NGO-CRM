@@ -48,8 +48,9 @@ from email.utils import getaddresses
 
 # Reuse the building blocks already validated in the campaign importer.
 from import_campaign_mails import (  # noqa: E402
-    OFFICIAL_DOMAINS, decoded, ensure_state_table, get_last_uid, set_last_uid,
-    load_email_index, already_imported, fetch_uids, mail_date_iso, log,
+    OFFICIAL_DOMAINS, _OFFICIAL_RE, body_text, decoded, ensure_state_table,
+    get_last_uid, set_last_uid, load_email_index, already_imported, fetch_uids,
+    mail_date_iso, log,
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -103,9 +104,40 @@ def ensure_member_tables(db):
             message_id TEXT PRIMARY KEY,
             person_ids TEXT NOT NULL
         );
+        -- Learned non-official addresses of an élu·e (cabinet, attaché, personal),
+        -- discovered via thread linking, so later mails match them directly.
+        CREATE TABLE IF NOT EXISTS person_emails (
+            email     TEXT PRIMARY KEY,
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            source    TEXT,
+            created_at TEXT NOT NULL
+        );
         """
     )
     db.commit()
+
+
+def load_email_index_with_aliases(db):
+    """persons.email plus learned person_emails aliases -> [(id, name)]."""
+    index = load_email_index(db)
+    try:
+        rows = db.execute(
+            "SELECT pe.email, p.id, p.name FROM person_emails pe "
+            "JOIN persons p ON p.id = pe.person_id"
+        )
+        for mail, pid, name in rows:
+            index.setdefault(mail.strip().lower(), []).append((pid, name))
+    except sqlite3.OperationalError:
+        pass
+    return index
+
+
+def learn_alias(db, email_addr, person_id, now):
+    db.execute(
+        "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at) "
+        "VALUES (?, ?, 'thread', ?)",
+        (email_addr.lower(), person_id, now),
+    )
 
 
 def _referenced_ids(msg):
@@ -176,8 +208,6 @@ def classify(msg, db, email_index):
     from_pairs = addr_pairs(msg, "From")
     to_pairs = addr_pairs(msg, "To", "Cc")
 
-    from_official = [a for _d, a in from_pairs if is_official(a)]
-    to_official = [a for _d, a in to_pairs if is_official(a)]
     from_member = [(d, a) for d, a in from_pairs if is_member(a)]
     to_member = [(d, a) for d, a in to_pairs if is_member(a)]
 
@@ -190,28 +220,40 @@ def classify(msg, db, email_index):
                     out.append((pid, name))
         return out
 
-    # 1) Address-based (official élu·e domain in the headers).
-    if from_member and to_official:
-        matches = resolve(to_official)
-        if matches:
-            return "sent", matches, (from_member[0][1], from_member[0][0])
-    if from_official and to_member:
-        matches = resolve(from_official)
-        if matches:
-            return "received", matches, (to_member[0][1], to_member[0][0])
+    # 1) Address-based: resolve against the index (official emails + learned
+    #    aliases), not just by domain — so a known non-official address matches.
+    to_matches = resolve(a for _d, a in to_pairs)
+    from_matches = resolve(a for _d, a in from_pairs)
+    if from_member and to_matches:
+        return "sent", to_matches, (from_member[0][1], from_member[0][0]), None
+    if from_matches and to_member:
+        return "received", from_matches, (to_member[0][1], to_member[0][0]), None
 
-    # 2) Thread linking: a reply involving a member, from/to an address we can't
-    #    match directly — inherit the élu·e from the mail it replies to.
+    # 2) Body scan: a reply usually quotes the original, which carries the élu·e's
+    #    official address even when the reply's From is something else.
+    if to_member and not from_member:
+        body_official = {a.lower() for a in _OFFICIAL_RE.findall(body_text(msg))}
+        matches = resolve(body_official)
+        if matches:
+            return "received", matches, (to_member[0][1], to_member[0][0]), None
+
+    # 3) Thread linking: inherit the élu·e from the mail this one replies to, and
+    #    LEARN the reply's non-official From address as an alias of that élu·e.
     inherited = thread_persons_lookup(db, msg)
     if inherited:
         if to_member and not from_member:          # élu·e (other address) → member
-            return "received", inherited, (to_member[0][1], to_member[0][0])
+            learn = None
+            non_official_from = [a for _d, a in from_pairs
+                                 if not is_official(a) and not is_member(a)]
+            if len(inherited) == 1 and non_official_from:
+                learn = (non_official_from[0], inherited[0][0])
+            return "received", inherited, (to_member[0][1], to_member[0][0]), learn
         if from_member:                            # member follow-up in the thread
-            return "sent", inherited, (from_member[0][1], from_member[0][0])
-    return None, [], None
+            return "sent", inherited, (from_member[0][1], from_member[0][0]), None
+    return None, [], None, None
 
 
-def record(db, msg, direction, matches, member, dry_run, auto_publish):
+def record(db, msg, direction, matches, member, learn, dry_run, auto_publish):
     message_id = (msg.get("Message-ID") or "").strip()
     subject = decoded(msg.get("Subject")) or "(sans objet)"
     mail_date = mail_date_iso(msg)
@@ -225,10 +267,13 @@ def record(db, msg, direction, matches, member, dry_run, auto_publish):
         summary = f"Mail de {elu_names} à {member_name} — « {subject} »"
 
     if dry_run:
+        note = f" [+alias {learn[0]}]" if learn else ""
         log(f"  [dry-run] {'publish' if auto_publish else 'stage'} {direction} -> "
-            f"{member_name} / {elu_names} | {mail_date} | {subject!r}")
+            f"{member_name} / {elu_names} | {mail_date} | {subject!r}{note}")
         return
 
+    if learn:
+        learn_alias(db, learn[0], learn[1], now)  # remember élu·e's non-official addr
     member_id = upsert_member(db, member_email, member_display, now)
 
     if auto_publish:
@@ -302,7 +347,8 @@ def main():
     if not args.dry_run:
         ensure_state_table(db)
         ensure_member_tables(db)
-    email_index = load_email_index(db)
+    # Aliases read is tolerant of the table not existing yet (e.g. dry-run first run).
+    email_index = load_email_index_with_aliases(db)
     log(f"Loaded {len(email_index)} élu·e e-mail(s) from {db_path}. "
         f"Output: {'auto-publish' if auto_publish else 'moderation queue'}.")
 
@@ -321,9 +367,9 @@ def main():
                 if already_imported(db, mid):
                     dup += 1
                 else:
-                    direction, matches, member = classify(msg, db, email_index)
+                    direction, matches, member, learn = classify(msg, db, email_index)
                     if direction:
-                        record(db, msg, direction, matches, member,
+                        record(db, msg, direction, matches, member, learn,
                                args.dry_run, auto_publish)
                         imported += 1
                     else:
