@@ -173,6 +173,45 @@ table.meetings tbody tr:hover { background: var(--brand-soft); }
 .tag-member { background: #e3f0ff; color: #1a4b8c; text-decoration: none; }
 .tag-citizen { background: #eee; color: #555; }
 
+/* Discreet message counter on a conversation row. */
+.thread-count {
+  margin-left: .4rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: var(--brand-soft, #eee);
+  color: var(--brand-ink, #555);
+  font-size: .72rem;
+  font-weight: 600;
+}
+
+/* Conversation (thread) view. */
+.thread { display: flex; flex-direction: column; gap: .8rem; }
+.thread-msg {
+  border: 1px solid #e2e2e2;
+  border-left: 3px solid #bbb;
+  border-radius: 8px;
+  padding: .6rem .8rem;
+  background: #fff;
+}
+.thread-msg.thread-sent { border-left-color: #1a4b8c; }
+.thread-msg.thread-received { border-left-color: #2e7d32; }
+.thread-msg-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.thread-msg-head .thread-open { margin-left: auto; }
+.thread-msg-summary { margin: .35rem 0; font-weight: 600; }
+.thread-msg-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: .9rem;
+  background: #fafafa;
+  padding: .5rem .6rem;
+  border-radius: 6px;
+  margin: 0;
+  max-height: 28rem;
+  overflow: auto;
+}
+.thread-nobody { margin: .2rem 0 0; font-style: italic; }
+
 /* ---------- Follow-up ("relance") badges ---------- */
 .due {
   display: inline-block;

@@ -113,6 +113,19 @@ def ensure_member_tables(db):
             source    TEXT,
             created_at TEXT NOT NULL
         );
+        -- Full body of a member mail (internal correspondence), for reading the
+        -- exchange in full in the CRM. Citizen mails are NOT stored here.
+        CREATE TABLE IF NOT EXISTS mail_bodies (
+            mail_id INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            body    TEXT
+        );
+        -- Conversation grouping: mails sharing a thread_key are one exchange.
+        CREATE TABLE IF NOT EXISTS mail_thread (
+            mail_id    INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            thread_key TEXT NOT NULL,
+            message_id TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mail_thread_key ON mail_thread(thread_key);
         """
     )
     db.commit()
@@ -212,6 +225,59 @@ def _referenced_ids(msg):
     """Message-IDs this message replies to (In-Reply-To + References)."""
     raw = " ".join(msg.get_all("In-Reply-To", []) + msg.get_all("References", []))
     return set(re.findall(r"<[^>]+>", raw))
+
+
+def _norm_subject(subject):
+    """Subject without Re:/Fwd:/Tr: prefixes, lower-cased — thread fallback key."""
+    s = re.sub(r"^\s*(re|ré|fwd?|tr|aw)\s*:\s*", "", subject or "", flags=re.I)
+    while s != (s2 := re.sub(r"^\s*(re|ré|fwd?|tr|aw)\s*:\s*", "", s, flags=re.I)):
+        s = s2
+    return s.strip().lower()
+
+
+def thread_key_of(msg):
+    """Stable key grouping a message with the rest of its conversation.
+
+    The thread root's own Message-ID: a reply carries it as the first entry of
+    References (or In-Reply-To), while the root message uses its own Message-ID —
+    so all messages of a thread share one key. Falls back to the normalised
+    subject when no Message-ID is available.
+    """
+    refs = re.findall(r"<[^>]+>", " ".join(msg.get_all("References", [])))
+    if refs:
+        return refs[0]
+    in_reply = re.findall(r"<[^>]+>", " ".join(msg.get_all("In-Reply-To", [])))
+    if in_reply:
+        return in_reply[0]
+    own = (msg.get("Message-ID") or "").strip()
+    if own:
+        return own
+    subj = _norm_subject(decoded(msg.get("Subject")))
+    return f"subj:{subj}" if subj else None
+
+
+def extract_body(msg, limit=100000):
+    """Readable body text: prefer text/plain, else HTML with tags stripped."""
+    plain, html = [], []
+    for part in msg.walk():
+        ctype = part.get_content_type()
+        if ctype == "text/plain":
+            try:
+                plain.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+        elif ctype == "text/html":
+            try:
+                html.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+    text = "\n".join(plain).strip()
+    if not text and html:
+        text = re.sub(r"<[^>]+>", " ", "\n".join(html))
+        text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
+    return text[:limit]
 
 
 def remember_thread(db, message_id, person_ids):
@@ -388,6 +454,14 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
         db.execute("INSERT OR IGNORE INTO mail_members (mail_id, member_id) "
                    "VALUES (?, ?)", (mail_id, member_id))
         remember_thread(db, message_id, [pid for pid, _n in matches])
+        body = extract_body(msg)
+        if body:
+            db.execute("INSERT OR REPLACE INTO mail_bodies (mail_id, body) "
+                       "VALUES (?, ?)", (mail_id, body))
+        tkey = thread_key_of(msg)
+        if tkey:
+            db.execute("INSERT OR REPLACE INTO mail_thread (mail_id, thread_key, "
+                       "message_id) VALUES (?, ?, ?)", (mail_id, tkey, message_id))
     else:
         db.execute(
             """

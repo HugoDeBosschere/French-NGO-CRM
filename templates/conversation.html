@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Conversation{% endblock %}
+{% block content %}
+{% set first = mails[0] %}
+<div class="page-head">
+  <h1>Conversation <span class="muted">· {{ mails|length }} message{{ '' if mails|length == 1 else 's' }}</span></h1>
+  <a class="btn btn-ghost" href="{{ url_for('exchanges') }}">Retour</a>
+</div>
+
+<div class="thread">
+  {% for x in mails %}
+  <div class="thread-msg thread-{{ x['direction'] }}">
+    <div class="thread-msg-head">
+      <span class="tag">{{ directions[x['direction']] }}</span>
+      <strong>{{ x['mail_date'] | fr_date }}</strong>
+      {% if x['membres'] %}<span class="muted">· 👥 {{ x['membres'] }}</span>{% endif %}
+      {% if x['elus'] %}<span class="muted">· 🏛️ {{ x['elus'] }}</span>{% endif %}
+      <a class="muted thread-open" href="{{ url_for('mail_detail', mail_id=x['id']) }}">détail</a>
+    </div>
+    <div class="thread-msg-summary">{{ x['summary'] }}</div>
+    {% if x['body'] %}
+      <pre class="thread-msg-body">{{ x['body'] }}</pre>
+    {% else %}
+      <p class="muted thread-nobody">(Corps non conservé pour ce message.)</p>
+    {% endif %}
+    {% if x['document_stored_name'] %}
+      <p>📎 <a href="{{ url_for('mail_download', mail_id=x['id']) }}">{{ x['document_orig_name'] }}</a></p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

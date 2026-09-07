@@ -394,6 +394,20 @@ def init_db():
             PRIMARY KEY (mail_id, member_id)
         );
 
+        -- Full body of member mails (see utils/import_member_mails.py) and the
+        -- conversation grouping key, so successive exchanges collapse into one
+        -- thread in the UI. Citizen campaign mails have no body stored.
+        CREATE TABLE IF NOT EXISTS mail_bodies (
+            mail_id INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            body    TEXT
+        );
+        CREATE TABLE IF NOT EXISTS mail_thread (
+            mail_id    INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            thread_key TEXT NOT NULL,
+            message_id TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mail_thread_key ON mail_thread(thread_key);
+
         -- Staging tables. Anonymous users (no password) submit drafts here via
         -- the "Déclarer une activité" forms. A certified user reviews them on the
         -- /moderation page and either promotes a draft into the real table above
@@ -1246,20 +1260,7 @@ def person_detail(person_id):
     ).fetchall()
     mails_sent = sum(1 for x in mails if x["direction"] == "sent")
     mails_received = sum(1 for x in mails if x["direction"] == "received")
-    # Which of those mails are exchanges with an association member (vs an
-    # anonymous citizen's campaign mail): mail_id -> [(member_id, name)].
-    members_by_mail = {}
-    for mid, memb_id, memb_name in db.execute(
-        """
-        SELECT mm.mail_id, m.id, COALESCE(m.name, m.email)
-        FROM mail_members mm
-        JOIN members m ON m.id = mm.member_id
-        JOIN mail_persons xp ON xp.mail_id = mm.mail_id
-        WHERE xp.person_id = ?
-        """,
-        (person_id,),
-    ):
-        members_by_mail.setdefault(mid, []).append((memb_id, memb_name))
+    conversations = _conversation_groups(db, mails)
     added_by = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (person["added_by"],)
     ).fetchone()
@@ -1270,8 +1271,7 @@ def person_detail(person_id):
         "person_detail.html",
         p=person,
         meetings=meetings,
-        mails=mails,
-        members_by_mail=members_by_mail,
+        conversations=conversations,
         mails_sent=mails_sent,
         mails_received=mails_received,
         directions=MAIL_DIRECTIONS,
@@ -1587,10 +1587,109 @@ def member_detail(member_id):
     ).fetchall()
     sent = sum(1 for x in mails if x["direction"] == "sent")
     received = sum(1 for x in mails if x["direction"] == "received")
+    conversations = _conversation_groups(db, mails)
     return render_template(
-        "member_detail.html", m=member, mails=mails,
+        "member_detail.html", m=member, conversations=conversations,
         sent=sent, received=received, directions=MAIL_DIRECTIONS,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Suivi des échanges: unified, thread-grouped view of all mails
+# --------------------------------------------------------------------------- #
+
+def _conversation_groups(db, mails):
+    """Group a list of mail rows into conversations (by thread_key, else the mail
+    itself). Each group carries a message count, latest date/subject, the élu·es
+    and members involved, and an origin type (membre / citoyen / autre)."""
+    ids = [m["id"] for m in mails]
+    if not ids:
+        return []
+    qm = ",".join("?" * len(ids))
+    tkey = {r[0]: r[1] for r in db.execute(
+        f"SELECT mail_id, thread_key FROM mail_thread WHERE mail_id IN ({qm})", ids)}
+    elus, membs = {}, {}
+    for mid, name in db.execute(
+        f"SELECT xp.mail_id, p.name FROM mail_persons xp JOIN persons p "
+        f"ON p.id = xp.person_id WHERE xp.mail_id IN ({qm})", ids):
+        elus.setdefault(mid, []).append(name)
+    for mid, name in db.execute(
+        f"SELECT mm.mail_id, COALESCE(m.name, m.email) FROM mail_members mm "
+        f"JOIN members m ON m.id = mm.member_id WHERE mm.mail_id IN ({qm})", ids):
+        membs.setdefault(mid, []).append(name)
+
+    groups, order = {}, []
+    for m in mails:  # mails are expected newest-first
+        key = tkey.get(m["id"]) or f"m{m['id']}"
+        g = groups.get(key)
+        if g is None:
+            g = {"key": key, "count": 0, "last_date": m["mail_date"],
+                 "subject": m["summary"], "elus": set(), "members": set(),
+                 "has_doc": False, "directions": set()}
+            groups[key] = g
+            order.append(key)
+        g["count"] += 1
+        if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
+            g["last_date"] = m["mail_date"]
+            g["subject"] = m["summary"]
+        g["elus"].update(elus.get(m["id"], []))
+        g["members"].update(membs.get(m["id"], []))
+        g["directions"].add(m["direction"])
+        if m["document_stored_name"]:
+            g["has_doc"] = True
+    convs = [groups[k] for k in order]
+    for g in convs:
+        g["type"] = ("membre" if g["members"]
+                     else "citoyen" if g["subject"].startswith("Mail d'un citoyen")
+                     else "autre")
+    return convs
+
+
+@app.route("/echanges")
+@login_required
+def exchanges():
+    db = get_db()
+    q = (request.args.get("q") or "").strip()
+    typ = request.args.get("type") or ""
+    mails = db.execute(
+        "SELECT id, mail_date, direction, summary, document_stored_name "
+        "FROM mails ORDER BY mail_date DESC, id DESC"
+    ).fetchall()
+    convs = _conversation_groups(db, mails)
+    if typ in ("membre", "citoyen", "autre"):
+        convs = [c for c in convs if c["type"] == typ]
+    if q:
+        ql = q.lower()
+        convs = [c for c in convs if ql in c["subject"].lower()
+                 or any(ql in n.lower() for n in c["elus"] | c["members"])]
+    return render_template("exchanges.html", conversations=convs, q=q, typ=typ,
+                           directions=MAIL_DIRECTIONS)
+
+
+@app.route("/echanges/fil")
+@login_required
+def conversation(key=None):
+    db = get_db()
+    key = request.args.get("key", "")
+    mails = db.execute(
+        """
+        SELECT x.*, b.body,
+               (SELECT GROUP_CONCAT(p.name, ', ') FROM mail_persons xp
+                  JOIN persons p ON p.id = xp.person_id WHERE xp.mail_id = x.id) AS elus,
+               (SELECT GROUP_CONCAT(COALESCE(m.name, m.email), ', ') FROM mail_members mm
+                  JOIN members m ON m.id = mm.member_id WHERE mm.mail_id = x.id) AS membres
+        FROM mails x
+        LEFT JOIN mail_thread mt ON mt.mail_id = x.id
+        LEFT JOIN mail_bodies b ON b.mail_id = x.id
+        WHERE COALESCE(mt.thread_key, 'm' || x.id) = ?
+        ORDER BY x.mail_date, x.id
+        """,
+        (key,),
+    ).fetchall()
+    if not mails:
+        abort(404)
+    return render_template("conversation.html", mails=mails,
+                           directions=MAIL_DIRECTIONS)
 
 
 @app.route("/mails/uploads/<int:mail_id>")
