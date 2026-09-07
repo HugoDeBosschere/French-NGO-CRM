@@ -295,9 +295,12 @@ def thread_persons_lookup(db, msg):
         return []
     pids = []
     for ref in refs:
-        row = db.execute(
-            "SELECT person_ids FROM thread_persons WHERE message_id = ?", (ref,)
-        ).fetchone()
+        try:
+            row = db.execute(
+                "SELECT person_ids FROM thread_persons WHERE message_id = ?", (ref,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return []  # tables not created yet (e.g. --dry-run before first import)
         if row:
             pids.extend(int(x) for x in row[0].split(",") if x)
     out, seen = [], set()
