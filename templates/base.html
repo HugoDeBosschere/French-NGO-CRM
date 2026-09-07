@@ -16,6 +16,7 @@
         <a href="{{ url_for('calendar_view') }}">Calendrier</a>
         <a href="{{ url_for('mails') }}">Courriels</a>
         <a href="{{ url_for('people') }}">Personnes</a>
+        <a href="{{ url_for('members') }}">Membres</a>
         <a href="{{ url_for('moderation') }}">Modération{% if pending_count %}
           <span class="badge">{{ pending_count }}</span>{% endif %}</a>
         <a href="{{ url_for('moderators_admin') }}">Utilisateurices</a>

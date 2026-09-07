@@ -377,6 +377,23 @@ def init_db():
             PRIMARY KEY (mail_id, person_id)
         );
 
+        -- Association members (@pauseia.fr). Populated automatically by
+        -- utils/import_member_mails.py from the members' correspondence with
+        -- élu·es; a mail is linked to its member via mail_members. This is what
+        -- distinguishes an *association member* exchange from an anonymous
+        -- citizen's campaign mail.
+        CREATE TABLE IF NOT EXISTS members (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            email      TEXT UNIQUE NOT NULL,
+            name       TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mail_members (
+            mail_id   INTEGER NOT NULL REFERENCES mails(id)    ON DELETE CASCADE,
+            member_id INTEGER NOT NULL REFERENCES members(id)  ON DELETE CASCADE,
+            PRIMARY KEY (mail_id, member_id)
+        );
+
         -- Staging tables. Anonymous users (no password) submit drafts here via
         -- the "Déclarer une activité" forms. A certified user reviews them on the
         -- /moderation page and either promotes a draft into the real table above
@@ -1229,6 +1246,20 @@ def person_detail(person_id):
     ).fetchall()
     mails_sent = sum(1 for x in mails if x["direction"] == "sent")
     mails_received = sum(1 for x in mails if x["direction"] == "received")
+    # Which of those mails are exchanges with an association member (vs an
+    # anonymous citizen's campaign mail): mail_id -> [(member_id, name)].
+    members_by_mail = {}
+    for mid, memb_id, memb_name in db.execute(
+        """
+        SELECT mm.mail_id, m.id, COALESCE(m.name, m.email)
+        FROM mail_members mm
+        JOIN members m ON m.id = mm.member_id
+        JOIN mail_persons xp ON xp.mail_id = mm.mail_id
+        WHERE xp.person_id = ?
+        """,
+        (person_id,),
+    ):
+        members_by_mail.setdefault(mid, []).append((memb_id, memb_name))
     added_by = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (person["added_by"],)
     ).fetchone()
@@ -1240,6 +1271,7 @@ def person_detail(person_id):
         p=person,
         meetings=meetings,
         mails=mails,
+        members_by_mail=members_by_mail,
         mails_sent=mails_sent,
         mails_received=mails_received,
         directions=MAIL_DIRECTIONS,
@@ -1488,6 +1520,14 @@ def mail_detail(mail_id):
         """,
         (mail_id,),
     ).fetchall()
+    members = db.execute(
+        """
+        SELECT m.id, COALESCE(m.name, m.email) AS name, m.email
+        FROM members m JOIN mail_members mm ON mm.member_id = m.id
+        WHERE mm.mail_id = ? ORDER BY name COLLATE NOCASE
+        """,
+        (mail_id,),
+    ).fetchall()
     received_by = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (mail["received_by"],)
     ).fetchone()
@@ -1495,9 +1535,61 @@ def mail_detail(mail_id):
         "SELECT name FROM moderators WHERE id = ?", (mail["validated_by"],)
     ).fetchone()
     return render_template(
-        "mail_detail.html", x=mail, people=people, directions=MAIL_DIRECTIONS,
+        "mail_detail.html", x=mail, people=people, members=members,
+        directions=MAIL_DIRECTIONS,
         received_by=received_by["name"] if received_by else None,
         validated_by=validator["name"] if validator else None,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Members (association @pauseia.fr, auto-imported from their élu·e correspondence)
+# --------------------------------------------------------------------------- #
+
+@app.route("/membres")
+@login_required
+def members():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT m.id, m.email, COALESCE(m.name, m.email) AS name,
+               COUNT(mm.mail_id) AS mail_count
+        FROM members m
+        LEFT JOIN mail_members mm ON mm.member_id = m.id
+        GROUP BY m.id
+        ORDER BY name COLLATE NOCASE
+        """
+    ).fetchall()
+    return render_template("members.html", members=rows)
+
+
+@app.route("/membres/<int:member_id>")
+@login_required
+def member_detail(member_id):
+    db = get_db()
+    member = db.execute(
+        "SELECT * FROM members WHERE id = ?", (member_id,)
+    ).fetchone()
+    if member is None:
+        abort(404)
+    mails = db.execute(
+        """
+        SELECT x.*,
+               (SELECT GROUP_CONCAT(p.name, ', ')
+                  FROM mail_persons xp JOIN persons p ON p.id = xp.person_id
+                 WHERE xp.mail_id = x.id) AS elus
+        FROM mails x
+        JOIN mail_members mm ON mm.mail_id = x.id
+        WHERE mm.member_id = ?
+        ORDER BY x.mail_date DESC, x.id DESC
+        """,
+        (member_id,),
+    ).fetchall()
+    sent = sum(1 for x in mails if x["direction"] == "sent")
+    received = sum(1 for x in mails if x["direction"] == "received")
+    return render_template(
+        "member_detail.html", m=member, mails=mails,
+        sent=sent, received=received, directions=MAIL_DIRECTIONS,
     )
 
 

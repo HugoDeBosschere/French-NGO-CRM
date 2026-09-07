@@ -134,7 +134,7 @@
 <div class="table-wrap">
   <table class="meetings">
     <thead>
-      <tr><th>Date</th><th>Sens</th><th>Résumé</th><th>Doc</th></tr>
+      <tr><th>Date</th><th>Sens</th><th>Origine</th><th>Résumé</th><th>Doc</th></tr>
     </thead>
     <tbody>
       {% for x in mails %}
@@ -144,6 +144,18 @@
           {% if x['important'] %}<span title="Important">⭐</span>{% endif %}
         </td>
         <td class="nowrap">{{ directions[x['direction']] }}</td>
+        <td class="nowrap">
+          {% if members_by_mail.get(x['id']) %}
+            {% for mid, mname in members_by_mail[x['id']] %}
+              <a class="tag tag-member" href="{{ url_for('member_detail', member_id=mid) }}"
+                 onclick="event.stopPropagation()">👥 {{ mname }}</a>
+            {% endfor %}
+          {% elif x['summary'].startswith("Mail d'un citoyen") %}
+            <span class="tag tag-citizen">Citoyen</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
         <td class="summary-cell">{{ x['summary'] }}</td>
         <td class="nowrap">{% if x['document_stored_name'] %}📎{% else %}—{% endif %}</td>
       </tr>

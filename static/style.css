@@ -169,6 +169,9 @@ table.meetings tbody tr:hover { background: var(--brand-soft); }
   font-weight: 600;
   white-space: nowrap;
 }
+/* Origin of a mail: association member vs anonymous citizen. */
+.tag-member { background: #e3f0ff; color: #1a4b8c; text-decoration: none; }
+.tag-citizen { background: #eee; color: #555; }
 
 /* ---------- Follow-up ("relance") badges ---------- */
 .due {
