@@ -91,11 +91,37 @@ def main():
             f"{COUNTRY}. It expects a 2-letter code (FR, not FRA); if that is "
             f"still right, check whether the endpoint has changed."
         )
-    print(f"{len(meps)} député·es européen·nes français·es — fetching details…")
+    # A detail call per member is what trips the API's rate limit (HTTP 429), and
+    # a member's email/gender never change. So reuse the previous dataset as a
+    # cache and only hit the detail endpoint for identifiers we've never resolved
+    # (a newly-seated MEP). A normal week is then one list call and no detail
+    # calls; the week after a European election, only the handful of newcomers.
+    cache = {}
+    if os.path.exists(OUT):
+        try:
+            for rec in json.load(open(OUT, encoding="utf-8")):
+                if rec.get("identifier") and rec.get("email"):
+                    cache[rec["identifier"]] = rec
+        except (ValueError, OSError):
+            cache = {}
+    print(
+        f"{len(meps)} député·es européen·nes français·es "
+        f"({len(cache)} en cache) — fetching details for newcomers…"
+    )
 
-    out, no_email, no_gender = [], [], []
-    for i, m in enumerate(meps, start=1):
+    out, no_email, no_gender, fetched = [], [], [], 0
+    for m in meps:
         ident = m["identifier"]
+        cached = cache.get(ident)
+        if cached:
+            # Reuse the resolved email/gender/birthday; refresh the political
+            # group from the live list, since that can change mid-term.
+            rec = dict(cached)
+            rec["groupe"] = m.get("api:political-group")
+            out.append(rec)
+            continue
+
+        fetched += 1
         try:
             detail = get(f"meps/{ident}")["data"][0]
         except (urllib.error.URLError, KeyError, IndexError, ValueError) as exc:
@@ -126,9 +152,10 @@ def main():
                 "url": f"https://www.europarl.europa.eu/meps/fr/{ident}",
             }
         )
-        if i % 20 == 0:
-            print(f"  …{i}/{len(meps)}")
+        print(f"  + {prenom} {nom} (nouveau·lle)")
         time.sleep(PAUSE)
+
+    print(f"Details fetched this run: {fetched}")
 
     # Guard against a throttled run writing a degraded dataset: MEP emails are
     # published for essentially everyone, so a large "sans email" share means the

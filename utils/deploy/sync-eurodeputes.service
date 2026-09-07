@@ -9,6 +9,11 @@ Type=oneshot
 # Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
 ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
 ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Seed the committed (complete) dataset so extract uses it as a cache and only
+# hits the rate-limited detail endpoint for genuinely new MEPs. rm first: docker
+# cp of a dir onto an existing dir would nest it (/app/actual_dataset/actual_dataset).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/actual_dataset
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/actual_dataset website-meeting-app:/app/actual_dataset
 # extract_eurodeputes.py downloads the members sitting *today* from
 # data.europarl.europa.eu (emails published directly) and rewrites
 # /app/actual_dataset/eurodeputes_fr.json; insert_eurodeputes.py then upserts
