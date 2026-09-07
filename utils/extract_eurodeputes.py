@@ -34,8 +34,9 @@ OUT = os.path.join(ROOT, "actual_dataset", "eurodeputes_fr.json")
 
 API = "https://data.europarl.europa.eu/api/v2"
 COUNTRY = "FR"
-PAUSE = 0.2  # seconds between detail calls — courtesy, the API is not rate-limited
+PAUSE = 1.0  # seconds between detail calls — the API rate-limits (HTTP 429)
 TIMEOUT = 40
+MAX_TRIES = 6  # per request, before giving up on a single member
 
 # EU vocabulary URIs -> the value we store. Anything unlisted is left empty
 # rather than guessed; the summary at the end counts those.
@@ -49,12 +50,13 @@ def get(path, **params):
     url = f"{API}/{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    # Under rapid sequential calls the API occasionally answers a detail request
-    # with an empty body and a 200 status, which json.loads rejects. Retry a few
-    # times with a growing pause before giving up, so one hiccup doesn't abort a
-    # whole run of 81 members. (204 is its documented "no match" answer.)
+    # The API rate-limits (HTTP 429) and, under load, sometimes answers a detail
+    # request with an empty body and a 200 status that json.loads rejects. Retry
+    # with exponential backoff — honouring Retry-After on a 429 — so neither a
+    # throttle nor a hiccup aborts a whole run of 81 members. (204 is its
+    # documented "no match" answer.)
     last_err = None
-    for attempt in range(4):
+    for attempt in range(MAX_TRIES):
         try:
             req = urllib.request.Request(
                 url, headers={"Accept": "application/ld+json"}
@@ -66,9 +68,17 @@ def get(path, **params):
             if not body:
                 raise ValueError("empty body (HTTP 200)")
             return json.loads(body)  # JSONDecodeError is a ValueError
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            if exc.code == 429:  # throttled — wait as long as we're told to
+                retry_after = exc.headers.get("Retry-After")
+                delay = int(retry_after) if (retry_after or "").isdigit() else 0
+                time.sleep(max(delay, 3 * 2 ** attempt))
+            else:
+                time.sleep(2 ** attempt)
         except (urllib.error.URLError, ValueError) as exc:
             last_err = exc
-            time.sleep(0.5 * (attempt + 1))
+            time.sleep(2 ** attempt)
     raise last_err
 
 
@@ -119,6 +129,17 @@ def main():
         if i % 20 == 0:
             print(f"  …{i}/{len(meps)}")
         time.sleep(PAUSE)
+
+    # Guard against a throttled run writing a degraded dataset: MEP emails are
+    # published for essentially everyone, so a large "sans email" share means the
+    # API cut us off, not that the addresses vanished. Fail loudly and keep the
+    # previous file, so insert_eurodeputes.py (chained with &&) never runs on it.
+    if len(meps) and len(no_email) > len(meps) // 4:
+        raise SystemExit(
+            f"Aborting: {len(no_email)}/{len(meps)} MEPs came back without an "
+            f"email — the API most likely throttled this run (HTTP 429). "
+            f"Existing {OUT} left untouched; re-run later."
+        )
 
     out.sort(key=lambda p: (p["nom"], p["prenom"]))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
