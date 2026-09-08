@@ -367,7 +367,9 @@ def init_db():
             details              TEXT,   -- optional "compte rendu détaillé"
             follow_up_date       TEXT,   -- when to follow this meeting up
             done                 INTEGER NOT NULL DEFAULT 0,  -- ticked off on /todo
+            done_at              TEXT,   -- local date it was ticked; see /todo
             follow_up_done       INTEGER NOT NULL DEFAULT 0,
+            follow_up_done_at    TEXT,
             recorded_by          TEXT,
             validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
@@ -397,6 +399,7 @@ def init_db():
             summary              TEXT NOT NULL,   -- "Corps du texte"
             follow_up_date       TEXT,            -- when to follow this mail up
             follow_up_done       INTEGER NOT NULL DEFAULT 0,  -- ticked off on /todo
+            follow_up_done_at    TEXT,
             received_by          INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
@@ -510,6 +513,8 @@ def init_db():
     if "follow_up_done" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_done "
                    "INTEGER NOT NULL DEFAULT 0")
+    if "follow_up_done_at" not in mail_cols:
+        db.execute("ALTER TABLE mails ADD COLUMN follow_up_done_at TEXT")
     if "subject" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN subject TEXT")
     meeting_cols = [r[1] for r in db.execute("PRAGMA table_info(meetings)")]
@@ -526,6 +531,12 @@ def init_db():
     if "follow_up_done" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN follow_up_done "
                    "INTEGER NOT NULL DEFAULT 0")
+    # The date a box was ticked, so /todo can drop it once the day is over
+    # without anything having to run at midnight.
+    if "done_at" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN done_at TEXT")
+    if "follow_up_done_at" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN follow_up_done_at TEXT")
     pmeeting_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_meetings)")]
     if "details" not in pmeeting_cols:
         db.execute("ALTER TABLE pending_meetings ADD COLUMN details TEXT")
@@ -1175,12 +1186,14 @@ LATEST_INTERACTION_SQL = """
         FROM (
             SELECT mp.person_id, 'meeting' AS kind, me.id AS rec_id,
                    me.meeting_date AS on_date, me.created_at AS entered_at,
-                   me.follow_up_date, me.follow_up_done, me.summary
+                   me.follow_up_date, me.follow_up_done, me.follow_up_done_at,
+                   me.summary
               FROM meetings me
               JOIN meeting_persons mp ON mp.meeting_id = me.id
             UNION ALL
             SELECT xp.person_id, 'mail', ma.id, ma.mail_date, ma.created_at,
-                   ma.follow_up_date, ma.follow_up_done, ma.summary
+                   ma.follow_up_date, ma.follow_up_done, ma.follow_up_done_at,
+                   ma.summary
               FROM mails ma
               JOIN mail_persons xp ON xp.mail_id = ma.id
         ) AS i
@@ -1224,16 +1237,22 @@ def todo():
     due = db.execute(
         f"""
         SELECT l.kind, l.rec_id, l.on_date, l.follow_up_date, l.follow_up_done,
-               l.summary,
+               l.follow_up_done_at, l.summary,
                GROUP_CONCAT(p.name, ', ')             AS person_names,
                GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails
         FROM ({LATEST_INTERACTION_SQL}) AS l
         JOIN persons p ON p.id = l.person_id
         WHERE l.follow_up_date IS NOT NULL AND l.follow_up_date <= ?
+          -- Ticked items linger only until the end of the day they were
+          -- ticked: `done_at` is the date the box was checked, so this
+          -- comparison stops matching the moment the date rolls over. Nothing
+          -- has to run at midnight — the page simply asks a different question
+          -- tomorrow. Everything ticked stays listed for good on /fait.
+          AND (l.follow_up_done = 0 OR l.follow_up_done_at = ?)
         GROUP BY l.kind, l.rec_id
         ORDER BY l.follow_up_date, l.kind, l.rec_id
         """,
-        (today_iso,),
+        (today_iso, today_iso),
     ).fetchall()
 
     # Upcoming rencontres and who is signed up. Two people is the target, so the
@@ -1276,15 +1295,73 @@ def todo():
     )
 
 
+@app.route("/fait")
+@login_required
+def fait():
+    """Everything ticked off, newest first.
+
+    /todo only keeps a ticked item until the end of the day it was ticked; this
+    is where it goes afterwards, so nothing is lost — the day's list stays short
+    without the record of what was done disappearing with it.
+    """
+    db = get_db()
+
+    meetings_done = db.execute(
+        """
+        SELECT m.*, GROUP_CONCAT(p.name, ', ') AS person_names
+        FROM meetings m
+        LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
+        LEFT JOIN persons p          ON p.id = mp.person_id
+        WHERE m.done = 1
+        GROUP BY m.id
+        ORDER BY COALESCE(m.done_at, m.meeting_date) DESC, m.id DESC
+        """
+    ).fetchall()
+
+    # Ticked relances, listed from the record that carries them. Unlike /todo
+    # this does not filter on "still the person's latest interaction": once a
+    # relance has been dealt with, that it was later superseded is beside the
+    # point — it still happened.
+    relances_done = db.execute(
+        """
+        SELECT * FROM (
+            SELECT 'meeting' AS kind, me.id AS rec_id, me.meeting_date AS on_date,
+                   me.follow_up_date, me.follow_up_done_at AS done_at, me.summary,
+                   (SELECT GROUP_CONCAT(p.name, ', ')
+                      FROM meeting_persons mp JOIN persons p ON p.id = mp.person_id
+                     WHERE mp.meeting_id = me.id) AS person_names
+              FROM meetings me WHERE me.follow_up_done = 1
+            UNION ALL
+            SELECT 'mail', ma.id, ma.mail_date, ma.follow_up_date,
+                   ma.follow_up_done_at, COALESCE(ma.subject, ma.summary),
+                   (SELECT GROUP_CONCAT(p.name, ', ')
+                      FROM mail_persons xp JOIN persons p ON p.id = xp.person_id
+                     WHERE xp.mail_id = ma.id)
+              FROM mails ma WHERE ma.follow_up_done = 1
+        )
+        ORDER BY COALESCE(done_at, follow_up_date) DESC, kind, rec_id DESC
+        """
+    ).fetchall()
+
+    return render_template(
+        "fait.html",
+        meetings_done=meetings_done,
+        relances_done=relances_done,
+        today=date.today().isoformat(),
+    )
+
+
 @app.route("/todo/rencontre/<int:meeting_id>/done", methods=["POST"])
 @login_required
 def toggle_meeting_done(meeting_id):
     db = get_db()
     db.execute(
-        "UPDATE meetings SET done = 1 - done WHERE id = ?", (meeting_id,)
+        "UPDATE meetings SET done = 1 - done, "
+        "done_at = CASE WHEN done = 0 THEN ? ELSE NULL END WHERE id = ?",
+        (date.today().isoformat(), meeting_id),
     )
     db.commit()
-    return redirect(url_for("todo"))
+    return redirect(request.referrer or url_for("todo"))
 
 
 @app.route("/todo/relance/<kind>/<int:rec_id>/done", methods=["POST"])
@@ -1295,11 +1372,13 @@ def toggle_follow_up_done(kind, rec_id):
     table = "meetings" if kind == "meeting" else "mails"
     db = get_db()
     db.execute(
-        f"UPDATE {table} SET follow_up_done = 1 - follow_up_done WHERE id = ?",
-        (rec_id,),
+        f"UPDATE {table} SET follow_up_done = 1 - follow_up_done, "
+        f"follow_up_done_at = CASE WHEN follow_up_done = 0 THEN ? ELSE NULL END "
+        f"WHERE id = ?",
+        (date.today().isoformat(), rec_id),
     )
     db.commit()
-    return redirect(url_for("todo"))
+    return redirect(request.referrer or url_for("todo"))
 
 
 @app.route("/todo/rencontre/<int:meeting_id>/inscriptions", methods=["POST"])

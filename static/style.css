@@ -606,3 +606,10 @@ a.cal-ev:hover {
 
 .checklist-inline { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: .45rem 0; }
 .signup-form { margin-top: .3rem; }
+
+/* TODO gets its own light red, kept clear of the dark red that flags an
+   under-staffed rencontre and of the violet that means "relance". */
+:root { --todo: #e57373; --todo-ink: #c0392b; --todo-soft: #fdecea; }
+.nav-todo { color: var(--todo-ink); font-weight: 700; }
+.nav-todo:hover { color: var(--todo); }
+.todo-title-head { color: var(--todo-ink); }

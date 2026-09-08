@@ -2,8 +2,9 @@
 {% block title %}À faire{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>À faire aujourd'hui</h1>
+  <h1 class="todo-title-head">TODO</h1>
   <span class="head-actions">
+    <a class="btn" href="{{ url_for('fait') }}">Fait →</a>
     <a class="btn" href="{{ url_for('calendar_view') }}">📅 Calendrier</a>
   </span>
 </div>
@@ -53,8 +54,9 @@
 <h2 class="todo-head todo-head-relance">
   Relances à envoyer <span class="muted">({{ due|length }})</span>
 </h2>
-<p class="hint">Relances prévues aujourd'hui ou déjà passées. Les relances traitées
-  restent affichées, barrées, pour garder la trace de ce qui a été fait.</p>
+<p class="hint">Relances prévues aujourd'hui ou déjà passées. Une relance cochée
+  reste affichée, barrée, jusqu'à la fin de la journée ; elle passe ensuite dans
+  <a href="{{ url_for('fait') }}">Fait</a>.</p>
 {% if due %}
 <ul class="todo-list">
   {% for r in due %}
