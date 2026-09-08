@@ -610,6 +610,8 @@ a.cal-ev:hover {
 /* TODO gets its own light red, kept clear of the dark red that flags an
    under-staffed rencontre and of the violet that means "relance". */
 :root { --todo: #e57373; --todo-ink: #c0392b; --todo-soft: #fdecea; }
-.nav-todo { color: var(--todo-ink); font-weight: 700; }
-.nav-todo:hover { color: var(--todo); }
+/* Scoped to match `.site-header nav a` above, which is more specific than a
+   bare .nav-todo and would otherwise win and paint the link grey. */
+.site-header nav a.nav-todo { color: var(--todo-ink); font-weight: 700; }
+.site-header nav a.nav-todo:hover { color: var(--todo); }
 .todo-title-head { color: var(--todo-ink); }
