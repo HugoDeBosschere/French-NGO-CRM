@@ -1722,6 +1722,8 @@ def _save_mail(db, mail):
     errors = []
     if not person_ids:
         errors.append("Sélectionnez au moins une personne.")
+    if not subject:
+        errors.append("L'objet du courriel est obligatoire.")
     if received_by is None:
         errors.append("Indiquez qui a reçu ou envoyé le courriel.")
     if validated_by is None:
@@ -1752,7 +1754,7 @@ def _save_mail(db, mail):
                 document_stored_name, document_orig_name, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (mail_date, direction, important, subject or None, summary,
+            (mail_date, direction, important, subject, summary,
              follow_up_date or None,
              received_by, validated_by, stored_name, orig_name,
              datetime.utcnow().isoformat(timespec="seconds")),
@@ -1775,7 +1777,7 @@ def _save_mail(db, mail):
                 document_stored_name = ?, document_orig_name = ?
             WHERE id = ?
             """,
-            (mail_date, direction, important, subject or None, summary,
+            (mail_date, direction, important, subject, summary,
              follow_up_date or None,
              received_by, validated_by, new_stored, new_orig, mail_id),
         )
@@ -2001,14 +2003,18 @@ def _conversation_groups(db, mails):
         g = groups.get(key)
         if g is None:
             g = {"key": key, "count": 0, "last_date": m["mail_date"],
-                 "subject": m["summary"], "elus": set(), "members": set(),
+                 # The Objet is the mail's real subject line. Older rows and
+                 # anything imported before the column existed have none, so
+                 # they keep falling back to the body.
+                 "subject": m["subject"] or m["summary"],
+                 "elus": set(), "members": set(),
                  "has_doc": False, "directions": set()}
             groups[key] = g
             order.append(key)
         g["count"] += 1
         if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
             g["last_date"] = m["mail_date"]
-            g["subject"] = m["summary"]
+            g["subject"] = m["subject"] or m["summary"]
         g["elus"].update(elus.get(m["id"], []))
         g["members"].update(membs.get(m["id"], []))
         g["directions"].add(m["direction"])
@@ -2029,7 +2035,7 @@ def exchanges():
     q = (request.args.get("q") or "").strip()
     typ = request.args.get("type") or ""
     mails = db.execute(
-        "SELECT id, mail_date, direction, summary, document_stored_name "
+        "SELECT id, mail_date, direction, subject, summary, document_stored_name "
         "FROM mails ORDER BY mail_date DESC, id DESC"
     ).fetchall()
     convs = _conversation_groups(db, mails)
@@ -2294,6 +2300,8 @@ def declarer_mail():
         errors = []
         if not proposed_people:
             errors.append("Indiquez la ou les personnes concernées.")
+        if not subject:
+            errors.append("L'objet du courriel est obligatoire.")
         if not mail_date:
             errors.append("La date du courriel est obligatoire.")
         elif not date_ok:
@@ -2318,7 +2326,7 @@ def declarer_mail():
                     document_orig_name, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (mail_date, direction, important, subject or None, summary,
+                (mail_date, direction, important, subject, summary,
                  follow_up_date or None,
                  proposed_people, submitted_by or None, stored_name, orig_name,
                  datetime.utcnow().isoformat(timespec="seconds")),

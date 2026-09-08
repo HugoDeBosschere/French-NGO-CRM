@@ -100,8 +100,8 @@
   </div>
 
   <div class="field">
-    <label for="subject">Objet <span class="muted">(facultatif)</span></label>
-    <input type="text" id="subject" name="subject"
+    <label for="subject">Objet <span class="req">*</span></label>
+    <input type="text" id="subject" name="subject" required
            placeholder="Objet du courriel" value="{{ form.get('subject', '') }}">
   </div>
 

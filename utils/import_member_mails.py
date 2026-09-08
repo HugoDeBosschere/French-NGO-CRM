@@ -444,12 +444,12 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
     if publish:
         cur = db.execute(
             """
-            INSERT INTO mails (mail_date, direction, important, summary,
+            INSERT INTO mails (mail_date, direction, important, subject, summary,
                 follow_up_date, received_by, validated_by, document_stored_name,
                 document_orig_name, created_at)
-            VALUES (?, ?, 0, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            VALUES (?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
             """,
-            (mail_date, direction, summary, now),
+            (mail_date, direction, subject, summary, now),
         )
         mail_id = cur.lastrowid
         db.executemany("INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
@@ -468,12 +468,12 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
     else:
         db.execute(
             """
-            INSERT INTO pending_mails (mail_date, direction, important, summary,
-                follow_up_date, proposed_people, submitted_by,
+            INSERT INTO pending_mails (mail_date, direction, important, subject,
+                summary, follow_up_date, proposed_people, submitted_by,
                 document_stored_name, document_orig_name, created_at)
-            VALUES (?, ?, 0, ?, NULL, ?, ?, NULL, NULL, ?)
+            VALUES (?, ?, 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, direction, summary, elu_names, IMPORT_SOURCE, now),
+            (mail_date, direction, subject, summary, elu_names, IMPORT_SOURCE, now),
         )
         remember_thread(db, message_id, [pid for pid, _n in matches])
 

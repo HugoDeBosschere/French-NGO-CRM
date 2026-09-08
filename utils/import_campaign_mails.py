@@ -253,12 +253,12 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
         cur = db.execute(
             """
             INSERT INTO mails (
-                mail_date, direction, important, summary, follow_up_date,
+                mail_date, direction, important, subject, summary, follow_up_date,
                 received_by, validated_by, document_stored_name,
                 document_orig_name, created_at
-            ) VALUES (?, 'sent', 0, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            ) VALUES (?, 'sent', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
             """,
-            (mail_date, summary, now),
+            (mail_date, subject, summary, now),
         )
         db.executemany(
             "INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
@@ -268,12 +268,12 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
         db.execute(
             """
             INSERT INTO pending_mails (
-                mail_date, direction, important, summary, follow_up_date,
+                mail_date, direction, important, subject, summary, follow_up_date,
                 proposed_people, submitted_by, document_stored_name,
                 document_orig_name, created_at
-            ) VALUES (?, 'sent', 0, ?, NULL, ?, ?, NULL, NULL, ?)
+            ) VALUES (?, 'sent', 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, summary, ", ".join(names), IMPORT_SOURCE, now),
+            (mail_date, subject, summary, ", ".join(names), IMPORT_SOURCE, now),
         )
 
     if message_id:
