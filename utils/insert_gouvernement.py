@@ -28,7 +28,7 @@ import ast
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -82,7 +82,7 @@ def main():
         r["name"]: r
         for r in db.execute("SELECT id, name, role, political_group FROM persons")
     }
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     created, updated, unchanged = [], [], 0
     for m in membres:
