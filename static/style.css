@@ -12,6 +12,9 @@
   --brand-soft:#ffedd5;
   --danger:    #b42318;
   --danger-bg: #fef3f2;
+  --relance:      #7e22ce;   /* violet — « Relance », everywhere it appears */
+  --relance-ink:  #6b21a8;
+  --relance-soft: #f3e8ff;
   --ok:        #027a48;
   --ok-bg:     #ecfdf3;
   --radius:    12px;
@@ -235,8 +238,11 @@ a.cal-ev:hover {
   box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
   transform: translateY(-1px);
 }
+/* The calendar carries two kinds of event and they must never be mistaken for
+   one another: Rencontre keeps the brand amber, Relance is violet. The same two
+   colours are reused on /todo so a colour means the same thing on both pages. */
 .cal-meeting  { background: var(--brand-soft); color: var(--brand-ink); }
-.cal-followup { background: #fff4e5;           color: #b54708; }
+.cal-followup { background: var(--relance-soft); color: var(--relance-ink); }
 
 /* ---------- Cards & forms ---------- */
 .card {
@@ -368,3 +374,79 @@ a.cal-ev:hover {
 }
 .notice .notice-icon { flex: 0 0 auto; line-height: 1.45; }
 .notice a { color: #7a5300; text-decoration: underline; }
+
+/* A field that is computed, not typed: « Relance prévue » on a person is
+   derived from their most recent meeting or mail, so it is shown rather than
+   edited. Styled to read as a disabled input, not as body text. */
+.readonly-value {
+  margin: 0;
+  padding: .5rem .65rem;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+/* Meeting list: the addresses of the people met, one per line. Kept narrow so
+   the column can't crowd out the summary on a laptop screen. */
+.email-cell { font-size: .82rem; line-height: 1.5; max-width: 15rem; word-break: break-all; }
+
+/* ---------- /todo ---------- */
+/* Rencontre keeps the brand amber, Relance is violet — the same two colours as
+   the calendar, so a colour carries one meaning across the whole app. The stripe
+   down the left of each row is what actually distinguishes the two kinds. */
+.todo-head { margin-top: 1.6rem; padding-left: .6rem; border-left: 4px solid; }
+.todo-head-meeting { border-color: var(--brand); }
+.todo-head-relance { border-color: var(--relance); }
+
+.todo-list { list-style: none; margin: .6rem 0 0; padding: 0; }
+.todo-item {
+  display: flex;
+  gap: .7rem;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius);
+  padding: .7rem .9rem;
+  margin-bottom: .5rem;
+}
+.todo-meeting { border-left-color: var(--brand); }
+.todo-relance { border-left-color: var(--relance); }
+.todo-relance .todo-title { color: var(--relance-ink); }
+
+.todo-body { flex: 1; min-width: 0; }
+.todo-title { font-weight: 600; text-decoration: none; }
+.todo-title:hover { text-decoration: underline; }
+.todo-sub  { margin: .2rem 0 0; font-size: .88rem; }
+.todo-meta { margin: .25rem 0 0; font-size: .8rem; color: var(--muted); }
+.todo-meta a { color: inherit; }
+
+/* A ticked task stays visible, struck through, so the day's history is legible
+   rather than vanishing as it gets done. */
+.todo-done { opacity: .6; }
+.todo-done .todo-title,
+.todo-done .todo-sub { text-decoration: line-through; }
+
+.todo-check {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 0;
+  color: var(--muted);
+}
+.todo-check:hover { color: var(--ink); }
+
+/* Sign-ups: dark red while a rencontre is short-handed, dark green once enough
+   people are down for it. The count text carries the colour too, so the signal
+   does not rest on the border alone. */
+.signup-short { border-left-color: var(--danger); }
+.signup-short .signup-count { color: var(--danger); font-weight: 700; }
+.signup-ok    { border-left-color: var(--ok); }
+.signup-ok    .signup-count { color: var(--ok); font-weight: 700; }
+.warn { color: var(--danger); font-weight: 600; }
+
+.checklist-inline { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: .45rem 0; }
+.signup-form { margin-top: .3rem; }

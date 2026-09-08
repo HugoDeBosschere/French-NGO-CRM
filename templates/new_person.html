@@ -98,10 +98,14 @@
     </div>
 
     <div class="field">
-      <label for="follow_up_date">Relance prévue le <span class="muted">(facultatif)</span></label>
-      <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
-             placeholder="JJ/MM/AAAA" value="{{ form.get('follow_up_date', '') | fr_date }}">
-      <p class="hint">Date à laquelle envoyer un nouveau courriel à cette personne.</p>
+      <label>Relance prévue <span class="muted">(calculée)</span></label>
+      <p class="readonly-value">
+        {% if form.get('follow_up_date') %}{{ form.get('follow_up_date') | fr_date }}{% else %}—{% endif %}
+      </p>
+      <p class="hint">Ce champ ne se saisit pas ici : il reprend la relance de
+        l'échange le plus récent de la personne — la rencontre ou le courriel le
+        plus proche d'aujourd'hui. Pour la changer, modifiez la relance de cet
+        échange.</p>
     </div>
   </div>
 
@@ -141,7 +145,7 @@
 
     <div class="field">
       <label for="validated_by">Validé par <span class="req">*</span></label>
-      <select id="validated_by" name="validated_by" required>
+      <select id="validated_by" name="validated_by" required data-remember="validated_by">
         <option value="" disabled {% if not form.get('validated_by') %}selected{% endif %}>
           Choisir un utilisateurice…
         </option>

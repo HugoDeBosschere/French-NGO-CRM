@@ -82,6 +82,92 @@
     });
   }
 
+  // An <input> or <select> carrying data-remember="key" keeps its last value
+  // in the browser and offers it back the next time a form uses that key.
+  //
+  // This is localStorage: the value stays on their device, is scoped to this
+  // site, and is never sent anywhere on its own. It reaches the server only if
+  // they actually submit the form — exactly as if they had retyped it — so it
+  // gives the site no information it would not otherwise have. Used on the
+  // anonymous /declarer forms, and on the moderation forms' "Saisi par" style
+  // dropdowns: login is a single shared password, so the server genuinely
+  // cannot tell which team member is at the keyboard — only their own browser
+  // can. It is a default, not an assertion: the field stays visible and
+  // required, so whoever is typing sees it and can change it before saving.
+  //
+  // Storage can be unavailable or throw outright (private windows, blocked
+  // site data), so every access is guarded and failure just means no prefill.
+  function attachRemembered(input) {
+    var key = "pauseia:" + input.getAttribute("data-remember");
+
+    // Never overwrite a value the page already carries: a form redisplayed
+    // after a validation error must keep what the visitor actually typed.
+    if (!input.value) {
+      try {
+        var saved = window.localStorage.getItem(key);
+        if (saved) {
+          input.value = saved;
+          // A <select> silently refuses a value with no matching option (a
+          // moderator since deleted or renamed). Don't leave it half-set.
+          if (input.tagName === "SELECT" && input.value !== saved) {
+            input.value = "";
+            window.localStorage.removeItem(key);
+          }
+        }
+      } catch (e) { /* no storage — leave the field empty */ }
+    }
+
+    var form = input.form;
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      try {
+        var value = input.value.trim();
+        if (value) {
+          window.localStorage.setItem(key, value);
+        } else {
+          window.localStorage.removeItem(key);
+        }
+      } catch (e) { /* nothing to do: remembering is a convenience only */ }
+    });
+  }
+
+  // An <input data-follow-up-from="meeting_date" data-follow-up-days="5"> keeps
+  // « Relance prévue » in step with the date it follows up: change the meeting
+  // or mail date and the proposed relance moves with it.
+  //
+  // The server renders the same default, so this only matters while the form is
+  // open. It deliberately stops helping once the value stops matching what it
+  // last proposed: a date the user typed, or a field they cleared to say "no
+  // follow-up", is theirs and must never be silently rewritten.
+  function attachFollowUp(input) {
+    var source = document.getElementById(input.getAttribute("data-follow-up-from"));
+    var days = parseInt(input.getAttribute("data-follow-up-days"), 10);
+    if (!source || isNaN(days)) return;
+
+    var proposed = input.value;  // what the server pre-filled
+
+    function frToParts(v) {
+      var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v.trim());
+      return m ? { d: +m[1], mo: +m[2], y: +m[3] } : null;
+    }
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+    function sync() {
+      // Only ever replace our own suggestion, never the user's own text.
+      if (input.value !== proposed) return;
+      var parts = frToParts(source.value);
+      if (!parts) return;
+      var dt = new Date(parts.y, parts.mo - 1, parts.d);
+      if (isNaN(dt.getTime())) return;
+      dt.setDate(dt.getDate() + days);
+      proposed = pad(dt.getDate()) + "/" + pad(dt.getMonth() + 1) + "/" + dt.getFullYear();
+      input.value = proposed;
+    }
+
+    source.addEventListener("input", sync);
+    source.addEventListener("change", sync);
+  }
+
   // The "Portefeuille" field only makes sense for a government post, so it
   // stays hidden until one of the roles listed in `data-portfolio-roles`
   // (rendered from PORTFOLIO_ROLES in app.py) is ticked. Server-side, app.py
@@ -120,5 +206,11 @@
     document
       .querySelectorAll("[data-portfolio-roles]")
       .forEach(attachPortfolioToggle);
+    document
+      .querySelectorAll("[data-remember]")
+      .forEach(attachRemembered);
+    document
+      .querySelectorAll("[data-follow-up-from]")
+      .forEach(attachFollowUp);
   });
 })();

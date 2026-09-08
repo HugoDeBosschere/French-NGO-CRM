@@ -22,8 +22,17 @@
 {% if proposed_people %}
 <div class="card flash-info" style="margin-bottom:1rem">
   <strong>Personnes indiquées par le déclarant :</strong> {{ proposed_people }}
-  <p class="hint">Cochez les personnes correspondantes ci-dessous. Si l'une d'elles
-    n'existe pas encore, <a href="{{ url_for('new_person') }}">créez-la d'abord</a>.</p>
+  {% if unmatched_people %}
+  <p class="hint"><strong>Sans correspondance :</strong>
+    {{ unmatched_people | join(', ') }} — ces noms n'ont pas été retrouvés dans les
+    fiches, cochez-les à la main ou
+    <a href="{{ url_for('new_person') }}">créez la fiche manquante</a>.
+    Les autres sont déjà cochées ci-dessous ; vérifiez-les avant de valider.</p>
+  {% else %}
+  <p class="hint">Les personnes correspondantes sont déjà cochées ci-dessous ;
+    vérifiez-les avant de valider. Si l'une d'elles n'existe pas encore,
+    <a href="{{ url_for('new_person') }}">créez-la d'abord</a>.</p>
+  {% endif %}
 </div>
 {% endif %}
 {% if proposed_document %}
@@ -91,9 +100,15 @@
   </div>
 
   <div class="field">
-    <label for="summary">Bref résumé <span class="req">*</span></label>
+    <label for="subject">Objet <span class="muted">(facultatif)</span></label>
+    <input type="text" id="subject" name="subject"
+           placeholder="Objet du courriel" value="{{ form.get('subject', '') }}">
+  </div>
+
+  <div class="field">
+    <label for="summary">Corps du texte <span class="req">*</span></label>
     <textarea id="summary" name="summary" rows="5" required
-      placeholder="Objet du courriel, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
+      placeholder="Contenu du courriel, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
   </div>
 
   <div class="grid-2">
@@ -112,7 +127,7 @@
 
     <div class="field">
       <label for="validated_by">Validé par <span class="req">*</span></label>
-      <select id="validated_by" name="validated_by" required>
+      <select id="validated_by" name="validated_by" required data-remember="validated_by">
         <option value="" disabled {% if not form.get('validated_by') %}selected{% endif %}>
           Choisir un utilisateurice…
         </option>
@@ -132,12 +147,16 @@
     </label>
   </div>
 
-  <div class="field" id="follow-up-field"
-       {% if form.get('direction') != 'sent' %}hidden{% endif %}>
+  <div class="field" id="follow-up-field">
     <label for="follow_up_date">Relance prévue le <span class="muted">(facultatif)</span></label>
     <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
-           placeholder="JJ/MM/AAAA" value="{{ form.get('follow_up_date', '') | fr_date }}">
-    <p class="hint">Date à laquelle relancer la/les personne(s). Met à jour leur relance.</p>
+           placeholder="JJ/MM/AAAA"
+           data-follow-up-from="mail_date" data-follow-up-days="{{ follow_up_days['mail'] }}"
+           value="{{ (form.get('follow_up_date') or ('' if current else default_follow_up('mail', form.get('mail_date') or today))) | fr_date }}">
+    <p class="hint">Pré-rempli à {{ follow_up_days['mail'] }} jours après le courriel, et
+      recalculé si vous changez la date. Videz le champ pour indiquer qu'aucune relance
+      n'est prévue. C'est cette date qui devient la « Relance prévue » des personnes
+      concernées, tant que ce courriel est leur échange le plus récent.</p>
   </div>
 
   <div class="field">
@@ -164,15 +183,5 @@
   </div>
 </form>
 
-<script>
-  // Show the follow-up ("relance") date only when the mail was sent.
-  (function () {
-    var dir = document.getElementById('direction');
-    var fld = document.getElementById('follow-up-field');
-    function sync() { fld.hidden = (dir.value !== 'sent'); }
-    dir.addEventListener('change', sync);
-    sync();
-  })();
-</script>
 {% endif %}
 {% endblock %}

@@ -20,7 +20,7 @@ import sqlite3
 import time
 import uuid
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -146,6 +146,30 @@ PORTFOLIO_ROLES = [
     "Ministre",
     "Ministre délégué·e",
     "Secrétaire d'État",
+]
+
+# Roles whose holders may be listed to anonymous visitors on the /declarer
+# forms. These are public officeholders: who they are and what seat they hold
+# is already published by the Assemblée, the Sénat, the Parlement européen and
+# the Journal officiel, so naming them here reveals nothing new.
+#
+# Deliberately absent, and the reason the list is a whitelist rather than "all
+# of ROLES": "Membre d'un cabinet gouvernemental" (advisors and staff, not
+# officeholders) and "Personnalité publique" (a catch-all a moderator may use
+# for a journalist or an activist). Those stay visible to logged-in members
+# only — as does every column other than the name, at any role.
+PUBLIC_ROLES = [
+    "Président·e de la République",
+    "Premier·e ministre",
+    "Ministre",
+    "Ministre délégué·e",
+    "Secrétaire d'État",
+    "Secrétaire général·e",
+    "Autre fonction gouvernementale",
+    "Sénateur·ice",
+    "Député·e",
+    "Député·e européen·ne",
+    "Maire·sse",
 ]
 
 
@@ -285,6 +309,10 @@ def inject_role_helpers():
         "split_roles": split_roles,
         "selected_roles": selected_roles,
         "portfolio_roles": PORTFOLIO_ROLES,
+        # Lets each form pre-fill « Relance prévue » from its own date field
+        # without every route having to pass the value in.
+        "default_follow_up": default_follow_up,
+        "follow_up_days": FOLLOW_UP_DEFAULT_DAYS,
     }
 
 
@@ -321,7 +349,6 @@ def init_db():
             political_group TEXT NOT NULL,
             stance          TEXT NOT NULL,
             first_contacted TEXT,
-            follow_up_date  TEXT,
             notes           TEXT,
             circonscription TEXT,
             email           TEXT,
@@ -337,6 +364,9 @@ def init_db():
             meeting_time         TEXT,
             summary              TEXT NOT NULL,
             details              TEXT,   -- optional "compte rendu détaillé"
+            follow_up_date       TEXT,   -- when to follow this meeting up
+            done                 INTEGER NOT NULL DEFAULT 0,  -- ticked off on /todo
+            follow_up_done       INTEGER NOT NULL DEFAULT 0,
             recorded_by          TEXT,
             validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
@@ -362,8 +392,10 @@ def init_db():
             mail_date            TEXT NOT NULL,
             direction            TEXT NOT NULL,   -- 'sent' or 'received'
             important            INTEGER NOT NULL DEFAULT 0,
-            summary              TEXT NOT NULL,
-            follow_up_date       TEXT,            -- for sent mails: when to follow up
+            subject              TEXT,            -- "Objet" of the mail
+            summary              TEXT NOT NULL,   -- "Corps du texte"
+            follow_up_date       TEXT,            -- when to follow this mail up
+            follow_up_done       INTEGER NOT NULL DEFAULT 0,  -- ticked off on /todo
             received_by          INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by         INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             document_stored_name TEXT,
@@ -401,6 +433,7 @@ def init_db():
             meeting_time    TEXT,
             summary         TEXT NOT NULL,
             details         TEXT,   -- optional "compte rendu détaillé"
+            follow_up_date  TEXT,
             proposed_people TEXT,   -- free-text "personnes concernées"
             submitted_by    TEXT,
             document_stored_name TEXT,
@@ -413,6 +446,7 @@ def init_db():
             mail_date       TEXT NOT NULL,
             direction       TEXT NOT NULL,
             important       INTEGER NOT NULL DEFAULT 0,
+            subject         TEXT,
             summary         TEXT NOT NULL,
             follow_up_date  TEXT,
             proposed_people TEXT,   -- free-text "personnes concernées"
@@ -425,18 +459,37 @@ def init_db():
     )
     # Migrations: add follow_up_date columns to tables created before they existed.
     person_cols = [r[1] for r in db.execute("PRAGMA table_info(persons)")]
-    if "follow_up_date" not in person_cols:
-        db.execute("ALTER TABLE persons ADD COLUMN follow_up_date TEXT")
+    # « Relance prévue » used to be typed straight onto a person and copied down
+    # from each sent mail. It is now derived (see person_follow_up_sql), so the
+    # stored column is retired under a _legacy name rather than dropped: nothing
+    # reads it, but a value entered under the old rules is still recoverable.
+    if "follow_up_date" in person_cols and "follow_up_date_legacy" not in person_cols:
+        db.execute("ALTER TABLE persons RENAME COLUMN follow_up_date "
+                   "TO follow_up_date_legacy")
     if "role" not in person_cols:
         db.execute("ALTER TABLE persons ADD COLUMN role TEXT")
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")
+    if "follow_up_done" not in mail_cols:
+        db.execute("ALTER TABLE mails ADD COLUMN follow_up_done "
+                   "INTEGER NOT NULL DEFAULT 0")
+    if "subject" not in mail_cols:
+        db.execute("ALTER TABLE mails ADD COLUMN subject TEXT")
     meeting_cols = [r[1] for r in db.execute("PRAGMA table_info(meetings)")]
     if "meeting_time" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN meeting_time TEXT")
     if "details" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN details TEXT")
+    if "follow_up_date" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN follow_up_date TEXT")
+    # The /todo tick boxes. NOT NULL DEFAULT 0 backfills existing rows with 0,
+    # so no record ever arrives already ticked off.
+    if "done" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+    if "follow_up_done" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN follow_up_done "
+                   "INTEGER NOT NULL DEFAULT 0")
     pmeeting_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_meetings)")]
     if "details" not in pmeeting_cols:
         db.execute("ALTER TABLE pending_meetings ADD COLUMN details TEXT")
@@ -444,6 +497,11 @@ def init_db():
         db.execute("ALTER TABLE pending_meetings ADD COLUMN document_stored_name TEXT")
     if "document_orig_name" not in pmeeting_cols:
         db.execute("ALTER TABLE pending_meetings ADD COLUMN document_orig_name TEXT")
+    if "follow_up_date" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN follow_up_date TEXT")
+    pmail_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_mails)")]
+    if "subject" not in pmail_cols:
+        db.execute("ALTER TABLE pending_mails ADD COLUMN subject TEXT")
     pmail_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_mails)")]
     if "document_stored_name" not in pmail_cols:
         db.execute("ALTER TABLE pending_mails ADD COLUMN document_stored_name TEXT")
@@ -590,6 +648,65 @@ def _delete_upload(stored_name):
         (UPLOAD_DIR / stored_name).unlink(missing_ok=True)
 
 
+# How far ahead the « Relance prévue » field is pre-filled on each form,
+# counted from the date of the exchange itself (a mail dated the 1st proposes
+# the 11th). Pre-filling is the point: an empty relance must mean someone
+# decided against a follow-up, not that they forgot the field was there.
+FOLLOW_UP_DEFAULT_DAYS = {"mail": 10, "meeting": 5}
+
+# A rencontre should not be attended alone: fewer than this many utilisateurices
+# signed up is flagged on /todo as a gap to fill.
+MIN_PARTICIPANTS = 2
+
+
+def person_follow_up_sql(alias="p"):
+    """SQL scalar subquery giving a person's « Relance prévue ».
+
+    The value is never stored on `persons`: it mirrors the follow-up of that
+    person's most recent interaction — the linked Rencontre or Courriel with
+    the latest date, ties broken by whichever was entered last. So logging a
+    newer exchange replaces the relance, and a follow-up attached to an old
+    interaction stops driving the person once it has been superseded.
+
+    If that latest interaction has no relance of its own the person has none:
+    the most recent contact deliberately scheduled no follow-up, and reaching
+    further back would resurrect a date the newer exchange already answered.
+
+    `alias` is the outer query's name for the persons table. It is always a
+    literal from our own call sites, never user input.
+    """
+    return f"""(
+        SELECT i.follow_up_date FROM (
+            SELECT me.meeting_date AS on_date,
+                   me.created_at   AS entered_at,
+                   me.follow_up_date
+              FROM meetings me
+              JOIN meeting_persons mp ON mp.meeting_id = me.id
+             WHERE mp.person_id = {alias}.id
+            UNION ALL
+            SELECT ma.mail_date, ma.created_at, ma.follow_up_date
+              FROM mails ma
+              JOIN mail_persons xp ON xp.mail_id = ma.id
+             WHERE xp.person_id = {alias}.id
+        ) AS i
+        ORDER BY i.on_date DESC, i.entered_at DESC
+        LIMIT 1
+    )"""
+
+
+def default_follow_up(kind, on_date):
+    """The pre-filled relance for a new record: `on_date` + the kind's delay.
+
+    Returns "" when the date is unusable, so the form simply renders empty
+    rather than guessing from today — the caller's date field is the anchor.
+    """
+    try:
+        base = date.fromisoformat(on_date)
+    except (TypeError, ValueError):
+        return ""
+    return (base + timedelta(days=FOLLOW_UP_DEFAULT_DAYS[kind])).isoformat()
+
+
 def _set_person_links(db, table, key_col, key_id, person_ids):
     """Replace the person links for a meeting/mail with `person_ids`."""
     db.execute(f"DELETE FROM {table} WHERE {key_col} = ?", (key_id,))
@@ -622,6 +739,62 @@ def _valid_moderator(db, value):
     return None
 
 
+def _match_proposed_people(db, proposed):
+    """Map a declarant's free-text « Personnes concernées » onto persons rows.
+
+    Returns (ids, unmatched): the string ids to tick in the approval form, and
+    the names that matched nothing so the moderator can be told rather than
+    left to spot the gap. A name the anonymous picker inserted matches exactly;
+    one typed by hand may not, which is why the leftovers are surfaced.
+
+    Comparison is on the casefolded, whitespace-collapsed name. Python's
+    casefold is used rather than SQL COLLATE NOCASE because the latter is
+    ASCII-only in SQLite and would miss accented names — most of this table.
+    """
+    def key(name):
+        return " ".join(name.split()).casefold()
+
+    by_name = {}
+    for row in db.execute("SELECT id, name FROM persons"):
+        # First row wins: two people sharing a name can't be told apart from a
+        # bare string, so the moderator confirms that case by hand.
+        by_name.setdefault(key(row["name"]), str(row["id"]))
+
+    ids, unmatched = set(), []
+    for raw in (proposed or "").split(","):
+        name = raw.strip()
+        if not name:
+            continue
+        found = by_name.get(key(name))
+        if found:
+            ids.add(found)
+        else:
+            unmatched.append(name)
+    return ids, unmatched
+
+
+def _submitted_by_moderator(db, submitted_by):
+    """The declarant as an utilisateurice id, when their name matches one.
+
+    « Saisi par » (and « Qui a ajouté la personne ? », « Qui a reçu / envoyé le
+    mail ? ») name the utilisateurice the record came from — the declarant —
+    not whoever is validating it. So they are filled from the declaration
+    itself. « Validé par » is the one field that belongs to the person
+    validating, and is left alone here.
+
+    Returns the id as a string, or None when the declaration was signed with a
+    pseudo, with « anonyme », or by someone outside the team — in which case
+    the moderator picks the right utilisateurice by hand.
+    """
+    name = " ".join((submitted_by or "").split())
+    if not name or name.casefold() == "anonyme":
+        return None
+    for row in db.execute("SELECT id, name FROM moderators"):
+        if " ".join(row["name"].split()).casefold() == name.casefold():
+            return str(row["id"])
+    return None
+
+
 def _set_meeting_moderators(db, meeting_id, moderator_ids):
     """Replace a meeting's participant links with `moderator_ids`."""
     db.execute("DELETE FROM meeting_moderators WHERE meeting_id = ?", (meeting_id,))
@@ -643,7 +816,11 @@ def index():
     base = """
         SELECT m.*,
                GROUP_CONCAT(p.name, ', ')            AS person_names,
-               GROUP_CONCAT(DISTINCT p.political_group) AS groups
+               GROUP_CONCAT(DISTINCT p.political_group) AS groups,
+               -- Emails of the people met, so the list can offer them directly.
+               -- NULLIF keeps a person with no address from contributing an
+               -- empty entry that would render as a stray separator.
+               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
@@ -699,6 +876,7 @@ def _save_meeting(db, meeting):
     meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
     summary = (request.form.get("summary") or "").strip()
     details = (request.form.get("details") or "").strip()
+    follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     recorded_by = _valid_moderator(db, request.form.get("recorded_by"))
     person_ids = [pid for pid in request.form.getlist("person_ids") if pid in valid_ids]
     participant_ids = [m for m in request.form.getlist("participant_ids") if m in mod_ids]
@@ -722,6 +900,8 @@ def _save_meeting(db, meeting):
         errors.append("L'heure de la rencontre est invalide (format HH:MM).")
     if not summary:
         errors.append("Un bref résumé est obligatoire.")
+    if not fu_ok:
+        errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
     file, stored_name, orig_name = _stage_upload(errors)
 
     if errors:
@@ -734,11 +914,13 @@ def _save_meeting(db, meeting):
         cur = db.execute(
             """
             INSERT INTO meetings (
-                meeting_date, meeting_time, summary, details, recorded_by, validated_by,
+                meeting_date, meeting_time, summary, details, follow_up_date,
+                recorded_by, validated_by,
                 document_stored_name, document_orig_name, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (meeting_date, meeting_time or None, summary, details or None,
+             follow_up_date or None,
              recorded_by, validated_by, stored_name, orig_name,
              datetime.utcnow().isoformat(timespec="seconds")),
         )
@@ -756,10 +938,11 @@ def _save_meeting(db, meeting):
         db.execute(
             """
             UPDATE meetings SET meeting_date = ?, meeting_time = ?, summary = ?,
-                details = ?, recorded_by = ?, validated_by = ?, document_stored_name = ?,
-                document_orig_name = ? WHERE id = ?
+                details = ?, follow_up_date = ?, recorded_by = ?, validated_by = ?,
+                document_stored_name = ?, document_orig_name = ? WHERE id = ?
             """,
             (meeting_date, meeting_time or None, summary, details or None,
+             follow_up_date or None,
              recorded_by, validated_by, new_stored, new_orig, meeting_id),
         )
 
@@ -939,6 +1122,170 @@ def download(meeting_id):
     )
 
 
+# --------------------------------------------------------------------------- #
+# TODO — what has to happen today
+# --------------------------------------------------------------------------- #
+
+# One person's latest interaction, with the relance it carries and whether that
+# relance has been ticked off. Same rule as person_follow_up_sql, but it also
+# returns *which* record the relance came from, because /todo ticks the box on
+# that record. The window function picks one row per person.
+LATEST_INTERACTION_SQL = """
+    SELECT * FROM (
+        SELECT i.*, ROW_NUMBER() OVER (
+                   PARTITION BY i.person_id
+                   ORDER BY i.on_date DESC, i.entered_at DESC
+               ) AS rn
+        FROM (
+            SELECT mp.person_id, 'meeting' AS kind, me.id AS rec_id,
+                   me.meeting_date AS on_date, me.created_at AS entered_at,
+                   me.follow_up_date, me.follow_up_done, me.summary
+              FROM meetings me
+              JOIN meeting_persons mp ON mp.meeting_id = me.id
+            UNION ALL
+            SELECT xp.person_id, 'mail', ma.id, ma.mail_date, ma.created_at,
+                   ma.follow_up_date, ma.follow_up_done, ma.summary
+              FROM mails ma
+              JOIN mail_persons xp ON xp.mail_id = ma.id
+        ) AS i
+    ) WHERE rn = 1
+"""
+
+
+@app.route("/todo")
+@login_required
+def todo():
+    """Everything that needs doing today, in three blocks.
+
+    Rencontres happening today; relances that have come due (today or earlier);
+    and upcoming rencontres that still need people signed up for them.
+    """
+    db = get_db()
+    today_iso = date.today().isoformat()
+
+    meetings_today = db.execute(
+        """
+        SELECT m.*,
+               GROUP_CONCAT(p.name, ', ')             AS person_names,
+               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails,
+               (SELECT GROUP_CONCAT(mo.name, ', ')
+                  FROM meeting_moderators mm
+                  JOIN moderators mo ON mo.id = mm.moderator_id
+                 WHERE mm.meeting_id = m.id)          AS participant_names
+        FROM meetings m
+        LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
+        LEFT JOIN persons p          ON p.id = mp.person_id
+        WHERE m.meeting_date = ?
+        GROUP BY m.id
+        ORDER BY COALESCE(m.meeting_time, '99:99'), m.id
+        """,
+        (today_iso,),
+    ).fetchall()
+
+    # Relances that have come due. A relance belongs to a record (the person's
+    # latest interaction), and several people can share that record, so the
+    # rows are grouped by record: one task, ticked once, not once per person.
+    due = db.execute(
+        f"""
+        SELECT l.kind, l.rec_id, l.on_date, l.follow_up_date, l.follow_up_done,
+               l.summary,
+               GROUP_CONCAT(p.name, ', ')             AS person_names,
+               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails
+        FROM ({LATEST_INTERACTION_SQL}) AS l
+        JOIN persons p ON p.id = l.person_id
+        WHERE l.follow_up_date IS NOT NULL AND l.follow_up_date <= ?
+        GROUP BY l.kind, l.rec_id
+        ORDER BY l.follow_up_date, l.kind, l.rec_id
+        """,
+        (today_iso,),
+    ).fetchall()
+
+    # Upcoming rencontres and who is signed up. Two people is the target, so the
+    # template colours anything short of that as a gap to fill.
+    upcoming = db.execute(
+        """
+        SELECT m.*,
+               GROUP_CONCAT(p.name, ', ') AS person_names,
+               (SELECT COUNT(*) FROM meeting_moderators mm
+                 WHERE mm.meeting_id = m.id) AS participant_count
+        FROM meetings m
+        LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
+        LEFT JOIN persons p          ON p.id = mp.person_id
+        WHERE m.meeting_date > ?
+        GROUP BY m.id
+        ORDER BY m.meeting_date, COALESCE(m.meeting_time, '99:99'), m.id
+        """,
+        (today_iso,),
+    ).fetchall()
+    signed_up = {
+        m["id"]: {
+            str(r[0])
+            for r in db.execute(
+                "SELECT moderator_id FROM meeting_moderators WHERE meeting_id = ?",
+                (m["id"],),
+            )
+        }
+        for m in upcoming
+    }
+
+    return render_template(
+        "todo.html",
+        meetings_today=meetings_today,
+        due=due,
+        upcoming=upcoming,
+        signed_up=signed_up,
+        moderators=_moderators(db),
+        today=today_iso,
+        min_participants=MIN_PARTICIPANTS,
+    )
+
+
+@app.route("/todo/rencontre/<int:meeting_id>/done", methods=["POST"])
+@login_required
+def toggle_meeting_done(meeting_id):
+    db = get_db()
+    db.execute(
+        "UPDATE meetings SET done = 1 - done WHERE id = ?", (meeting_id,)
+    )
+    db.commit()
+    return redirect(url_for("todo"))
+
+
+@app.route("/todo/relance/<kind>/<int:rec_id>/done", methods=["POST"])
+@login_required
+def toggle_follow_up_done(kind, rec_id):
+    if kind not in ("meeting", "mail"):
+        abort(404)
+    table = "meetings" if kind == "meeting" else "mails"
+    db = get_db()
+    db.execute(
+        f"UPDATE {table} SET follow_up_done = 1 - follow_up_done WHERE id = ?",
+        (rec_id,),
+    )
+    db.commit()
+    return redirect(url_for("todo"))
+
+
+@app.route("/todo/rencontre/<int:meeting_id>/inscriptions", methods=["POST"])
+@login_required
+def sign_up_meeting(meeting_id):
+    """Set who is going to an upcoming rencontre.
+
+    These are the meeting's participants — the same `meeting_moderators` rows
+    the rencontre form edits — so a sign-up made here is simply part of the
+    rencontre, with nothing to carry over later.
+    """
+    db = get_db()
+    if db.execute("SELECT 1 FROM meetings WHERE id = ?", (meeting_id,)).fetchone() is None:
+        abort(404)
+    mod_ids = {str(m["id"]) for m in _moderators(db)}
+    chosen = [int(m) for m in request.form.getlist("participant_ids") if m in mod_ids]
+    _set_meeting_moderators(db, meeting_id, chosen)
+    db.commit()
+    flash("Inscriptions mises à jour.", "success")
+    return redirect(url_for("todo"))
+
+
 @app.route("/calendar")
 @login_required
 def calendar_view():
@@ -970,7 +1317,10 @@ def calendar_view():
     ).fetchall()
     followups = db.execute(
         """
-        SELECT id, name, follow_up_date FROM persons
+        SELECT * FROM (
+            SELECT p.id, p.name, """ + person_follow_up_sql("p") + """ AS follow_up_date
+            FROM persons p
+        )
         WHERE follow_up_date BETWEEN ? AND ?
         """,
         (lo, hi),
@@ -1026,7 +1376,8 @@ def people():
              WHERE xp.person_id = p.id AND x.direction = 'sent') AS mails_sent,
             (SELECT COUNT(*) FROM mail_persons xp
              JOIN mails x ON x.id = xp.mail_id
-             WHERE xp.person_id = p.id AND x.direction = 'received') AS mails_received
+             WHERE xp.person_id = p.id AND x.direction = 'received') AS mails_received,
+            """ + person_follow_up_sql("p") + """ AS follow_up_date
         FROM persons p
     """
     if q:
@@ -1061,7 +1412,6 @@ def _save_person(db, person):
     political_group = (request.form.get("political_group") or "").strip()
     stance = (request.form.get("stance") or "").strip()
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
-    follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     notes = (request.form.get("notes") or "").strip()
     circonscription = (request.form.get("circonscription") or "").strip()
     email = (request.form.get("email") or "").strip()
@@ -1081,8 +1431,6 @@ def _save_person(db, person):
         errors.append("Indiquez qui a validé la fiche.")
     if not fc_ok:
         errors.append("La date de contact est invalide (format JJ/MM/AAAA).")
-    if not fu_ok:
-        errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
 
     if errors:
         return None, errors
@@ -1092,13 +1440,13 @@ def _save_person(db, person):
             """
             INSERT INTO persons (
                 name, role, portefeuille, political_group, stance, first_contacted,
-                follow_up_date, notes, circonscription, email,
+                notes, circonscription, email,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (name, role or None, portefeuille or None, political_group, stance,
              first_contacted or None,
-             follow_up_date or None, notes or None, circonscription or None,
+             notes or None, circonscription or None,
              email or None, added_by, validated_by,
              datetime.utcnow().isoformat(timespec="seconds")),
         )
@@ -1109,13 +1457,13 @@ def _save_person(db, person):
             """
             UPDATE persons SET name = ?, role = ?, portefeuille = ?,
                 political_group = ?, stance = ?,
-                first_contacted = ?, follow_up_date = ?, notes = ?,
+                first_contacted = ?, notes = ?,
                 circonscription = ?, email = ?,
                 added_by = ?, validated_by = ? WHERE id = ?
             """,
             (name, role or None, portefeuille or None, political_group, stance,
              first_contacted or None,
-             follow_up_date or None, notes or None, circonscription or None,
+             notes or None, circonscription or None,
              email or None, added_by, validated_by, person_id),
         )
     db.commit()
@@ -1205,10 +1553,32 @@ def delete_person(person_id):
 def person_detail(person_id):
     db = get_db()
     person = db.execute(
-        "SELECT * FROM persons WHERE id = ?", (person_id,)
+        "SELECT p.*, " + person_follow_up_sql("p") + " AS follow_up_date "
+        "FROM persons p WHERE p.id = ?", (person_id,)
     ).fetchone()
     if person is None:
         abort(404)
+    # Which interaction the derived relance comes from, so the read-only field
+    # can say where it is set rather than showing a date from nowhere.
+    follow_up_source = db.execute(
+        """
+        SELECT kind, id, on_date, follow_up_date FROM (
+            SELECT 'meeting' AS kind, me.id AS id, me.meeting_date AS on_date,
+                   me.created_at AS entered_at, me.follow_up_date
+              FROM meetings me
+              JOIN meeting_persons mp ON mp.meeting_id = me.id
+             WHERE mp.person_id = ?
+            UNION ALL
+            SELECT 'mail', ma.id, ma.mail_date, ma.created_at, ma.follow_up_date
+              FROM mails ma
+              JOIN mail_persons xp ON xp.mail_id = ma.id
+             WHERE xp.person_id = ?
+        )
+        ORDER BY on_date DESC, entered_at DESC
+        LIMIT 1
+        """,
+        (person_id, person_id),
+    ).fetchone()
     meetings = db.execute(
         """
         SELECT m.* FROM meetings m
@@ -1238,6 +1608,7 @@ def person_detail(person_id):
     return render_template(
         "person_detail.html",
         p=person,
+        follow_up_source=follow_up_source,
         meetings=meetings,
         mails=mails,
         mails_sent=mails_sent,
@@ -1273,12 +1644,12 @@ def mails():
                 SELECT x2.id FROM mails x2
                 LEFT JOIN mail_persons xp2 ON xp2.mail_id = x2.id
                 LEFT JOIN persons p2       ON p2.id = xp2.person_id
-                WHERE p2.name LIKE ? OR x2.summary LIKE ?
+                WHERE p2.name LIKE ? OR x2.summary LIKE ? OR x2.subject LIKE ?
             )
             GROUP BY x.id
             ORDER BY x.mail_date DESC, x.id DESC
             """,
-            (like, like),
+            (like, like, like),
         ).fetchall()
     else:
         rows = db.execute(
@@ -1297,6 +1668,7 @@ def _save_mail(db, mail):
 
     mail_date, date_ok = _to_iso(request.form.get("mail_date"))
     direction = (request.form.get("direction") or "").strip()
+    subject = (request.form.get("subject") or "").strip()
     summary = (request.form.get("summary") or "").strip()
     important = 1 if request.form.get("important") else 0
     follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
@@ -1305,9 +1677,10 @@ def _save_mail(db, mail):
     validated_by = _valid_moderator(db, request.form.get("validated_by"))
     remove_doc = bool(request.form.get("remove_document"))
 
-    # A follow-up date only makes sense for a mail we sent.
-    if direction != "sent":
-        follow_up_date, fu_ok = "", True
+    # A received mail gets a relance too. It can be a person's most recent
+    # interaction, and a person's « Relance prévue » mirrors that latest one —
+    # so blanking it here by rule would silently drop their follow-up instead
+    # of letting someone decide there should not be one.
 
     errors = []
     if not person_ids:
@@ -1337,12 +1710,13 @@ def _save_mail(db, mail):
         cur = db.execute(
             """
             INSERT INTO mails (
-                mail_date, direction, important, summary, follow_up_date,
+                mail_date, direction, important, subject, summary, follow_up_date,
                 received_by, validated_by,
                 document_stored_name, document_orig_name, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (mail_date, direction, important, summary, follow_up_date or None,
+            (mail_date, direction, important, subject or None, summary,
+             follow_up_date or None,
              received_by, validated_by, stored_name, orig_name,
              datetime.utcnow().isoformat(timespec="seconds")),
         )
@@ -1358,25 +1732,23 @@ def _save_mail(db, mail):
             new_stored, new_orig = None, None
         db.execute(
             """
-            UPDATE mails SET mail_date = ?, direction = ?, important = ?, summary = ?,
+            UPDATE mails SET mail_date = ?, direction = ?, important = ?,
+                subject = ?, summary = ?,
                 follow_up_date = ?, received_by = ?, validated_by = ?,
                 document_stored_name = ?, document_orig_name = ?
             WHERE id = ?
             """,
-            (mail_date, direction, important, summary, follow_up_date or None,
+            (mail_date, direction, important, subject or None, summary,
+             follow_up_date or None,
              received_by, validated_by, new_stored, new_orig, mail_id),
         )
 
     if file and stored_name:
         file.save(UPLOAD_DIR / stored_name)
     _set_person_links(db, "mail_persons", "mail_id", mail_id, person_id_ints)
-    # Propagate the follow-up date onto the people, so their "relance" reflects
-    # the latest plan.
-    if follow_up_date:
-        db.executemany(
-            "UPDATE persons SET follow_up_date = ? WHERE id = ?",
-            [(follow_up_date, pid) for pid in person_id_ints],
-        )
+    # No copy-down onto `persons`: a person's relance is derived from their most
+    # recent interaction (person_follow_up_sql), so this mail already drives it
+    # if it is the latest one — and must not overwrite it if it is not.
     db.commit()
     return mail_id, []
 
@@ -1567,20 +1939,26 @@ def _record_submission():
     _submission_log[request.remote_addr or "unknown"].append(time.monotonic())
 
 
-def _depute_names(db):
-    """Names of sitting deputies, for the anonymous declaration dropdowns.
-    Only deputies are exposed here — that list is public data. Every other
-    contact in `persons` stays private to logged-in members."""
+def _public_person_names(db):
+    """(name, role) for every public officeholder, for the anonymous
+    declaration pickers.
+
+    Restricted to PUBLIC_ROLES: those names and seats are already published
+    elsewhere, so listing them leaks nothing. Any other contact in `persons`
+    stays private to logged-in members, and even here only the name and the
+    role are exposed — never the email, the stance or the notes.
+    """
     # `role` is a comma-joined list, so an exact match would miss a deputy who
     # is also a minister. Padding both sides makes this an exact element test
     # (it can't match a label that merely contains "Député·e").
-    return [
-        r[0] for r in db.execute(
-            "SELECT name FROM persons "
-            "WHERE instr(', ' || role || ', ', ', Député·e, ') > 0 "
-            "ORDER BY name"
-        )
-    ]
+    where = " OR ".join(
+        "instr(', ' || role || ', ', ?) > 0" for _ in PUBLIC_ROLES
+    )
+    params = [f", {r}, " for r in PUBLIC_ROLES]
+    return db.execute(
+        f"SELECT name, role FROM persons WHERE {where} ORDER BY name COLLATE NOCASE",
+        params,
+    ).fetchall()
 
 
 @app.route("/declarer")
@@ -1602,7 +1980,6 @@ def declarer_person():
         political_group = (request.form.get("political_group") or "").strip()
         stance = (request.form.get("stance") or "").strip()
         first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
-        follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
         notes = (request.form.get("notes") or "").strip()
         submitted_by = (request.form.get("submitted_by") or "").strip()
 
@@ -1611,8 +1988,6 @@ def declarer_person():
             errors.append("Le nom est obligatoire.")
         if not fc_ok:
             errors.append("La date de contact est invalide (format JJ/MM/AAAA).")
-        if not fu_ok:
-            errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
         if not submitted_by:
             errors.append("Indiquez votre nom ou pseudo Discord (ou « anonyme »).")
         _check_captcha(errors)
@@ -1622,12 +1997,12 @@ def declarer_person():
                 """
                 INSERT INTO pending_persons (
                     name, role, portefeuille, political_group, stance, first_contacted,
-                    follow_up_date, notes, submitted_by, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notes, submitted_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (name, role or None, portefeuille or None,
                  political_group or None, stance or None,
-                 first_contacted or None, follow_up_date or None, notes or None,
+                 first_contacted or None, notes or None,
                  submitted_by or None, datetime.utcnow().isoformat(timespec="seconds")),
             )
             db.commit()
@@ -1653,6 +2028,7 @@ def declarer_meeting():
         meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
         summary = (request.form.get("summary") or "").strip()
         details = (request.form.get("details") or "").strip()
+        follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
         proposed_people = (request.form.get("proposed_people") or "").strip()
         submitted_by = (request.form.get("submitted_by") or "").strip()
 
@@ -1667,6 +2043,8 @@ def declarer_meeting():
             errors.append("L'heure de la rencontre est invalide (format HH:MM).")
         if not summary:
             errors.append("Un bref résumé est obligatoire.")
+        if not fu_ok:
+            errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
         if not submitted_by:
             errors.append("Indiquez votre nom ou pseudo Discord (ou « anonyme »).")
         file, stored_name, orig_name = _stage_upload(errors)
@@ -1676,11 +2054,13 @@ def declarer_meeting():
             db.execute(
                 """
                 INSERT INTO pending_meetings (
-                    meeting_date, meeting_time, summary, details, proposed_people,
-                    submitted_by, document_stored_name, document_orig_name, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    meeting_date, meeting_time, summary, details, follow_up_date,
+                    proposed_people, submitted_by, document_stored_name,
+                    document_orig_name, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (meeting_date, meeting_time or None, summary, details or None,
+                 follow_up_date or None,
                  proposed_people, submitted_by or None, stored_name, orig_name,
                  datetime.utcnow().isoformat(timespec="seconds")),
             )
@@ -1695,7 +2075,7 @@ def declarer_meeting():
     return render_template(
         "declarer_meeting.html",
         form=request.form if request.method == "POST" else {},
-        deputies=_depute_names(get_db()),
+        people=_public_person_names(get_db()),
         today=date.today().isoformat(), captcha_question=_new_captcha(),
     )
 
@@ -1708,13 +2088,12 @@ def declarer_mail():
         db = get_db()
         mail_date, date_ok = _to_iso(request.form.get("mail_date"))
         direction = (request.form.get("direction") or "").strip()
+        subject = (request.form.get("subject") or "").strip()
         summary = (request.form.get("summary") or "").strip()
         important = 1 if request.form.get("important") else 0
         follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
         proposed_people = (request.form.get("proposed_people") or "").strip()
         submitted_by = (request.form.get("submitted_by") or "").strip()
-        if direction != "sent":
-            follow_up_date, fu_ok = "", True
 
         errors = []
         if not proposed_people:
@@ -1738,12 +2117,13 @@ def declarer_mail():
             db.execute(
                 """
                 INSERT INTO pending_mails (
-                    mail_date, direction, important, summary, follow_up_date,
+                    mail_date, direction, important, subject, summary, follow_up_date,
                     proposed_people, submitted_by, document_stored_name,
                     document_orig_name, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (mail_date, direction, important, summary, follow_up_date or None,
+                (mail_date, direction, important, subject or None, summary,
+                 follow_up_date or None,
                  proposed_people, submitted_by or None, stored_name, orig_name,
                  datetime.utcnow().isoformat(timespec="seconds")),
             )
@@ -1758,7 +2138,7 @@ def declarer_mail():
     return render_template(
         "declarer_mail.html", directions=MAIL_DIRECTIONS,
         form=request.form if request.method == "POST" else {},
-        deputies=_depute_names(get_db()),
+        people=_public_person_names(get_db()),
         today=date.today().isoformat(), captcha_question=_new_captcha(),
     )
 
@@ -1858,6 +2238,7 @@ def approve_pending_person(pid):
         form = request.form
     else:
         form = _form_from_row(draft)
+        form["added_by"] = _submitted_by_moderator(db, draft["submitted_by"]) or ""
 
     return render_template(
         "new_person.html", groups=POLITICAL_GROUPS, roles=ROLES, stances=STANCES,
@@ -1908,14 +2289,20 @@ def approve_pending_meeting(pid):
         form = request.form
         selected = set(request.form.getlist("person_ids"))
         selected_mods = set(request.form.getlist("participant_ids"))
+        unmatched = []  # the moderator has now made the call themselves
     else:
         form = _form_from_row(draft)
-        selected = set()
-        selected_mods = set()
+        selected, unmatched = _match_proposed_people(db, draft["proposed_people"])
+        declarant = _submitted_by_moderator(db, draft["submitted_by"])
+        # The declarant is who the rencontre was "saisie" by, and they attended
+        # it — both fields describe them, not the moderator validating.
+        form["recorded_by"] = declarant or ""
+        selected_mods = {declarant} if declarant else set()
 
     return render_template(
         "new_meeting.html", people=people, moderators=_moderators(db), form=form,
         selected_ids=selected, selected_mods=selected_mods,
+        unmatched_people=unmatched,
         current=None, today=date.today().isoformat(),
         action_url=url_for("approve_pending_meeting", pid=pid),
         heading="Valider une rencontre", cancel_url=url_for("moderation"),
@@ -1963,13 +2350,15 @@ def approve_pending_mail(pid):
             flash(e, "error")
         form = request.form
         selected = set(request.form.getlist("person_ids"))
+        unmatched = []  # the moderator has now made the call themselves
     else:
         form = _form_from_row(draft)
-        selected = set()
+        selected, unmatched = _match_proposed_people(db, draft["proposed_people"])
+        form["received_by"] = _submitted_by_moderator(db, draft["submitted_by"]) or ""
 
     return render_template(
         "new_mail.html", people=people, moderators=_moderators(db), directions=MAIL_DIRECTIONS,
-        form=form, selected_ids=selected, current=None,
+        form=form, selected_ids=selected, current=None, unmatched_people=unmatched,
         today=date.today().isoformat(),
         action_url=url_for("approve_pending_mail", pid=pid),
         heading="Valider un courriel", cancel_url=url_for("moderation"),

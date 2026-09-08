@@ -81,9 +81,12 @@
     <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
     <input type="text" id="submitted_by" name="submitted_by"
            value="{{ form.get('submitted_by', '') }}" required
-           placeholder="ex. Marie L. ou marie_l#1234">
+           placeholder="ex. Marie L. ou marie_l#1234"
+           autocomplete="nickname" data-remember="submitted_by">
     <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
-      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».</p>
+      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».
+      Ce nom est retenu par votre navigateur pour vos prochaines déclarations ;
+      il reste sur votre appareil et ne nous parvient qu'avec le formulaire.</p>
   </div>
 
   <div class="field">

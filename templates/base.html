@@ -12,6 +12,7 @@
     <a class="brand" href="{{ url_for('index') }}">📋 Journal des rencontres</a>
     <nav>
       {% if session.get('authenticated') %}
+        <a href="{{ url_for('todo') }}">À faire</a>
         <a href="{{ url_for('index') }}">Rencontres</a>
         <a href="{{ url_for('calendar_view') }}">Calendrier</a>
         <a href="{{ url_for('mails') }}">Courriels</a>

@@ -8,6 +8,7 @@
       <tr>
         <th>Date</th>
         <th>Personne(s)</th>
+        <th>Courriel</th>
         <th>Groupe politique</th>
         <th>Résumé</th>
         <th>Doc</th>
@@ -18,6 +19,14 @@
       <tr onclick="window.location='{{ url_for('meeting_detail', meeting_id=m['id']) }}'">
         <td class="nowrap">{{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %}<br><span class="muted">{{ m['meeting_time'] }}</span>{% endif %}</td>
         <td><strong>{{ m['person_names'] or '—' }}</strong></td>
+        <td class="email-cell">
+          {# Stop the row's click-through: these links are the point of the cell. #}
+          {% for addr in (m['person_emails'] or '').split(', ') if addr %}
+            <a href="mailto:{{ addr }}" onclick="event.stopPropagation()">{{ addr }}</a>{% if not loop.last %}<br>{% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endfor %}
+        </td>
         <td>
           {% for grp in (m['groups'] or '').split(',') if grp %}
             <span class="tag">{{ grp }}</span>

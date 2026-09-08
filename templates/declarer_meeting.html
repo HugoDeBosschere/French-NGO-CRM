@@ -14,13 +14,13 @@
     <textarea id="proposed_people" name="proposed_people" rows="2" required
       placeholder="ex. Jean Dupont, Marie Martin…">{{ form.get('proposed_people', '') }}</textarea>
     <p class="hint">Indiquez les noms ; un membre de l'équipe fera le lien avec les fiches.</p>
-    {% if deputies %}
+    {% if people %}
     <div class="depute-picker">
-      <label for="depute_picker">Ajouter un·e député·e depuis la liste</label>
-      <select id="depute_picker" data-target="proposed_people">
-        <option value="">— Choisir un·e député·e —</option>
-        {% for d in deputies %}
-        <option value="{{ d }}">{{ d }}</option>
+      <label for="person_picker">Ajouter une personne depuis la liste</label>
+      <select id="person_picker" data-target="proposed_people">
+        <option value="">— Choisir une personne —</option>
+        {% for p in people %}
+        <option value="{{ p['name'] }}">{{ p['name'] }} — {{ p['role'] }}</option>
         {% endfor %}
       </select>
     </div>
@@ -50,6 +50,17 @@
   </div>
 
   <div class="field">
+    <label for="follow_up_date">Relance prévue le <span class="muted">(facultatif)</span></label>
+    <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
+           placeholder="JJ/MM/AAAA"
+           data-follow-up-from="meeting_date" data-follow-up-days="{{ follow_up_days['meeting'] }}"
+           value="{{ (form.get('follow_up_date') or default_follow_up('meeting', form.get('meeting_date') or today)) | fr_date }}">
+    <p class="hint">Date à laquelle il faudrait relancer. Pré-remplie à
+      {{ follow_up_days['meeting'] }} jours après la rencontre — corrigez-la, ou videz le
+      champ s'il n'y a pas lieu de relancer.</p>
+  </div>
+
+  <div class="field">
     <label for="summary">Points clés de la rencontre <span class="req">*</span></label>
     <textarea id="summary" name="summary" rows="5" required
       placeholder="Sujets abordés, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
@@ -75,9 +86,12 @@
     <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
     <input type="text" id="submitted_by" name="submitted_by"
            value="{{ form.get('submitted_by', '') }}" required
-           placeholder="ex. Marie L. ou marie_l#1234">
+           placeholder="ex. Marie L. ou marie_l#1234"
+           autocomplete="nickname" data-remember="submitted_by">
     <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
-      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».</p>
+      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».
+      Ce nom est retenu par votre navigateur pour vos prochaines déclarations ;
+      il reste sur votre appareil et ne nous parvient qu'avec le formulaire.</p>
   </div>
 
   <div class="field">

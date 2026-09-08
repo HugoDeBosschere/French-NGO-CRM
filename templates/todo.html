@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}À faire{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>À faire aujourd'hui</h1>
+  <span class="head-actions">
+    <a class="btn" href="{{ url_for('calendar_view') }}">📅 Calendrier</a>
+  </span>
+</div>
+
+<p class="muted">{{ today | fr_date }}</p>
+
+{# ---------------- Rencontres du jour ---------------- #}
+<h2 class="todo-head todo-head-meeting">
+  Rencontres du jour <span class="muted">({{ meetings_today|length }})</span>
+</h2>
+{% if meetings_today %}
+<ul class="todo-list">
+  {% for m in meetings_today %}
+  <li class="todo-item todo-meeting{% if m['done'] %} todo-done{% endif %}">
+    <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}">
+      <button type="submit" class="todo-check" role="checkbox"
+              aria-checked="{{ 'true' if m['done'] else 'false' }}"
+              title="{{ 'Marquer comme à faire' if m['done'] else 'Marquer comme fait' }}">
+        {% if m['done'] %}☑{% else %}☐{% endif %}
+      </button>
+    </form>
+    <div class="todo-body">
+      <a class="todo-title" href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
+        {% if m['meeting_time'] %}{{ m['meeting_time'] }} — {% endif %}
+        {{ m['person_names'] or 'Rencontre' }}
+      </a>
+      <p class="todo-sub">{{ m['summary'] }}</p>
+      <p class="todo-meta">
+        {% if m['participant_names'] %}
+          Avec : {{ m['participant_names'] }}
+        {% else %}
+          <span class="warn">Personne d'inscrit·e</span>
+        {% endif %}
+        {% for addr in (m['person_emails'] or '').split(', ') if addr %}
+          · <a href="mailto:{{ addr }}">{{ addr }}</a>
+        {% endfor %}
+      </p>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Aucune rencontre aujourd'hui.</p>
+{% endif %}
+
+{# ---------------- Relances dues ---------------- #}
+<h2 class="todo-head todo-head-relance">
+  Relances à envoyer <span class="muted">({{ due|length }})</span>
+</h2>
+<p class="hint">Relances prévues aujourd'hui ou déjà passées. Les relances traitées
+  restent affichées, barrées, pour garder la trace de ce qui a été fait.</p>
+{% if due %}
+<ul class="todo-list">
+  {% for r in due %}
+  <li class="todo-item todo-relance{% if r['follow_up_done'] %} todo-done{% endif %}">
+    <form method="post"
+          action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}">
+      <button type="submit" class="todo-check" role="checkbox"
+              aria-checked="{{ 'true' if r['follow_up_done'] else 'false' }}"
+              title="{{ 'Marquer comme à faire' if r['follow_up_done'] else 'Marquer comme fait' }}">
+        {% if r['follow_up_done'] %}☑{% else %}☐{% endif %}
+      </button>
+    </form>
+    <div class="todo-body">
+      <a class="todo-title"
+         href="{% if r['kind'] == 'meeting' %}{{ url_for('meeting_detail', meeting_id=r['rec_id']) }}{% else %}{{ url_for('mail_detail', mail_id=r['rec_id']) }}{% endif %}">
+        {{ r['person_names'] or '—' }}
+      </a>
+      {% set d = r['follow_up_date'] | days_until %}
+      <p class="todo-sub">
+        Relance prévue le {{ r['follow_up_date'] | fr_date }}
+        {% if d < 0 %}
+          <span class="due due-overdue">en retard de {{ -d }}&nbsp;j</span>
+        {% else %}
+          <span class="due due-soon">aujourd'hui</span>
+        {% endif %}
+        — suite {% if r['kind'] == 'meeting' %}à la rencontre{% else %}au courriel{% endif %}
+        du {{ r['on_date'] | fr_date }}
+      </p>
+      <p class="todo-meta">
+        {% for addr in (r['person_emails'] or '').split(', ') if addr %}
+          <a href="mailto:{{ addr }}">{{ addr }}</a>{% if not loop.last %} · {% endif %}
+        {% else %}
+          <span class="warn">Aucune adresse enregistrée</span>
+        {% endfor %}
+      </p>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Aucune relance en attente.</p>
+{% endif %}
+
+{# ---------------- Rencontres à venir : inscriptions ---------------- #}
+<h2 class="todo-head todo-head-meeting">
+  Rencontres à venir <span class="muted">({{ upcoming|length }})</span>
+</h2>
+<p class="hint">Inscrivez les utilisateurices qui s'y rendent. Une rencontre devrait
+  réunir au moins {{ min_participants }} personnes — en dessous, elle est signalée en rouge.
+  Ces inscriptions sont les participant·es de la rencontre : elles sont déjà
+  enregistrées dessus, rien à reporter.</p>
+{% if not moderators %}
+  <div class="notice">
+    <span class="notice-icon">⚠️</span>
+    <span>Aucun·e utilisateurice enregistré·e.
+      <a href="{{ url_for('moderators_admin') }}">Ajoutez-en</a> pour pouvoir les inscrire.</span>
+  </div>
+{% endif %}
+{% if upcoming %}
+<ul class="todo-list">
+  {% for m in upcoming %}
+  {% set enough = m['participant_count'] >= min_participants %}
+  <li class="todo-item todo-signup {{ 'signup-ok' if enough else 'signup-short' }}">
+    <div class="todo-body">
+      <a class="todo-title" href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
+        {{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} à {{ m['meeting_time'] }}{% endif %}
+        — {{ m['person_names'] or 'Rencontre' }}
+      </a>
+      <p class="todo-sub">
+        <span class="signup-count">{{ m['participant_count'] }}
+          inscrit{{ '' if m['participant_count'] == 1 else 's' }}·e{{ '' if m['participant_count'] == 1 else 's' }}</span>
+        {% if not enough %}<span class="warn">— il en faut au moins {{ min_participants }}</span>{% endif %}
+      </p>
+      <form class="signup-form" method="post"
+            action="{{ url_for('sign_up_meeting', meeting_id=m['id']) }}">
+        <div class="checklist checklist-inline">
+          {% for mo in moderators %}
+            <label class="check">
+              <input type="checkbox" name="participant_ids" value="{{ mo['id'] }}"
+                     {% if (mo['id']|string) in signed_up.get(m['id'], []) %}checked{% endif %}>
+              {{ mo['name'] }}
+            </label>
+          {% endfor %}
+        </div>
+        {% if moderators %}
+        <button class="btn btn-primary" type="submit">Enregistrer les inscriptions</button>
+        {% endif %}
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Aucune rencontre à venir.</p>
+{% endif %}
+{% endblock %}

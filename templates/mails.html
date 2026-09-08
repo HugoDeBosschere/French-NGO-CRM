@@ -34,7 +34,10 @@
         </td>
         <td class="nowrap">{{ directions[x['direction']] }}</td>
         <td><strong>{{ x['person_names'] or '—' }}</strong></td>
-        <td class="summary-cell">{{ x['summary'] }}</td>
+        <td class="summary-cell">
+          {% if x['subject'] %}<strong>{{ x['subject'] }}</strong><br>{% endif %}
+          {{ x['summary'] }}
+        </td>
         <td class="nowrap">{% if x['document_stored_name'] %}📎{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}

@@ -60,7 +60,12 @@
   {% endif %}
 
   <div class="field">
-    <label>Résumé</label>
+    <label>Objet</label>
+    <p>{{ x['subject'] or '—' }}</p>
+  </div>
+
+  <div class="field">
+    <label>Corps du texte</label>
     <p class="prose">{{ x['summary'] }}</p>
   </div>
 

@@ -60,6 +60,24 @@
       {% else %}
         <p class="muted">—</p>
       {% endif %}
+      {% if follow_up_source %}
+        <p class="hint">Reprise
+          {% if follow_up_source['kind'] == 'meeting' %}
+            de la <a href="{{ url_for('meeting_detail', meeting_id=follow_up_source['id']) }}">rencontre
+            du {{ follow_up_source['on_date'] | fr_date }}</a>,
+          {% else %}
+            du <a href="{{ url_for('mail_detail', mail_id=follow_up_source['id']) }}">courriel
+            du {{ follow_up_source['on_date'] | fr_date }}</a>,
+          {% endif %}
+          l'échange le plus récent avec cette personne.
+          {% if not follow_up_source['follow_up_date'] %}
+            Aucune relance n'y est prévue.
+          {% endif %}
+        </p>
+      {% else %}
+        <p class="hint">Aucune rencontre ni courriel enregistré pour l'instant :
+          la relance se déduit de l'échange le plus récent.</p>
+      {% endif %}
     </div>
   </div>
 
