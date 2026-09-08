@@ -71,6 +71,26 @@ python3 utils/insert_gouvernement.py
 Copy `meetings.db` first: the government insert is the only one that *updates*
 existing rows.
 
+### Automatic weekly refresh (`sync_officials.py`)
+
+The manual steps above are orchestrated by **`sync_officials.py`**, driven by a
+weekly systemd timer (`deploy/sync-officials.{service,timer}`, Monday 05:30) — so
+deputies, senators and government stay in sync on their own, like the eurodéputés
+(§7). It downloads each source in **pure Python** (no `curl`/`unzip`): the AN
+open-data zip (unzipped via `zipfile`), the Sénat API JSON, and the government
+list (self-fetched by `extract_gouvernement.py`), then runs extract+insert per
+chamber.
+
+- **Per-chamber isolation:** a network or format failure on one chamber is
+  reported but never blocks the others; the run exits non-zero if any failed.
+- **Disk-safe:** the large AN dump is removed after extraction.
+- **Election-proof-ish:** the AN dump URL carries the legislature number
+  (`AN_LEGISLATURE`, default `17`); bump it after a general election.
+
+```bash
+python3 utils/sync_officials.py     # fetch + extract + insert, all three chambers
+```
+
 ## 4. Sync élu·e emails from the sending tool (`sync_emails_from_elus.py`)
 
 The CRM seeds `persons.email` **statically** at import time, and only deputies
