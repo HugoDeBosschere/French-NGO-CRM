@@ -2190,7 +2190,17 @@ def moderators_admin():
         ORDER BY mo.name COLLATE NOCASE
         """
     ).fetchall()
-    return render_template("moderators.html", moderators=mods)
+    members = db.execute(
+        """
+        SELECT m.id, m.email, COALESCE(m.name, m.email) AS name,
+               COUNT(mm.mail_id) AS mail_count
+        FROM members m
+        LEFT JOIN mail_members mm ON mm.member_id = m.id
+        GROUP BY m.id
+        ORDER BY name COLLATE NOCASE
+        """
+    ).fetchall()
+    return render_template("moderators.html", moderators=mods, members=members)
 
 
 @app.route("/moderateurs/add", methods=["POST"])
