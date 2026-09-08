@@ -86,10 +86,12 @@ Nouvel onglet **Suivi des échanges** : une vue unifiée (citoyens + membres +
 - Le **corps** de chaque message est consultable dans le fil.
 - Filtres par objet / élu·e / membre et par type.
 
-La liste des **membres** figure dans la page **Utilisateurices** (section « Membres
-de l'association », sous les modérateur·ices — pour ne pas surcharger le menu). Les
-fiches membre et les fiches **Personnes** (élu·es) affichent leurs échanges de la
-même façon.
+La liste des **membres** est un **sous-onglet de « Suivi des échanges »**
+(onglets *Échanges* | *Membres*), pour rester dans le même univers fonctionnel
+sans alourdir le menu du haut. Les fiches membre et les fiches **Personnes**
+(élu·es) affichent leurs échanges de la même façon. Une conversation s'ouvre en
+**vue boîte mail** : chaque message en carte (expéditeur → destinataires, objet,
+corps), anciens messages repliés, le dernier ouvert.
 
 ## 6. Fonctionnement quotidien (automatique)
 
@@ -109,38 +111,40 @@ existante). C'est désormais **automatique** pour toutes les chambres.
 > par `sync_emails_from_elus.py` (timer 06:00). Les jobs ci-dessous maintiennent
 > la **liste** (arrivées / remplacements).
 
-**Assemblée nationale + Sénat + gouvernement** — timer `sync-officials`
-(**lundi 05:30 UTC**), orchestrateur `sync_officials.py` :
+**Un seul job** — timer `sync-officials` (**lundi 05:30 UTC**), orchestrateur
+`sync_officials.py`, qui enchaîne les **4 chambres** :
 
 1. **AN** : télécharge le dump open-data officiel (zip), puis `extract_deputes` +
    `insert_deputes`.
 2. **Sénat** : télécharge le JSON de l'API du Sénat, puis `insert_senateurices`.
 3. **Gouvernement** : `extract_gouvernement` (API de l'annuaire de
    l'administration) + `insert_gouvernement`.
+4. **Eurodéputé·es** : `extract_eurodeputes` + `insert_eurodeputes` — liste des
+   MEP *siégeant aujourd'hui* depuis l'API du Parlement européen, emails
+   **publiés** (jamais devinés) ; **anti-throttling** (HTTP 429) par **cache** :
+   l'endpoint de détail n'est appelé que pour un·e **nouveau·lle** eurodéputé·e.
 
 Téléchargements en Python pur (pas de `curl`/`unzip`), **chaque chambre isolée**
 (un échec réseau/format sur l'une n'empêche pas les autres), dump AN supprimé
 après usage (disque). Le numéro de législature de l'URL AN est configurable
 (`AN_LEGISLATURE`, défaut `17`) — à incrémenter après une législative.
 
-**Eurodéputé·es** — timer `sync-eurodeputes` (**lundi 05:50 UTC**),
-`extract_eurodeputes.py` + `insert_eurodeputes.py` :
-
-- liste des eurodéputé·es *siégeant aujourd'hui* depuis l'API officielle du
-  Parlement européen (`data.europarl.europa.eu`), emails **publiés** (jamais
-  devinés) ;
-- **anti-throttling** : l'endpoint de détail limite le débit (HTTP 429) ; comme
-  les emails ne changent pas, `extract` réutilise le dataset précédent en
-  **cache** et n'appelle le détail que pour un·e **nouveau·lle** eurodéputé·e
-  (semaine normale = 1 appel, zéro détail) ; une garde interdit d'écrire un
-  dataset dégradé si l'API throttle.
+**Statut « en poste » (`persons.in_office`).** Après un run **complet** (les 4
+chambres OK), une **réconciliation** met `in_office = 1` pour toute personne
+présente dans au moins une liste courante, `0` sinon. Elle gère le cas
+multi-rôles du gouvernement (un·e ex-ministre resté·e député·e reste « en
+poste ») et **ne touche jamais** les fiches saisies à la main (`added_by` /
+`validated_by`). Si une chambre échoue, la réconciliation est **sautée** (une
+union incomplète retirerait des gens à tort). L'UI affiche un badge **« Non
+élu·e actuellement »** sur la liste des personnes et la fiche.
 
 Pour les 4 chambres :
 
-- ✅ **Automatique** : arrivée / remplacement d'un·e élu·e (avec email),
-  changement de groupe politique.
+- ✅ **Automatique** : arrivée / remplacement d'un·e élu·e (avec email, créé·e
+  automatiquement), changement de groupe politique, passage « en poste » ↔
+  « non élu·e actuellement ».
 - ✋ **Manuel volontaire** : suppression d'un·e élu·e ayant quitté son mandat
-  (conservé·e pour l'historique) ; réécriture d'un email existant (jamais écrasé
+  (conservé·e + badgé·e pour l'historique) ; réécriture d'un email existant (jamais écrasé
   automatiquement).
 
 ## 8. Composants
@@ -148,13 +152,11 @@ Pour les 4 chambres :
 | Fichier | Rôle |
 |---------|------|
 | **`utils/import_member_mails.py`** | Import des mails membres ↔ élu·es : sens, membre, matching robuste des élu·es, alias appris, publication/modération. |
-| **`utils/sync_officials.py`** | Orchestrateur : fetch + extract + insert pour AN, Sénat et gouvernement (chambres isolées, idempotent). |
-| **`utils/extract_eurodeputes.py`** | Récupère les eurodéputé·es depuis l'API du Parlement (cache, anti-429). |
-| **`utils/insert_eurodeputes.py`** | Upsert idempotent des eurodéputé·es dans `persons`. |
-| **`app.py` + templates** | Onglet **Suivi des échanges** (fils regroupés, corps affichés) ; les membres apparaissent dans la page **Utilisateurices** ; tables `members`, `mail_members`, `mail_bodies`, `mail_thread`. |
+| **`utils/sync_officials.py`** | Orchestrateur des **4 chambres** (AN, Sénat, gouvernement, eurodéputés) : fetch + extract + insert, chambres isolées, + réconciliation `in_office`. |
+| **`utils/extract_eurodeputes.py` / `insert_eurodeputes.py`** | Récupère (cache anti-429) et upsert les eurodéputé·es ; appelés par `sync_officials.py`. |
+| **`app.py` + templates** | Sous-onglet **Membres** dans **Suivi des échanges**, vue **boîte mail** des conversations, badge **« Non élu·e actuellement »** (`persons.in_office`) ; tables `members`, `mail_members`, `mail_bodies`, `mail_thread`. |
 | **`utils/deploy/import-member-mails.{service,timer}`** | Timer quotidien 06:10 (mails de membres). |
-| **`utils/deploy/sync-officials.{service,timer}`** | Timer hebdo lundi 05:30 (AN + Sénat + gouvernement). |
-| **`utils/deploy/sync-eurodeputes.{service,timer}`** | Timer hebdo lundi 05:50 (eurodéputé·es). |
+| **`utils/deploy/sync-officials.{service,timer}`** | Timer hebdo lundi 05:30 (les 4 chambres + réconciliation `in_office`). |
 
 ## 9. Déploiement / exploitation
 
@@ -172,13 +174,15 @@ sudo cp utils/deploy/import-member-mails.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now import-member-mails.timer
 ```
 
-**Sync élu·es (AN + Sénat + gouvernement, puis eurodéputé·es)** :
+**Sync des élu·es (les 4 chambres, un seul timer)** :
 ```bash
 sudo cp utils/deploy/sync-officials.{service,timer} /etc/systemd/system/
-sudo cp utils/deploy/sync-eurodeputes.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now sync-officials.timer sync-eurodeputes.timer
+sudo systemctl enable --now sync-officials.timer
 ```
+> `sync-officials` couvre désormais les eurodéputés : l'ancien timer
+> `sync-eurodeputes` est **obsolète** (`sudo systemctl disable --now
+> sync-eurodeputes.timer`).
 
 > ⚠️ Le conteneur ne contient ni `utils/` ni `actual_dataset/` (le Dockerfile ne
 > copie que `app.py`/templates/static). Les services les recopient (`docker cp`)
