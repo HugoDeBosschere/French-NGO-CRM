@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the European Parliament MEPs weekly
+
+[Timer]
+# Monday 05:50, before the mail imports (06:00 / 06:10) so the persons table
+# already carries any newly-seated MEP when the day's mail is matched.
+OnCalendar=Mon *-*-* 05:50:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

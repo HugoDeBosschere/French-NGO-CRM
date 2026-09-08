@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Suivi des échanges{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Suivi des échanges</h1>
+</div>
+
+<nav class="subtabs">
+  <a class="subtab active" href="{{ url_for('exchanges') }}">Échanges</a>
+  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
+  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
+</nav>
+
+<form class="search" method="get" action="{{ url_for('exchanges') }}">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="Rechercher (objet, élu·e, membre)…">
+  <select name="type">
+    <option value="">Tous les types</option>
+    <option value="membre"  {{ 'selected' if typ == 'membre' }}>Membres ↔ élu·es</option>
+    <option value="citoyen" {{ 'selected' if typ == 'citoyen' }}>Citoyens → élu·es</option>
+    <option value="autre"   {{ 'selected' if typ == 'autre' }}>Autres</option>
+  </select>
+  <button class="btn" type="submit">Filtrer</button>
+  {% if q or typ %}<a class="btn btn-ghost" href="{{ url_for('exchanges') }}">Effacer</a>{% endif %}
+</form>
+
+{% if conversations %}
+<div class="table-wrap">
+  <table class="meetings">
+    <thead>
+      <tr><th>Date</th><th>Type</th><th>Interlocuteurs</th><th>Objet</th><th>Doc</th></tr>
+    </thead>
+    <tbody>
+      {% for c in conversations %}
+      <tr onclick="window.location='{{ url_for('conversation', key=c['key']) }}'">
+        <td class="nowrap">{{ c['last_date'] | fr_date }}</td>
+        <td class="nowrap">
+          {% if c['type'] == 'membre' %}<span class="tag tag-member">👥 Membre</span>
+          {% elif c['type'] == 'citoyen' %}<span class="tag tag-citizen">Citoyen</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="nowrap">
+          {{ c['elus']|join(', ') }}
+          {% if c['members'] %}<span class="muted">· {{ c['members']|join(', ') }}</span>{% endif %}
+        </td>
+        <td class="summary-cell">
+          {{ c['subject'] }}
+          {% if c['count'] > 1 %}<span class="thread-count">{{ c['count'] }} messages</span>{% endif %}
+        </td>
+        <td class="nowrap">{% if c['has_doc'] %}📎{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted count">{{ conversations|length }} conversation{{ '' if conversations|length == 1 else 's' }}</p>
+{% else %}
+<div class="empty"><p>Aucun échange ne correspond à ces critères.</p></div>
+{% endif %}
+{% endblock %}

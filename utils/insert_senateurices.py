@@ -25,7 +25,7 @@ import os
 import re
 import sqlite3
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -133,7 +133,7 @@ def main():
     db.execute("PRAGMA foreign_keys = ON")
 
     existing = {r[0] for r in db.execute("SELECT name FROM persons")}
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     inserted, skipped, backfilled, unmapped = 0, 0, 0, []
     for s in senateurices:

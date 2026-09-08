@@ -1,0 +1,23 @@
+[Unit]
+Description=Refresh French MEPs from the European Parliament open-data API and upsert them into the CRM (in-container)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Seed the committed (complete) dataset so extract uses it as a cache and only
+# hits the rate-limited detail endpoint for genuinely new MEPs. rm first: docker
+# cp of a dir onto an existing dir would nest it (/app/actual_dataset/actual_dataset).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/actual_dataset
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/actual_dataset website-meeting-app:/app/actual_dataset
+# extract_eurodeputes.py downloads the members sitting *today* from
+# data.europarl.europa.eu (emails published directly) and rewrites
+# /app/actual_dataset/eurodeputes_fr.json; insert_eurodeputes.py then upserts
+# them into persons (idempotent: new ones inserted, missing emails backfilled,
+# departed members reported but never deleted). insert only runs if extract
+# succeeded, so a network hiccup never feeds a stale/empty dataset to the DB.
+ExecStart=/usr/bin/docker exec website-meeting-app sh -c "python3 /app/utils/extract_eurodeputes.py && python3 /app/utils/insert_eurodeputes.py"

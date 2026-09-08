@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the members' mail import daily
+
+[Timer]
+OnCalendar=*-*-* 06:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

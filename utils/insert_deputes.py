@@ -20,7 +20,7 @@ Idempotent: skips a deputy whose name already exists in `persons`.
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "actual_dataset", "deputes_officiel.json")
@@ -66,7 +66,7 @@ def main():
     db.execute("PRAGMA foreign_keys = ON")
 
     existing = {r[0] for r in db.execute("SELECT name FROM persons")}
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     inserted, skipped, unmapped = 0, 0, []
     for d in deputes:

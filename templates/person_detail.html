@@ -2,7 +2,11 @@
 {% block title %}{{ p['name'] }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>{{ p['name'] }}</h1>
+  <h1>{{ p['name'] }}
+    {% if p['role'] and not p['in_office'] %}
+      <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
+    {% endif %}
+  </h1>
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('edit_person', person_id=p['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('people') }}">Retour</a>
@@ -148,22 +152,31 @@
 {% endif %}
 
 <h2>Courriels</h2>
-{% if mails %}
+{% if conversations %}
 <div class="table-wrap">
   <table class="meetings">
     <thead>
-      <tr><th>Date</th><th>Sens</th><th>Résumé</th><th>Doc</th></tr>
+      <tr><th>Date</th><th>Sens</th><th>Origine</th><th>Résumé</th><th>Doc</th></tr>
     </thead>
     <tbody>
-      {% for x in mails %}
-      <tr onclick="window.location='{{ url_for('mail_detail', mail_id=x['id']) }}'">
+      {% for c in conversations %}
+      <tr onclick="window.location='{{ url_for('conversation', key=c['key']) }}'">
+        <td class="nowrap">{{ c['last_date'] | fr_date }}</td>
         <td class="nowrap">
-          {{ x['mail_date'] | fr_date }}
-          {% if x['important'] %}<span title="Important">⭐</span>{% endif %}
+          {% for d in c['directions'] %}{{ directions[d] }}{% if not loop.last %} · {% endif %}{% endfor %}
         </td>
-        <td class="nowrap">{{ directions[x['direction']] }}</td>
-        <td class="summary-cell">{{ x['summary'] }}</td>
-        <td class="nowrap">{% if x['document_stored_name'] %}📎{% else %}—{% endif %}</td>
+        <td class="nowrap">
+          {% if c['type'] == 'membre' %}
+            <span class="tag tag-member">👥 {{ c['members']|join(', ') }}</span>
+          {% elif c['type'] == 'citoyen' %}
+            <span class="tag tag-citizen">Citoyen</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="summary-cell">
+          {{ c['subject'] }}
+          {% if c['count'] > 1 %}<span class="thread-count">{{ c['count'] }} messages</span>{% endif %}
+        </td>
+        <td class="nowrap">{% if c['has_doc'] %}📎{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

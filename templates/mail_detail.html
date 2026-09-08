@@ -42,6 +42,20 @@
     {% endif %}
   </div>
 
+  {% if members %}
+  <div class="field">
+    <label>Membre(s) de l'association</label>
+    <ul class="people-list">
+      {% for mb in members %}
+        <li>
+          <a href="{{ url_for('member_detail', member_id=mb['id']) }}">👥 {{ mb['name'] }}</a>
+          <span class="muted">· {{ mb['email'] }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {% if x['direction'] == 'sent' and x['follow_up_date'] %}
   <div class="field">
     <label>Relance prévue</label>

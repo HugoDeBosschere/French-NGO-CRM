@@ -30,7 +30,12 @@
     <tbody>
       {% for p in persons %}
       <tr onclick="window.location='{{ url_for('person_detail', person_id=p['id']) }}'">
-        <td><strong>{{ p['name'] }}</strong></td>
+        <td>
+          <strong>{{ p['name'] }}</strong>
+          {% if p['role'] and not p['in_office'] %}
+            <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
+          {% endif %}
+        </td>
         <td>{{ p['role'] or '—' }}</td>
         <td><span class="tag">{{ p['political_group'] }}</span></td>
         <td>{{ p['stance'] }}</td>

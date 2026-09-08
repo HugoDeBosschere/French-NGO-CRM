@@ -34,8 +34,9 @@ OUT = os.path.join(ROOT, "actual_dataset", "eurodeputes_fr.json")
 
 API = "https://data.europarl.europa.eu/api/v2"
 COUNTRY = "FR"
-PAUSE = 0.2  # seconds between detail calls — courtesy, the API is not rate-limited
+PAUSE = 1.0  # seconds between detail calls — the API rate-limits (HTTP 429)
 TIMEOUT = 40
+MAX_TRIES = 6  # per request, before giving up on a single member
 
 # EU vocabulary URIs -> the value we store. Anything unlisted is left empty
 # rather than guessed; the summary at the end counts those.
@@ -49,11 +50,36 @@ def get(path, **params):
     url = f"{API}/{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"Accept": "application/ld+json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        if r.status == 204:  # the API answers "no match" with an empty body
-            return {"data": []}
-        return json.loads(r.read().decode("utf-8"))
+    # The API rate-limits (HTTP 429) and, under load, sometimes answers a detail
+    # request with an empty body and a 200 status that json.loads rejects. Retry
+    # with exponential backoff — honouring Retry-After on a 429 — so neither a
+    # throttle nor a hiccup aborts a whole run of 81 members. (204 is its
+    # documented "no match" answer.)
+    last_err = None
+    for attempt in range(MAX_TRIES):
+        try:
+            req = urllib.request.Request(
+                url, headers={"Accept": "application/ld+json"}
+            )
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                if r.status == 204:
+                    return {"data": []}
+                body = r.read().decode("utf-8").strip()
+            if not body:
+                raise ValueError("empty body (HTTP 200)")
+            return json.loads(body)  # JSONDecodeError is a ValueError
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            if exc.code == 429:  # throttled — wait as long as we're told to
+                retry_after = exc.headers.get("Retry-After")
+                delay = int(retry_after) if (retry_after or "").isdigit() else 0
+                time.sleep(max(delay, 3 * 2 ** attempt))
+            else:
+                time.sleep(2 ** attempt)
+        except (urllib.error.URLError, ValueError) as exc:
+            last_err = exc
+            time.sleep(2 ** attempt)
+    raise last_err
 
 
 def main():
@@ -65,14 +91,40 @@ def main():
             f"{COUNTRY}. It expects a 2-letter code (FR, not FRA); if that is "
             f"still right, check whether the endpoint has changed."
         )
-    print(f"{len(meps)} député·es européen·nes français·es — fetching details…")
+    # A detail call per member is what trips the API's rate limit (HTTP 429), and
+    # a member's email/gender never change. So reuse the previous dataset as a
+    # cache and only hit the detail endpoint for identifiers we've never resolved
+    # (a newly-seated MEP). A normal week is then one list call and no detail
+    # calls; the week after a European election, only the handful of newcomers.
+    cache = {}
+    if os.path.exists(OUT):
+        try:
+            for rec in json.load(open(OUT, encoding="utf-8")):
+                if rec.get("identifier") and rec.get("email"):
+                    cache[rec["identifier"]] = rec
+        except (ValueError, OSError):
+            cache = {}
+    print(
+        f"{len(meps)} député·es européen·nes français·es "
+        f"({len(cache)} en cache) — fetching details for newcomers…"
+    )
 
-    out, no_email, no_gender = [], [], []
-    for i, m in enumerate(meps, start=1):
+    out, no_email, no_gender, fetched = [], [], [], 0
+    for m in meps:
         ident = m["identifier"]
+        cached = cache.get(ident)
+        if cached:
+            # Reuse the resolved email/gender/birthday; refresh the political
+            # group from the live list, since that can change mid-term.
+            rec = dict(cached)
+            rec["groupe"] = m.get("api:political-group")
+            out.append(rec)
+            continue
+
+        fetched += 1
         try:
             detail = get(f"meps/{ident}")["data"][0]
-        except (urllib.error.URLError, KeyError, IndexError) as exc:
+        except (urllib.error.URLError, KeyError, IndexError, ValueError) as exc:
             # One unreachable member must not cost us the other 80.
             print(f"  ! {m.get('label', ident)}: detail unavailable ({exc})")
             detail = {}
@@ -100,9 +152,21 @@ def main():
                 "url": f"https://www.europarl.europa.eu/meps/fr/{ident}",
             }
         )
-        if i % 20 == 0:
-            print(f"  …{i}/{len(meps)}")
+        print(f"  + {prenom} {nom} (nouveau·lle)")
         time.sleep(PAUSE)
+
+    print(f"Details fetched this run: {fetched}")
+
+    # Guard against a throttled run writing a degraded dataset: MEP emails are
+    # published for essentially everyone, so a large "sans email" share means the
+    # API cut us off, not that the addresses vanished. Fail loudly and keep the
+    # previous file, so insert_eurodeputes.py (chained with &&) never runs on it.
+    if len(meps) and len(no_email) > len(meps) // 4:
+        raise SystemExit(
+            f"Aborting: {len(no_email)}/{len(meps)} MEPs came back without an "
+            f"email — the API most likely throttled this run (HTTP 429). "
+            f"Existing {OUT} left untouched; re-run later."
+        )
 
     out.sort(key=lambda p: (p["nom"], p["prenom"]))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

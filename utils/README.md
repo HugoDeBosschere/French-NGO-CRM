@@ -71,6 +71,34 @@ python3 utils/insert_gouvernement.py
 Copy `meetings.db` first: the government insert is the only one that *updates*
 existing rows.
 
+### Automatic weekly refresh (`sync_officials.py`)
+
+The manual steps above are orchestrated by **`sync_officials.py`**, driven by a
+weekly systemd timer (`deploy/sync-officials.{service,timer}`, Monday 05:30) — so
+the officials stay in sync on their own. It covers **all four chambers**:
+deputies, senators, government **and eurodéputés** (§7 scripts, called from here).
+It downloads each source in **pure Python** (no `curl`/`unzip`): the AN open-data
+zip (unzipped via `zipfile`), the Sénat API JSON, the government list
+(self-fetched), and the MEPs (cached, see §7), then runs extract+insert per
+chamber.
+
+- **Per-chamber isolation:** a network or format failure on one chamber is
+  reported but never blocks the others; the run exits non-zero if any failed.
+- **`in_office` reconciliation:** after a *complete* run, persons present in any
+  current roster are marked `in_office=1`, the others `0` (kept for history,
+  shown with a "Non élu·e actuellement" badge). Handles the government
+  multi-role case; never touches hand-entered rows (`added_by`/`validated_by`).
+  Skipped if any chamber failed, so an incomplete union can't retire anyone.
+- **Disk-safe:** the large AN dump is removed after extraction.
+- **Election-proof-ish:** the AN dump URL carries the legislature number
+  (`AN_LEGISLATURE`, default `17`); bump it after a general election.
+
+The eurodéputé timer (`sync-eurodeputes`) is now **superseded** by this job.
+
+```bash
+python3 utils/sync_officials.py     # fetch + extract + insert, all four chambers
+```
+
 ## 4. Sync élu·e emails from the sending tool (`sync_emails_from_elus.py`)
 
 The CRM seeds `persons.email` **statically** at import time, and only deputies
@@ -105,6 +133,122 @@ campaign-mail backfill so senator mails match.
 > Senators who publish no email anywhere (≈15) stay without one — the sending
 > tool falls back to their official contact form, and nothing can match them by
 > address. That is expected, not a bug.
+
+## 6. Members' correspondence with élu·es (`import_member_mails.py`)
+
+Tracks the association's own members (@pauseia.fr) exchanging mail with élu·es —
+**both directions** (member → élu = `sent`, élu → member = `received`) — and
+attributes the member. Companion to the campaign importer; shares the same
+matching/dedup helpers and the same DB.
+
+**Capture (no per-member setup, newcomers covered automatically).** A Google
+Workspace **content-compliance / routing rule** copies every message where one
+side is an élu·e address (`@senat.fr` / `@assemblee-nationale.fr` /
+`@europarl.europa.eu`) and the other a `@pauseia.fr` account into one audit
+mailbox (e.g. `suivi-membres@pauseia.fr`). Set it up in
+`admin.google.com → Apps → Google Workspace → Gmail → Compliance → Content
+compliance`: scope = internal sending + receiving, condition = recipient/sender
+matches the élu domains, action = add `suivi-membres@pauseia.fr` in Bcc (or
+"also deliver to"). The rule applies org-wide, so new members need nothing.
+
+**Members table.** Created on the fly from the mail headers (`Name <email>`): a
+member appears the first time they mail an élu·e. Group addresses (`campagne@`,
+`contact@`, `all@`, …) are excluded (`GROUP_ADDRESSES` in the script). An
+optional Google Directory sync could pre-populate members who haven't mailed yet
+— not required for the automation to work.
+
+**Config** (secrets env file): `MEMBER_IMAP_USER`, `MEMBER_IMAP_APP_PASSWORD`
+(the audit mailbox), optional `MEMBER_IMAP_HOST`/`PORT`/`MAILBOX`. Shares
+`IMAP_DB_PATH` and `IMPORT_AUTO_PUBLISH` with the campaign importer.
+
+```bash
+python3 utils/import_member_mails.py --backfill --dry-run --verbose   # preview
+python3 utils/import_member_mails.py --backfill --auto-publish         # first pass
+python3 utils/import_member_mails.py                                   # daily incremental
+```
+
+**Daily run:** install `deploy/import-member-mails.{service,timer}` (06:10) the
+same way as the campaign unit:
+```bash
+sudo cp utils/deploy/import-member-mails.service /etc/systemd/system/
+sudo cp utils/deploy/import-member-mails.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now import-member-mails.timer
+```
+
+New data lives in `members` and `mail_members` (created by the script); the mail
+summary also names the member and the élu·e, so it shows in the existing UI
+without any change to `app.py`.
+
+**Member address format** doesn't matter: the full address is taken verbatim
+from the header (`prenom@`, `prenom.n@`, `p.nom@`, …), so disambiguated logins
+work with no special handling. Only the domain (`@pauseia.fr`) and the
+group-exclusion list matter.
+
+**Élu·e replies from a non-official address** (personal, cabinet, attaché) are
+still attributed, by three layered fallbacks:
+
+1. **Address + learned aliases** — every address in the headers is resolved
+   against `persons.email` **and** learned aliases (`person_emails`).
+2. **Body scan** — a reply usually quotes the original, which carries the élu·e's
+   official address; that is matched even if the reply's `From` is something else.
+3. **Thread linking** — `In-Reply-To` / `References` inherit the élu·e from the
+   mail this one replies to (`thread_persons`).
+
+**Auto-learning:** when a reply is tied to an élu·e via the thread but comes from
+a new non-official address, that address is **recorded as an alias**
+(`person_emails`), so all later mails to/from it match directly — no thread
+needed. The system gets more robust on its own over time. The only case still
+unmatched is a member writing to a brand-new non-official address that has never
+appeared in a thread; it resolves itself as soon as one reply threads back.
+
+## 7. Eurodéputé·es — automatic weekly refresh (`extract_` + `insert_eurodeputes.py`)
+
+French MEPs are seeded like the other chambers, but — unlike deputies/senators —
+their list is kept **in sync automatically**, so a mid-term replacement or a new
+intake after a European election appears in the CRM on its own (this closes the
+"MEPs present locally but missing on the deployed app" gap).
+
+- **`extract_eurodeputes.py`** — downloads the members *sitting today* from the
+  European Parliament open-data API (`data.europarl.europa.eu`, endpoint
+  `meps/show-current?country-of-representation=FR`). Emails are **published by
+  the Parliament** (`hasEmail`), never guessed. Writes
+  `actual_dataset/eurodeputes_fr.json`.
+- **`insert_eurodeputes.py`** — upserts them into `persons` (role
+  `Député·e européen·ne`, group mapped to the exact `POLITICAL_GROUPS` label,
+  email as published). Idempotent: new MEPs inserted, missing emails backfilled,
+  departed MEPs **reported but never deleted** (their meeting/mail history is
+  kept).
+
+**Why it stays fast and doesn't get rate-limited.** The per-MEP detail endpoint
+rate-limits (HTTP 429), and a member's email never changes, so `extract` uses the
+previous `eurodeputes_fr.json` as a **cache** and only calls the detail endpoint
+for identifiers it has never resolved (a genuine newcomer). A normal week is one
+list call and **zero** detail calls; the week after an election, only the handful
+of new members. A guard aborts the run (leaving the good file untouched) if more
+than a quarter of members come back without an email — the signature of a
+throttled run — so a degraded fetch can never overwrite good data.
+
+```bash
+python3 utils/extract_eurodeputes.py     # refresh the dataset (cached)
+python3 utils/insert_eurodeputes.py      # upsert into persons
+```
+
+**Weekly run:** install `deploy/sync-eurodeputes.{service,timer}` (Monday 05:50,
+before the mail imports). The service seeds the committed dataset into the
+container first (so a restarted container has a warm cache), then runs
+`extract && insert`:
+
+```bash
+sudo cp utils/deploy/sync-eurodeputes.service /etc/systemd/system/
+sudo cp utils/deploy/sync-eurodeputes.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sync-eurodeputes.timer
+```
+
+> **Automatic:** new/replacement MEPs (with email) and political-group changes.
+> **Deliberately manual:** removing an MEP who has left the Parliament (kept for
+> history), and overwriting an existing official email (never auto-replaced).
 
 ## 5. Campaign-mail import (`import_campaign_mails.py`)
 
