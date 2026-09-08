@@ -2,7 +2,11 @@
 {% block title %}{{ p['name'] }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>{{ p['name'] }}</h1>
+  <h1>{{ p['name'] }}
+    {% if p['role'] and not p['in_office'] %}
+      <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
+    {% endif %}
+  </h1>
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('edit_person', person_id=p['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('people') }}">Retour</a>

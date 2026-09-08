@@ -24,8 +24,10 @@ Design notes:
   election; override it with AN_LEGISLATURE when that happens.
 - The unzipped AN dump is large; it is removed after use to spare container disk.
 """
+import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import urllib.request
@@ -35,7 +37,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 JSON_DIR = os.path.join(ROOT, "json")
 DATASET = os.path.join(ROOT, "actual_dataset")
+DB = os.path.join(ROOT, "meetings.db")
 TIMEOUT = 120
+
+# Role tokens (lower-case) of the officials these lists manage. A person whose
+# role contains one of them is subject to the in_office reconciliation below;
+# "Député·e européen·ne" contains "député", "Premier·e ministre" contains
+# "ministre", "Ministre, Député·e" matches both — all covered.
+MANAGED_ROLE_TOKENS = ("député", "sénateur", "ministre", "président")
 
 AN_LEGISLATURE = os.environ.get("AN_LEGISLATURE", "17")
 AN_ZIP_URL = (
@@ -95,12 +104,90 @@ def sync_gouvernement():
     run_script("insert_gouvernement.py")
 
 
+def sync_eurodeputes():
+    # extract caches resolved MEPs and only calls the rate-limited detail
+    # endpoint for newcomers (see extract_eurodeputes.py).
+    run_script("extract_eurodeputes.py")
+    run_script("insert_eurodeputes.py")
+
+
+# --- in_office reconciliation ------------------------------------------------
+# Each roster reader returns the set of names *exactly* as the matching insert
+# script stores them in persons.name, so membership tests line up.
+
+def _roster_deputes():
+    data = json.load(open(os.path.join(DATASET, "deputes_officiel.json"),
+                        encoding="utf-8"))
+    return {x["depute"]["nom"] for x in data["deputes"]}
+
+
+def _roster_senateurices():
+    data = json.load(open(os.path.join(DATASET, "senateurices_actifs.json"),
+                        encoding="utf-8"))
+    return {f"{s['prenom']} {s['nom']}".strip() for s in data}
+
+
+def _roster_gouvernement():
+    data = json.load(open(os.path.join(DATASET, "gouvernement.json"),
+                        encoding="utf-8"))
+    return {m["membre"]["nom_complet"] for m in data["gouvernement"]}
+
+
+def _roster_eurodeputes():
+    data = json.load(open(os.path.join(DATASET, "eurodeputes_fr.json"),
+                         encoding="utf-8"))
+    return {r["nom_complet"] for r in data}
+
+
+ROSTERS = {
+    "Assemblée nationale": _roster_deputes,
+    "Sénat": _roster_senateurices,
+    "Gouvernement": _roster_gouvernement,
+    "Eurodéputé·es": _roster_eurodeputes,
+}
+
+
+def reconcile_in_office():
+    """Mark imported officials in_office=1 when they still sit in any current
+    list, 0 otherwise (kept for history). Runs only when all chambers succeeded,
+    so a missing list can never wrongly retire the people it should contain.
+    Hand-entered rows (added_by/validated_by set) are never touched."""
+    current = set()
+    for reader in ROSTERS.values():
+        current |= reader()
+
+    db = sqlite3.connect(DB)
+    try:
+        rows = db.execute(
+            "SELECT id, name, role, in_office FROM persons "
+            "WHERE added_by IS NULL AND validated_by IS NULL AND role IS NOT NULL"
+        ).fetchall()
+        changed = 0
+        for pid, name, role, was in rows:
+            if not any(tok in role.lower() for tok in MANAGED_ROLE_TOKENS):
+                continue
+            now_in = 1 if name in current else 0
+            if now_in != was:
+                db.execute("UPDATE persons SET in_office = ? WHERE id = ?",
+                           (now_in, pid))
+                changed += 1
+        db.commit()
+        left = db.execute(
+            "SELECT COUNT(*) FROM persons WHERE in_office = 0"
+        ).fetchone()[0]
+        log(f"\nin_office reconciled: {changed} change(s); {left} person(s) now "
+            f"marked no longer in office.")
+    finally:
+        db.close()
+
+
 def main():
     os.makedirs(DATASET, exist_ok=True)  # every extract writes its JSON here
     chambers = [
         ("Assemblée nationale", sync_deputes),
         ("Sénat", sync_senateurices),
         ("Gouvernement", sync_gouvernement),
+        ("Eurodéputé·es", sync_eurodeputes),
     ]
     failures = []
     for label, fn in chambers:
@@ -113,10 +200,15 @@ def main():
             log(f"!!! {label}: FAILED — {type(exc).__name__}: {exc}")
 
     if failures:
+        # Skip reconciliation: without every list the union is incomplete and
+        # would retire people who are actually still in office.
+        log("\nin_office reconciliation skipped (a chamber failed).")
         raise SystemExit(
             "Chambers that failed (left untouched, others applied): "
             + ", ".join(failures)
         )
+
+    reconcile_in_office()
     log("\nAll chambers refreshed.")
 
 

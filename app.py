@@ -326,6 +326,7 @@ def init_db():
             circonscription TEXT,
             email           TEXT,
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
+            in_office       INTEGER NOT NULL DEFAULT 1,  -- 0 = mandate ended, kept for history
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
@@ -460,6 +461,10 @@ def init_db():
         db.execute("ALTER TABLE persons ADD COLUMN follow_up_date TEXT")
     if "role" not in person_cols:
         db.execute("ALTER TABLE persons ADD COLUMN role TEXT")
+    if "in_office" not in person_cols:
+        db.execute(
+            "ALTER TABLE persons ADD COLUMN in_office INTEGER NOT NULL DEFAULT 1"
+        )
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")

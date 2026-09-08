@@ -430,3 +430,11 @@ a.cal-ev:hover {
   color: var(--brand-ink);
   border-bottom-color: var(--brand);
 }
+
+/* "No longer in office" badge on kept-but-inactive officials */
+.tag-inactive {
+  background: #f1f3f5;
+  color: #667085;
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
