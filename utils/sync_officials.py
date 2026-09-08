@@ -96,6 +96,7 @@ def sync_gouvernement():
 
 
 def main():
+    os.makedirs(DATASET, exist_ok=True)  # every extract writes its JSON here
     chambers = [
         ("Assemblée nationale", sync_deputes),
         ("Sénat", sync_senateurices),
