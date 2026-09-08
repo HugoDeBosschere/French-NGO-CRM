@@ -410,3 +410,23 @@ a.cal-ev:hover {
 }
 .notice .notice-icon { flex: 0 0 auto; line-height: 1.45; }
 .notice a { color: #7a5300; text-decoration: underline; }
+
+/* ---------- Sub-tabs (secondary nav within a page) ---------- */
+.subtabs {
+  display: flex;
+  gap: .25rem;
+  border-bottom: 1px solid var(--line);
+  margin: -.25rem 0 1.25rem;
+}
+.subtab {
+  padding: .5rem .9rem;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-weight: 600;
+}
+.subtab:hover { color: var(--ink); text-decoration: none; }
+.subtab.active {
+  color: var(--brand-ink);
+  border-bottom-color: var(--brand);
+}

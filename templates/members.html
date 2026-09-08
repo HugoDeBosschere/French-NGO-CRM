@@ -2,8 +2,13 @@
 {% block title %}Membres{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Membres de l'association</h1>
+  <h1>Suivi des échanges</h1>
 </div>
+
+<nav class="subtabs">
+  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
+  <a class="subtab active" href="{{ url_for('members') }}">Membres</a>
+</nav>
 
 <p class="muted">Comptes @pauseia.fr, ajoutés automatiquement à partir de leur
 correspondance avec les élu·es (import des mails membres).</p>

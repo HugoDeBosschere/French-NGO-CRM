@@ -40,36 +40,4 @@
 {% else %}
 <div class="empty"><p>Aucun·e utilisateurice pour le moment.</p></div>
 {% endif %}
-
-<div class="page-head" style="margin-top:2.5rem">
-  <h1>Membres de l'association</h1>
-</div>
-
-<p class="muted">Comptes @pauseia.fr, ajoutés automatiquement à partir de leur
-correspondance avec les élu·es (import des mails membres).</p>
-
-{% if members %}
-<div class="table-wrap">
-  <table class="meetings">
-    <thead>
-      <tr><th>Nom</th><th>Adresse</th><th>Courriels avec élu·es</th></tr>
-    </thead>
-    <tbody>
-      {% for m in members %}
-      <tr onclick="window.location='{{ url_for('member_detail', member_id=m['id']) }}'">
-        <td><strong>👥 {{ m['name'] }}</strong></td>
-        <td class="nowrap"><span class="muted">{{ m['email'] }}</span></td>
-        <td class="nowrap">{{ m['mail_count'] }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-<p class="muted count">{{ members|length }} membre{{ '' if members|length == 1 else 's' }}</p>
-{% else %}
-<div class="empty">
-  <p>Aucun membre enregistré pour le moment. Ils apparaissent dès qu'ils
-     échangent un courriel avec un·e élu·e (import automatique).</p>
-</div>
-{% endif %}
 {% endblock %}

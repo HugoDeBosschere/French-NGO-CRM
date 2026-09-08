@@ -5,6 +5,11 @@
   <h1>Suivi des échanges</h1>
 </div>
 
+<nav class="subtabs">
+  <a class="subtab active" href="{{ url_for('exchanges') }}">Échanges</a>
+  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
+</nav>
+
 <form class="search" method="get" action="{{ url_for('exchanges') }}">
   <input type="search" name="q" value="{{ q }}"
          placeholder="Rechercher (objet, élu·e, membre)…">
