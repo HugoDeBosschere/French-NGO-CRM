@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh deputies, senators and government weekly
+
+[Timer]
+# Monday 05:30, before the eurodéputé sync (05:50) and the mail imports (06:00 /
+# 06:10), so the persons table carries any newcomer before the day's mail runs.
+OnCalendar=Mon *-*-* 05:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

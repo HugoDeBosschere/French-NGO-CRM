@@ -1,0 +1,19 @@
+[Unit]
+Description=Import members' correspondence with élu·es into the CRM (in-container)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Reads the audit mailbox that the Gmail routing rule copies member↔élu mail into.
+# Secrets file supplies MEMBER_IMAP_USER / MEMBER_IMAP_APP_PASSWORD; add
+# IMPORT_AUTO_PUBLISH=1 there to publish straight to the mails table.
+ExecStart=/usr/bin/docker exec \
+    --env-file /opt/volunteer-apps/secrets/website-meeting.env \
+    -e IMAP_DB_PATH=/app/meetings.db \
+    website-meeting-app \
+    python3 /app/utils/import_member_mails.py

@@ -2,9 +2,15 @@
 {% block title %}Courriels{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Courriels</h1>
+  <h1>Suivi des échanges</h1>
   <a class="btn btn-primary" href="{{ url_for('new_mail') }}">+ Nouveau courriel</a>
 </div>
+
+<nav class="subtabs">
+  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
+  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
+  <a class="subtab active" href="{{ url_for('mails') }}">Tous les courriels</a>
+</nav>
 
 <form class="search" method="get" action="{{ url_for('mails') }}">
   <input type="search" name="q" value="{{ q }}"

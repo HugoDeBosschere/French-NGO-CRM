@@ -326,6 +326,7 @@ def init_db():
             circonscription TEXT,
             email           TEXT,
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
+            in_office       INTEGER NOT NULL DEFAULT 1,  -- 0 = mandate ended, kept for history
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
@@ -376,6 +377,37 @@ def init_db():
             person_id INTEGER NOT NULL REFERENCES persons(id)  ON DELETE CASCADE,
             PRIMARY KEY (mail_id, person_id)
         );
+
+        -- Association members (@pauseia.fr). Populated automatically by
+        -- utils/import_member_mails.py from the members' correspondence with
+        -- élu·es; a mail is linked to its member via mail_members. This is what
+        -- distinguishes an *association member* exchange from an anonymous
+        -- citizen's campaign mail.
+        CREATE TABLE IF NOT EXISTS members (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            email      TEXT UNIQUE NOT NULL,
+            name       TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mail_members (
+            mail_id   INTEGER NOT NULL REFERENCES mails(id)    ON DELETE CASCADE,
+            member_id INTEGER NOT NULL REFERENCES members(id)  ON DELETE CASCADE,
+            PRIMARY KEY (mail_id, member_id)
+        );
+
+        -- Full body of member mails (see utils/import_member_mails.py) and the
+        -- conversation grouping key, so successive exchanges collapse into one
+        -- thread in the UI. Citizen campaign mails have no body stored.
+        CREATE TABLE IF NOT EXISTS mail_bodies (
+            mail_id INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            body    TEXT
+        );
+        CREATE TABLE IF NOT EXISTS mail_thread (
+            mail_id    INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            thread_key TEXT NOT NULL,
+            message_id TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mail_thread_key ON mail_thread(thread_key);
 
         -- Staging tables. Anonymous users (no password) submit drafts here via
         -- the "Déclarer une activité" forms. A certified user reviews them on the
@@ -429,6 +461,10 @@ def init_db():
         db.execute("ALTER TABLE persons ADD COLUMN follow_up_date TEXT")
     if "role" not in person_cols:
         db.execute("ALTER TABLE persons ADD COLUMN role TEXT")
+    if "in_office" not in person_cols:
+        db.execute(
+            "ALTER TABLE persons ADD COLUMN in_office INTEGER NOT NULL DEFAULT 1"
+        )
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")
@@ -1229,6 +1265,7 @@ def person_detail(person_id):
     ).fetchall()
     mails_sent = sum(1 for x in mails if x["direction"] == "sent")
     mails_received = sum(1 for x in mails if x["direction"] == "received")
+    conversations = _conversation_groups(db, mails)
     added_by = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (person["added_by"],)
     ).fetchone()
@@ -1239,7 +1276,7 @@ def person_detail(person_id):
         "person_detail.html",
         p=person,
         meetings=meetings,
-        mails=mails,
+        conversations=conversations,
         mails_sent=mails_sent,
         mails_received=mails_received,
         directions=MAIL_DIRECTIONS,
@@ -1488,6 +1525,14 @@ def mail_detail(mail_id):
         """,
         (mail_id,),
     ).fetchall()
+    members = db.execute(
+        """
+        SELECT m.id, COALESCE(m.name, m.email) AS name, m.email
+        FROM members m JOIN mail_members mm ON mm.member_id = m.id
+        WHERE mm.mail_id = ? ORDER BY name COLLATE NOCASE
+        """,
+        (mail_id,),
+    ).fetchall()
     received_by = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (mail["received_by"],)
     ).fetchone()
@@ -1495,10 +1540,161 @@ def mail_detail(mail_id):
         "SELECT name FROM moderators WHERE id = ?", (mail["validated_by"],)
     ).fetchone()
     return render_template(
-        "mail_detail.html", x=mail, people=people, directions=MAIL_DIRECTIONS,
+        "mail_detail.html", x=mail, people=people, members=members,
+        directions=MAIL_DIRECTIONS,
         received_by=received_by["name"] if received_by else None,
         validated_by=validator["name"] if validator else None,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Members (association @pauseia.fr, auto-imported from their élu·e correspondence)
+# --------------------------------------------------------------------------- #
+
+@app.route("/membres")
+@login_required
+def members():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT m.id, m.email, COALESCE(m.name, m.email) AS name,
+               COUNT(mm.mail_id) AS mail_count
+        FROM members m
+        LEFT JOIN mail_members mm ON mm.member_id = m.id
+        GROUP BY m.id
+        ORDER BY name COLLATE NOCASE
+        """
+    ).fetchall()
+    return render_template("members.html", members=rows)
+
+
+@app.route("/membres/<int:member_id>")
+@login_required
+def member_detail(member_id):
+    db = get_db()
+    member = db.execute(
+        "SELECT * FROM members WHERE id = ?", (member_id,)
+    ).fetchone()
+    if member is None:
+        abort(404)
+    mails = db.execute(
+        """
+        SELECT x.*,
+               (SELECT GROUP_CONCAT(p.name, ', ')
+                  FROM mail_persons xp JOIN persons p ON p.id = xp.person_id
+                 WHERE xp.mail_id = x.id) AS elus
+        FROM mails x
+        JOIN mail_members mm ON mm.mail_id = x.id
+        WHERE mm.member_id = ?
+        ORDER BY x.mail_date DESC, x.id DESC
+        """,
+        (member_id,),
+    ).fetchall()
+    sent = sum(1 for x in mails if x["direction"] == "sent")
+    received = sum(1 for x in mails if x["direction"] == "received")
+    conversations = _conversation_groups(db, mails)
+    return render_template(
+        "member_detail.html", m=member, conversations=conversations,
+        sent=sent, received=received, directions=MAIL_DIRECTIONS,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Suivi des échanges: unified, thread-grouped view of all mails
+# --------------------------------------------------------------------------- #
+
+def _conversation_groups(db, mails):
+    """Group a list of mail rows into conversations (by thread_key, else the mail
+    itself). Each group carries a message count, latest date/subject, the élu·es
+    and members involved, and an origin type (membre / citoyen / autre)."""
+    ids = [m["id"] for m in mails]
+    if not ids:
+        return []
+    qm = ",".join("?" * len(ids))
+    tkey = {r[0]: r[1] for r in db.execute(
+        f"SELECT mail_id, thread_key FROM mail_thread WHERE mail_id IN ({qm})", ids)}
+    elus, membs = {}, {}
+    for mid, name in db.execute(
+        f"SELECT xp.mail_id, p.name FROM mail_persons xp JOIN persons p "
+        f"ON p.id = xp.person_id WHERE xp.mail_id IN ({qm})", ids):
+        elus.setdefault(mid, []).append(name)
+    for mid, name in db.execute(
+        f"SELECT mm.mail_id, COALESCE(m.name, m.email) FROM mail_members mm "
+        f"JOIN members m ON m.id = mm.member_id WHERE mm.mail_id IN ({qm})", ids):
+        membs.setdefault(mid, []).append(name)
+
+    groups, order = {}, []
+    for m in mails:  # mails are expected newest-first
+        key = tkey.get(m["id"]) or f"m{m['id']}"
+        g = groups.get(key)
+        if g is None:
+            g = {"key": key, "count": 0, "last_date": m["mail_date"],
+                 "subject": m["summary"], "elus": set(), "members": set(),
+                 "has_doc": False, "directions": set()}
+            groups[key] = g
+            order.append(key)
+        g["count"] += 1
+        if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
+            g["last_date"] = m["mail_date"]
+            g["subject"] = m["summary"]
+        g["elus"].update(elus.get(m["id"], []))
+        g["members"].update(membs.get(m["id"], []))
+        g["directions"].add(m["direction"])
+        if m["document_stored_name"]:
+            g["has_doc"] = True
+    convs = [groups[k] for k in order]
+    for g in convs:
+        g["type"] = ("membre" if g["members"]
+                     else "citoyen" if g["subject"].startswith("Mail d'un citoyen")
+                     else "autre")
+    return convs
+
+
+@app.route("/echanges")
+@login_required
+def exchanges():
+    db = get_db()
+    q = (request.args.get("q") or "").strip()
+    typ = request.args.get("type") or ""
+    mails = db.execute(
+        "SELECT id, mail_date, direction, summary, document_stored_name "
+        "FROM mails ORDER BY mail_date DESC, id DESC"
+    ).fetchall()
+    convs = _conversation_groups(db, mails)
+    if typ in ("membre", "citoyen", "autre"):
+        convs = [c for c in convs if c["type"] == typ]
+    if q:
+        ql = q.lower()
+        convs = [c for c in convs if ql in c["subject"].lower()
+                 or any(ql in n.lower() for n in c["elus"] | c["members"])]
+    return render_template("exchanges.html", conversations=convs, q=q, typ=typ,
+                           directions=MAIL_DIRECTIONS)
+
+
+@app.route("/echanges/fil")
+@login_required
+def conversation(key=None):
+    db = get_db()
+    key = request.args.get("key", "")
+    mails = db.execute(
+        """
+        SELECT x.*, b.body,
+               (SELECT GROUP_CONCAT(p.name, ', ') FROM mail_persons xp
+                  JOIN persons p ON p.id = xp.person_id WHERE xp.mail_id = x.id) AS elus,
+               (SELECT GROUP_CONCAT(COALESCE(m.name, m.email), ', ') FROM mail_members mm
+                  JOIN members m ON m.id = mm.member_id WHERE mm.mail_id = x.id) AS membres
+        FROM mails x
+        LEFT JOIN mail_thread mt ON mt.mail_id = x.id
+        LEFT JOIN mail_bodies b ON b.mail_id = x.id
+        WHERE COALESCE(mt.thread_key, 'm' || x.id) = ?
+        ORDER BY x.mail_date, x.id
+        """,
+        (key,),
+    ).fetchall()
+    if not mails:
+        abort(404)
+    return render_template("conversation.html", mails=mails,
+                           directions=MAIL_DIRECTIONS)
 
 
 @app.route("/mails/uploads/<int:mail_id>")

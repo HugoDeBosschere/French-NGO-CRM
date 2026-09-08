@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Conversation{% endblock %}
+{% block content %}
+{% set first = mails[0] %}
+{% set last = mails[-1] %}
+
+<div class="page-head">
+  <a class="btn btn-ghost" href="{{ url_for('exchanges') }}">← Retour aux échanges</a>
+</div>
+
+<div class="thread-head">
+  <h1 class="thread-subject">{{ first['subject'] or '(Sans objet)' }}</h1>
+  <p class="thread-sub">
+    {{ mails|length }} message{{ '' if mails|length == 1 else 's' }}
+    · du {{ first['mail_date'] | fr_date }}
+    {% if mails|length > 1 %}au {{ last['mail_date'] | fr_date }}{% endif %}
+  </p>
+</div>
+
+<div class="mailbox">
+  {% for x in mails %}
+  {% set from_names = x['membres'] if x['direction'] == 'sent' else x['elus'] %}
+  {% set to_names   = x['elus'] if x['direction'] == 'sent' else x['membres'] %}
+  {% set sender = (from_names or ('Élu·e' if x['direction'] == 'received' else 'Citoyen·ne')) %}
+  {# Older messages collapsed, the latest one open, like a mailbox thread. #}
+  <details class="mail-msg mail-{{ x['direction'] }}" {{ 'open' if loop.last }}>
+    <summary class="mail-msg-head">
+      <span class="avatar avatar-{{ x['direction'] }}">
+        {{ (sender[:1] | upper) if sender else '?' }}
+      </span>
+      <span class="mail-who">
+        <span class="mail-from">{{ sender }}</span>
+        <span class="mail-preview">{{ x['summary'] }}</span>
+      </span>
+      <span class="mail-when">
+        {% if x['direction'] == 'sent' %}<span class="tag tag-member">↗ Envoyé</span>
+        {% elif x['direction'] == 'received' %}<span class="tag">↘ Reçu</span>{% endif %}
+        <span class="mail-date">{{ x['mail_date'] | fr_date }}</span>
+      </span>
+    </summary>
+
+    <div class="mail-msg-body">
+      <div class="mail-addr">
+        <span class="mail-addr-label">De</span>
+        <span class="mail-addr-val">{{ from_names or '—' }}</span>
+      </div>
+      <div class="mail-addr">
+        <span class="mail-addr-label">À</span>
+        <span class="mail-addr-val">{{ to_names or '—' }}</span>
+      </div>
+      {% if x['subject'] %}
+      <div class="mail-addr">
+        <span class="mail-addr-label">Objet</span>
+        <span class="mail-addr-val">{{ x['subject'] }}</span>
+      </div>
+      {% endif %}
+
+      {% if x['body'] %}
+        <pre class="mail-text">{{ x['body'] }}</pre>
+      {% else %}
+        <p class="muted mail-nobody">{{ x['summary'] }}</p>
+        <p class="muted mail-nobody-note">(Corps du message non conservé.)</p>
+      {% endif %}
+
+      <div class="mail-actions">
+        {% if x['document_stored_name'] %}
+          <span>📎 <a href="{{ url_for('mail_download', mail_id=x['id']) }}">{{ x['document_orig_name'] }}</a></span>
+        {% endif %}
+        <a class="muted" href="{{ url_for('mail_detail', mail_id=x['id']) }}">Fiche détaillée →</a>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% endblock %}

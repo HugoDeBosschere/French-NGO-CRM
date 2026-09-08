@@ -1,0 +1,20 @@
+[Unit]
+Description=Refresh sitting deputies, senators and government from official open data and upsert them into the CRM (in-container)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Seed the committed datasets (senators/government JSON) so a chamber whose fetch
+# fails still has a baseline. rm first: docker cp of a dir onto an existing dir
+# would nest it (/app/actual_dataset/actual_dataset).
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/actual_dataset
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/actual_dataset website-meeting-app:/app/actual_dataset
+# Downloads the AN dump (zip), the Sénat API JSON and the government list, then
+# runs extract+insert per chamber. Each chamber is isolated; inserts are
+# idempotent (departed members reported, never deleted).
+ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/sync_officials.py

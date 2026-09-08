@@ -5,6 +5,8 @@ automatiquement le CRM (application *Website Meeting*, `meetings.pauseia.fr`) à
 partir des mails que les citoyens envoient à leurs élu·es dans le cadre de la
 campagne « Écrire à mes élu·es ».
 
+> Mails des membres de l'association ↔ élu·es (Phase 2) et sync eurodéputé·es :
+> voir **`AUTOMATISATION_MAILS_MEMBRES.md`**.
 > Détail technique et options des scripts : voir **`utils/README.md`**.
 
 ---
