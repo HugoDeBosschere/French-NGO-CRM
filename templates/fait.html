@@ -8,9 +8,9 @@
   </span>
 </div>
 
-<p class="hint">Tout ce qui a été coché. Les éléments cochés disparaissent du TODO
-  à la fin de la journée où ils ont été cochés ; ils restent ici indéfiniment.
-  Décocher un élément le renvoie dans le TODO.</p>
+<p class="hint">Tout ce qui a été coché. Un élément coché quitte le TODO
+  immédiatement et reste ici. Le décocher le renvoie dans le
+  <a href="{{ url_for('todo') }}">TODO</a>.</p>
 
 <h2 class="todo-head todo-head-relance">
   Relances traitées <span class="muted">({{ relances_done|length }})</span>

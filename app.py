@@ -1230,7 +1230,7 @@ def todo():
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
-        WHERE m.meeting_date = ?
+        WHERE m.meeting_date = ? AND m.done = 0
         GROUP BY m.id
         ORDER BY COALESCE(m.meeting_time, '99:99'), m.id
         """,
@@ -1249,16 +1249,14 @@ def todo():
         FROM ({LATEST_INTERACTION_SQL}) AS l
         JOIN persons p ON p.id = l.person_id
         WHERE l.follow_up_date IS NOT NULL AND l.follow_up_date <= ?
-          -- Ticked items linger only until the end of the day they were
-          -- ticked: `done_at` is the date the box was checked, so this
-          -- comparison stops matching the moment the date rolls over. Nothing
-          -- has to run at midnight — the page simply asks a different question
-          -- tomorrow. Everything ticked stays listed for good on /fait.
-          AND (l.follow_up_done = 0 OR l.follow_up_done_at = ?)
+          -- Ticked means done: it leaves this page immediately and lives on
+          -- /fait from then on. `follow_up_done_at` is still recorded, so /fait
+          -- can say when it was done.
+          AND l.follow_up_done = 0
         GROUP BY l.kind, l.rec_id
         ORDER BY l.follow_up_date, l.kind, l.rec_id
         """,
-        (today_iso, today_iso),
+        (today_iso,),
     ).fetchall()
 
     # Upcoming rencontres and who is signed up. Two people is the target, so the
@@ -1272,7 +1270,7 @@ def todo():
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
-        WHERE m.meeting_date > ?
+        WHERE m.meeting_date > ? AND m.done = 0
         GROUP BY m.id
         ORDER BY m.meeting_date, COALESCE(m.meeting_time, '99:99'), m.id
         """,

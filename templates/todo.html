@@ -18,13 +18,10 @@
 {% if meetings_today %}
 <ul class="todo-list">
   {% for m in meetings_today %}
-  <li class="todo-item todo-meeting{% if m['done'] %} todo-done{% endif %}">
+  <li class="todo-item todo-meeting">
     <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}">
-      <button type="submit" class="todo-check" role="checkbox"
-              aria-checked="{{ 'true' if m['done'] else 'false' }}"
-              title="{{ 'Marquer comme à faire' if m['done'] else 'Marquer comme fait' }}">
-        {% if m['done'] %}☑{% else %}☐{% endif %}
-      </button>
+      <button type="submit" class="todo-check" role="checkbox" aria-checked="false"
+              title="Marquer comme faite — la rencontre passe dans Fait">☐</button>
     </form>
     <div class="todo-body">
       <a class="todo-title" href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
@@ -54,20 +51,17 @@
 <h2 class="todo-head todo-head-relance">
   Relances à envoyer <span class="muted">({{ due|length }})</span>
 </h2>
-<p class="hint">Relances prévues aujourd'hui ou déjà passées. Une relance cochée
-  reste affichée, barrée, jusqu'à la fin de la journée ; elle passe ensuite dans
-  <a href="{{ url_for('fait') }}">Fait</a>.</p>
+<p class="hint">Relances prévues aujourd'hui ou déjà passées. Cocher une relance
+  la retire d'ici et la place dans <a href="{{ url_for('fait') }}">Fait</a>, où
+  vous pouvez la décocher pour la faire revenir.</p>
 {% if due %}
 <ul class="todo-list">
   {% for r in due %}
-  <li class="todo-item todo-relance{% if r['follow_up_done'] %} todo-done{% endif %}">
+  <li class="todo-item todo-relance">
     <form method="post"
           action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}">
-      <button type="submit" class="todo-check" role="checkbox"
-              aria-checked="{{ 'true' if r['follow_up_done'] else 'false' }}"
-              title="{{ 'Marquer comme à faire' if r['follow_up_done'] else 'Marquer comme fait' }}">
-        {% if r['follow_up_done'] %}☑{% else %}☐{% endif %}
-      </button>
+      <button type="submit" class="todo-check" role="checkbox" aria-checked="false"
+              title="Marquer comme faite — la relance passe dans Fait">☐</button>
     </form>
     <div class="todo-body">
       <a class="todo-title"
