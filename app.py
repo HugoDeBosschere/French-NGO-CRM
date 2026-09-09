@@ -159,9 +159,11 @@ PORTFOLIO_ROLES = [
 #
 # Deliberately absent, and the reason the list is a whitelist rather than "all
 # of ROLES": "Membre d'un cabinet gouvernemental" (advisors and staff, not
-# officeholders) and "Personnalité publique" (a catch-all a moderator may use
-# for a journalist or an activist). Those stay visible to logged-in members
-# only — as does every column other than the name, at any role.
+# officeholders), "Personnalité publique" (a catch-all a moderator may use for
+# a journalist or an activist), "Groupe de travail", and the three local
+# mandates — Conseiller·ère municipal·e, départemental·e and régional·e — which
+# are elected but are kept off the anonymous forms by choice. Those stay
+# visible to logged-in members only, as does every column other than the name.
 PUBLIC_ROLES = [
     "Président·e de la République",
     "Premier·e ministre",
@@ -174,9 +176,6 @@ PUBLIC_ROLES = [
     "Député·e",
     "Député·e européen·ne",
     "Maire·sse",
-    "Conseiller·ère municipal·e",
-    "Conseiller·ère départemental·e",
-    "Conseiller·ère régional·e",
 ]
 
 
