@@ -132,6 +132,10 @@ ROLES = [
     "Député·e",
     "Député·e européen·ne",
     "Maire·sse",
+    "Conseiller·ère municipal·e",
+    "Conseiller·ère départemental·e",
+    "Conseiller·ère régional·e",
+    "Groupe de travail",
     "Personnalité publique",
 ]
 
@@ -170,6 +174,9 @@ PUBLIC_ROLES = [
     "Député·e",
     "Député·e européen·ne",
     "Maire·sse",
+    "Conseiller·ère municipal·e",
+    "Conseiller·ère départemental·e",
+    "Conseiller·ère régional·e",
 ]
 
 
