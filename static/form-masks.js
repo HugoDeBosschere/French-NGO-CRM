@@ -188,13 +188,47 @@
     sync();
   }
 
+  // « Format de la rencontre » drives the free-text field under it: présentiel
+  // asks where you went and insists on an answer, visio reuses the same field
+  // for an optional link. Hidden until a format is picked, so the question is
+  // never asked before it means anything.
+  //
+  // app.py validates the same rule on submit — this only spares the user a
+  // round trip, it is never what enforces it. The `required` attribute is set
+  // only where the server actually requires the field, which the presence of
+  // the « * » marker tells us: the anonymous /declarer form asks the same
+  // question without ever blocking on it.
+  function attachFormatToggle(group) {
+    var field = document.getElementById("meeting-place-field");
+    if (!field) return;
+    var input = field.querySelector('input[name="meeting_place"]');
+    var label = field.querySelector("[data-place-label]");
+    var req = field.querySelector("[data-place-req]");
+    var optional = field.querySelector("[data-place-optional]");
+
+    function sync() {
+      var picked = group.querySelector('input[name="meeting_format"]:checked');
+      var value = picked ? picked.value : "";
+      field.hidden = !value;
+      var mandatory = value === "presentiel";
+      if (label) label.textContent = mandatory ? "Lieu" : "Lien / plateforme";
+      if (req) {
+        req.hidden = !mandatory;
+        if (input) input.required = mandatory;
+      }
+      if (optional) optional.hidden = mandatory;
+    }
+    group.addEventListener("change", sync);
+    sync();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     document
       .querySelectorAll('input[name="meeting_time"]')
       .forEach(function (el) { attach(el, TIME_STOPS, true); });
     document
       .querySelectorAll(
-        'input[name="follow_up_date"], input[name="first_contacted"], input[name="meeting_date"], input[name="mail_date"]'
+        'input[name="follow_up_date"], input[name="first_contacted"], input[name="meeting_date"], input[name="mail_date"], input[name="alt_dates"]'
       )
       .forEach(function (el) { attach(el, DATE_STOPS, false); });
     document
@@ -206,6 +240,9 @@
     document
       .querySelectorAll("[data-portfolio-roles]")
       .forEach(attachPortfolioToggle);
+    document
+      .querySelectorAll("[data-format-group]")
+      .forEach(attachFormatToggle);
     document
       .querySelectorAll("[data-remember]")
       .forEach(attachRemembered);

@@ -24,7 +24,6 @@
       <strong>{{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} · {{ m['meeting_time'] }}{% endif %}</strong>
       — {{ m['proposed_people'] }}
       <p>{{ m['summary'] }}</p>
-      {% if m['details'] %}<p class="hint">+ compte rendu détaillé fourni</p>{% endif %}
       {% if m['document_orig_name'] %}<p class="hint">📎 {{ m['document_orig_name'] }}</p>{% endif %}
       {% if m['submitted_by'] %}<p class="hint">Déclaré par {{ m['submitted_by'] }}</p>{% endif %}
     </div>

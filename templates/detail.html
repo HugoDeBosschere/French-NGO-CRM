@@ -2,7 +2,8 @@
 {% block title %}Rencontre · {{ m['meeting_date'] | fr_date }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Rencontre — {{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} à {{ m['meeting_time'] }}{% endif %}</h1>
+  <h1>Rencontre — {{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} à {{ m['meeting_time'] }}{% endif %}
+    {% if m['alt_dates'] %}<span class="tag tag-tentative">date à confirmer</span>{% endif %}</h1>
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('edit_meeting', meeting_id=m['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('index') }}">Retour</a>
@@ -40,17 +41,46 @@
     {% endif %}
   </div>
 
+  <div class="grid-2">
+    <div class="field">
+      <label>Format</label>
+      <p{% if not m['meeting_format'] %} class="muted"{% endif %}>
+        {{ format_label(m['meeting_format']) }}</p>
+    </div>
+    <div class="field">
+      <label>{{ place_label(m['meeting_format']) }}</label>
+      {% if m['meeting_place'] %}
+        <p class="prose">{{ m['meeting_place'] }}</p>
+      {% else %}
+        <p class="muted">—</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if candidates %}
+  <div class="field">
+    <label>Date à confirmer</label>
+    <p class="hint">Cette rencontre est en cours de répartition : sa date n'est pas
+      arrêtée. Choisissez-en une depuis
+      <a href="{{ url_for('repartition') }}">Répartition rencontre</a>.</p>
+    <ul class="people-list">
+      {% for d in candidates %}
+      <li>
+        <strong>{{ d | fr_date }}</strong>
+        {% if d == m['meeting_date'] %}<span class="tag">date principale</span>{% endif %}
+        <span class="muted">·
+          {% if availability[d]['names'] %}{{ availability[d]['names'] | join(', ') }}
+          {% else %}personne de disponible{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   <div class="field">
     <label>Points clés de la rencontre</label>
     <p class="prose">{{ m['summary'] }}</p>
   </div>
-
-  {% if m['details'] %}
-  <div class="field">
-    <label>Compte rendu détaillé</label>
-    <p class="prose">{{ m['details'] }}</p>
-  </div>
-  {% endif %}
 
   <div class="grid-2">
     <div class="field">

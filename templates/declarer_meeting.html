@@ -50,6 +50,30 @@
   </div>
 
   <div class="field">
+    <label>Format de la rencontre <span class="muted">(facultatif)</span></label>
+    <div class="checklist checklist-inline" data-format-group>
+      {% for key, label in meeting_formats.items() %}
+        <label class="check">
+          <input type="radio" name="meeting_format" value="{{ key }}"
+                 {% if form.get('meeting_format') == key %}checked{% endif %}>
+          {{ label }}
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="field" id="meeting-place-field"
+       {% if form.get('meeting_format') not in meeting_formats %}hidden{% endif %}>
+    <label for="meeting_place">
+      <span data-place-label>{{ place_label(form.get('meeting_format')) }}</span>
+      <span class="muted">(facultatif)</span>
+    </label>
+    <input type="text" id="meeting_place" name="meeting_place"
+           value="{{ form.get('meeting_place', '') }}"
+           placeholder="Permanence, mairie, salon… ou lien de visio">
+  </div>
+
+  <div class="field">
     <label for="follow_up_date">Relance prévue le <span class="muted">(facultatif)</span></label>
     <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
            placeholder="JJ/MM/AAAA"
@@ -62,16 +86,8 @@
 
   <div class="field">
     <label for="summary">Points clés de la rencontre <span class="req">*</span></label>
-    <textarea id="summary" name="summary" rows="5" required
+    <textarea id="summary" name="summary" rows="8" required
       placeholder="Sujets abordés, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
-  </div>
-
-  <div class="field">
-    <label for="details">Compte rendu détaillé de la rencontre <span class="muted">(facultatif)</span></label>
-    <textarea id="details" name="details" rows="6"
-      placeholder="Notes complètes, verbatim, contexte…">{{ form.get('details', '') }}</textarea>
-    <p class="hint">Si vous disposez de plus d'informations ou de notes sur le contenu
-      de la rencontre, mettez les ici.</p>
   </div>
 
   <div class="field">

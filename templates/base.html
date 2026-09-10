@@ -14,6 +14,7 @@
       {% if session.get('authenticated') %}
         <a class="nav-todo" href="{{ url_for('todo') }}">TODO</a>
         <a href="{{ url_for('fait') }}">Fait</a>
+        <a class="nav-repartition" href="{{ url_for('repartition') }}">Répartition</a>
         <a href="{{ url_for('index') }}">Rencontres</a>
         <a href="{{ url_for('calendar_view') }}">Calendrier</a>
         <a href="{{ url_for('exchanges') }}">Suivi des échanges</a>

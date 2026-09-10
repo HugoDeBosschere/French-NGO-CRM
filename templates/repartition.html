@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Répartition rencontre{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="repartition-title-head">Répartition rencontre</h1>
+  <span class="head-actions">
+    <a class="btn" href="{{ url_for('todo') }}">← TODO</a>
+    <a class="btn" href="{{ url_for('calendar_view') }}">📅 Calendrier</a>
+  </span>
+</div>
+
+<p class="hint">Les rencontres dont la date n'est pas encore arrêtée.</p>
+
+{% if not moderators %}
+  <div class="notice">
+    <span class="notice-icon">⚠️</span>
+    <span>Aucun·e utilisateurice enregistré·e.
+      <a href="{{ url_for('moderators_admin') }}">Ajoutez-en</a> pour pouvoir
+      renseigner les disponibilités.</span>
+  </div>
+{% endif %}
+
+{% if not meetings %}
+<div class="empty">
+  <p>Aucune rencontre en cours de répartition.</p>
+  <a class="btn btn-primary" href="{{ url_for('new_meeting') }}">+ Nouvelle rencontre</a>
+</div>
+{% else %}
+
+{% for m in meetings %}
+{% set dates = candidates[m['id']] %}
+{% set slots = availability[m['id']] %}
+{# dates is sorted, so the last one is the last chance this rencontre has. #}
+{% set all_past = dates and dates[-1] < today %}
+<div class="card repartition-card{% if all_past %} repartition-stale{% endif %}">
+  <div class="page-head">
+    <h2>
+      <a href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
+        {{ m['person_names'] or 'Rencontre' }}</a>
+      {% if m['meeting_time'] %}<span class="muted">— {{ m['meeting_time'] }}</span>{% endif %}
+    </h2>
+    <a class="btn btn-ghost" href="{{ url_for('edit_meeting', meeting_id=m['id']) }}">Modifier</a>
+  </div>
+  <p class="todo-sub">{{ m['summary'] }}</p>
+  <p class="todo-meta">
+    {{ format_label(m['meeting_format']) }}{% if m['meeting_place'] %} · {{ m['meeting_place'] }}{% endif %}
+  </p>
+  {% if all_past %}
+  <p class="warn">Toutes les dates proposées sont passées — à replanifier.</p>
+  {% endif %}
+
+  <form class="signup-form" method="post"
+        action="{{ url_for('set_availability', meeting_id=m['id']) }}">
+    <div class="date-grid">
+      {% for d in dates %}
+      {% set slot = slots[d] %}
+      {% set count = slot['ids'] | length %}
+      {% set past = d < today %}
+      <div class="date-col{{ ' signup-ok' if count >= min_participants else ' signup-short' }}{{ ' date-past' if past else '' }}">
+        <div class="date-col-head">
+          <strong>{{ d | fr_date }}</strong>
+          {% if d == m['meeting_date'] %}<span class="tag">date principale</span>{% endif %}
+          {% if past %}<span class="tag tag-inactive">passée</span>{% endif %}
+        </div>
+        <p class="todo-sub">
+          <span class="signup-count">{{ count }}
+            dispo{{ '' if count == 1 else 's' }}</span>
+          {% if count < min_participants %}<span class="warn">— il en faut {{ min_participants }}</span>{% endif %}
+        </p>
+        <div class="checklist">
+          {% for mo in moderators %}
+            <label class="check">
+              <input type="checkbox" name="dispo_{{ d }}" value="{{ mo['id'] }}"
+                     {% if (mo['id']|string) in slot['ids'] %}checked{% endif %}>
+              {{ mo['name'] }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if moderators %}
+    <button class="btn btn-primary" type="submit">Enregistrer les disponibilités</button>
+    {% endif %}
+  </form>
+
+  {# Validation is a separate form: it settles the rencontre, so it must not be
+     something you trip over while ticking boxes. #}
+  <div class="validate-row">
+    <span class="muted">Valider une date :</span>
+    {% for d in dates %}
+    {% set count = slots[d]['ids'] | length %}
+    <form method="post"
+          action="{{ url_for('confirm_meeting_date', meeting_id=m['id']) }}"
+          onsubmit="return confirm('Fixer cette rencontre au {{ d | fr_date }} ? Les {{ count }} personne(s) disponibles ce jour-là en deviendront les participant·es, et les autres dates seront abandonnées.');">
+      <input type="hidden" name="on_date" value="{{ d }}">
+      <button class="btn {{ 'btn-primary' if count >= min_participants else '' }}"
+              type="submit">{{ d | fr_date }} ({{ count }})</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

@@ -319,6 +319,11 @@ def inject_role_helpers():
         # without every route having to pass the value in.
         "default_follow_up": default_follow_up,
         "follow_up_days": FOLLOW_UP_DEFAULT_DAYS,
+        "meeting_formats": MEETING_FORMATS,
+        "format_label": format_label,
+        "place_label": place_label,
+        "max_alt_dates": MAX_ALT_DATES,
+        "parse_alt_dates": parse_alt_dates,
     }
 
 
@@ -370,7 +375,6 @@ def init_db():
             meeting_date         TEXT NOT NULL,
             meeting_time         TEXT,
             summary              TEXT NOT NULL,
-            details              TEXT,   -- optional "compte rendu détaillé"
             follow_up_date       TEXT,   -- when to follow this meeting up
             done                 INTEGER NOT NULL DEFAULT 0,  -- ticked off on /todo
             done_at              TEXT,   -- local date it was ticked; see /todo
@@ -394,6 +398,18 @@ def init_db():
             meeting_id   INTEGER NOT NULL REFERENCES meetings(id)   ON DELETE CASCADE,
             moderator_id INTEGER NOT NULL REFERENCES moderators(id) ON DELETE CASCADE,
             PRIMARY KEY (meeting_id, moderator_id)
+        );
+
+        -- Who is free on which candidate date, while a rencontre is still
+        -- being scheduled (see /repartition). These rows are temporary: once a
+        -- date is chosen, that date's rows become the rencontre's participants
+        -- and every row for the meeting is dropped, so `meeting_moderators`
+        -- stays the single answer to "who goes" as soon as the date is settled.
+        CREATE TABLE IF NOT EXISTS meeting_availability (
+            meeting_id   INTEGER NOT NULL REFERENCES meetings(id)   ON DELETE CASCADE,
+            moderator_id INTEGER NOT NULL REFERENCES moderators(id) ON DELETE CASCADE,
+            on_date      TEXT NOT NULL,
+            PRIMARY KEY (meeting_id, moderator_id, on_date)
         );
 
         CREATE TABLE IF NOT EXISTS mails (
@@ -473,7 +489,6 @@ def init_db():
             meeting_date    TEXT NOT NULL,
             meeting_time    TEXT,
             summary         TEXT NOT NULL,
-            details         TEXT,   -- optional "compte rendu détaillé"
             follow_up_date  TEXT,
             proposed_people TEXT,   -- free-text "personnes concernées"
             submitted_by    TEXT,
@@ -526,8 +541,6 @@ def init_db():
     meeting_cols = [r[1] for r in db.execute("PRAGMA table_info(meetings)")]
     if "meeting_time" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN meeting_time TEXT")
-    if "details" not in meeting_cols:
-        db.execute("ALTER TABLE meetings ADD COLUMN details TEXT")
     if "follow_up_date" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN follow_up_date TEXT")
     # The /todo tick boxes. NOT NULL DEFAULT 0 backfills existing rows with 0,
@@ -543,9 +556,31 @@ def init_db():
         db.execute("ALTER TABLE meetings ADD COLUMN done_at TEXT")
     if "follow_up_done_at" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN follow_up_done_at TEXT")
+    # Visio or présentiel, and where. Added nullable on purpose: SQLite cannot
+    # add a NOT NULL column without a default, and any default here would be an
+    # assertion nobody made — a rencontre recorded before the field existed has
+    # no known format. Legacy rows stay NULL and read « Non renseigné »; the
+    # form requires the field, so touching an old rencontre fills the gap.
+    if "meeting_format" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN meeting_format TEXT")
+    # Free text: the address in présentiel (required), the link or platform in
+    # visio (optional). One column, because it answers one question — where.
+    if "meeting_place" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN meeting_place TEXT")
+    # Candidate dates still being arbitrated, as a comma-joined ISO list. NULL
+    # means the date is settled: that is exactly what puts a rencontre on
+    # /repartition rather than in the "à venir" list, and choosing a date
+    # clears this back to NULL. See MAX_ALT_DATES.
+    if "alt_dates" not in meeting_cols:
+        db.execute("ALTER TABLE meetings ADD COLUMN alt_dates TEXT")
     pmeeting_cols = [r[1] for r in db.execute("PRAGMA table_info(pending_meetings)")]
-    if "details" not in pmeeting_cols:
-        db.execute("ALTER TABLE pending_meetings ADD COLUMN details TEXT")
+    # The public form asks for these but does not insist (it is lenient
+    # everywhere else too); the moderator supplies them at approval, where the
+    # shared rencontre form does require them.
+    if "meeting_format" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN meeting_format TEXT")
+    if "meeting_place" not in pmeeting_cols:
+        db.execute("ALTER TABLE pending_meetings ADD COLUMN meeting_place TEXT")
     if "document_stored_name" not in pmeeting_cols:
         db.execute("ALTER TABLE pending_meetings ADD COLUMN document_stored_name TEXT")
     if "document_orig_name" not in pmeeting_cols:
@@ -590,6 +625,27 @@ def init_db():
     if "validated_by" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN validated_by INTEGER "
                    "REFERENCES moderators(id) ON DELETE SET NULL")
+    # « Compte rendu détaillé » was a second free-text box next to « Points clés
+    # de la rencontre ». One box is enough, so whatever people wrote in it is
+    # folded into the summary — appended after a blank line, in the order it was
+    # written — and the column is retired under a _legacy name rather than
+    # dropped, the same treatment persons.follow_up_date got: nothing reads it,
+    # but the original split stays recoverable if the merge ever needs undoing.
+    # The rename is what makes this run exactly once.
+    for table in ("meetings", "pending_meetings"):
+        cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})")]
+        if "details" not in cols or "details_legacy" in cols:
+            continue
+        db.execute(
+            f"""
+            UPDATE {table}
+               SET summary = trim(
+                     COALESCE(NULLIF(trim(summary), '') || char(10) || char(10), '')
+                     || trim(details))
+             WHERE details IS NOT NULL AND trim(details) <> ''
+            """
+        )
+        db.execute(f"ALTER TABLE {table} RENAME COLUMN details TO details_legacy")
     db.commit()
     db.close()
 
@@ -710,6 +766,90 @@ FOLLOW_UP_DEFAULT_DAYS = {"mail": 10, "meeting": 5}
 # A rencontre should not be attended alone: fewer than this many utilisateurices
 # signed up is flagged on /todo as a gap to fill.
 MIN_PARTICIPANTS = 2
+
+# How a rencontre took place. Stored as the key, displayed as the label.
+MEETING_FORMATS = {"presentiel": "Présentiel", "visio": "Visio"}
+
+# « Autres dates » offers this many alternatives on top of the main date, so a
+# rencontre being scheduled has at most MAX_ALT_DATES + 1 candidate dates.
+MAX_ALT_DATES = 3
+
+
+def format_label(value):
+    """« Présentiel » / « Visio », or « Non renseigné » for a pre-field row."""
+    return MEETING_FORMATS.get(value or "", "Non renseigné")
+
+
+def place_label(value):
+    """What the free-text place field is called, which depends on the format.
+
+    Présentiel asks where you went and insists on an answer; visio reuses the
+    same column for the link or platform, which is a convenience, not a fact
+    the record needs.
+    """
+    return "Lien / plateforme" if value == "visio" else "Lieu"
+
+
+def parse_alt_dates(value):
+    """The stored comma-joined « Autres dates » back into a list of ISO dates."""
+    return [d for d in (value or "").split(",") if d.strip()]
+
+
+def candidate_dates(meeting):
+    """Every date a rencontre could land on, earliest first.
+
+    The main date is candidate number one: it is NOT NULL and every other page
+    orders by it, so a rencontre under arbitration keeps a real date throughout
+    and validating one simply overwrites it.
+    """
+    return sorted({meeting["meeting_date"], *parse_alt_dates(meeting["alt_dates"])})
+
+
+def _alt_dates_from_form(errors, meeting_date):
+    """Read the « Autres dates » inputs. Returns the stored string, or None.
+
+    Blanks, duplicates and a repeat of the main date all just drop out: the
+    field is a set of *other* possibilities, and re-listing the main date would
+    show the same day twice on /repartition.
+    """
+    dates = []
+    for raw in request.form.getlist("alt_dates")[:MAX_ALT_DATES]:
+        iso, ok = _to_iso(raw)
+        if not iso:
+            continue
+        if not ok:
+            errors.append(f"La date alternative « {raw} » est invalide (format JJ/MM/AAAA).")
+            continue
+        if iso != meeting_date and iso not in dates:
+            dates.append(iso)
+    return ",".join(sorted(dates)) or None
+
+
+def _set_meeting_availability(db, meeting_id, rows):
+    """Replace a meeting's availability rows with `rows` — (moderator_id, date)."""
+    db.execute("DELETE FROM meeting_availability WHERE meeting_id = ?", (meeting_id,))
+    db.executemany(
+        "INSERT INTO meeting_availability (meeting_id, moderator_id, on_date) "
+        "VALUES (?, ?, ?)",
+        [(meeting_id, mid, on_date) for mid, on_date in rows],
+    )
+
+
+def _prune_availability(db, meeting_id, kept_dates):
+    """Drop availability for dates a rencontre no longer offers.
+
+    Editing a rencontre can remove a candidate date; the sign-ups made for it
+    would otherwise linger invisibly and come back if the date were re-added.
+    """
+    rows = db.execute(
+        "SELECT on_date FROM meeting_availability WHERE meeting_id = ?", (meeting_id,)
+    ).fetchall()
+    stale = {r["on_date"] for r in rows} - set(kept_dates)
+    for on_date in stale:
+        db.execute(
+            "DELETE FROM meeting_availability WHERE meeting_id = ? AND on_date = ?",
+            (meeting_id, on_date),
+        )
 
 
 def person_follow_up_sql(alias="p"):
@@ -927,8 +1067,9 @@ def _save_meeting(db, meeting):
 
     meeting_date, date_ok = _to_iso(request.form.get("meeting_date"))
     meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
+    meeting_format = (request.form.get("meeting_format") or "").strip()
+    meeting_place = (request.form.get("meeting_place") or "").strip()
     summary = (request.form.get("summary") or "").strip()
-    details = (request.form.get("details") or "").strip()
     follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
     recorded_by = _valid_moderator(db, request.form.get("recorded_by"))
     person_ids = [pid for pid in request.form.getlist("person_ids") if pid in valid_ids]
@@ -951,10 +1092,18 @@ def _save_meeting(db, meeting):
         errors.append("La date de la rencontre est invalide (format JJ/MM/AAAA).")
     if not time_ok:
         errors.append("L'heure de la rencontre est invalide (format HH:MM).")
+    # Required on this form even though the column is nullable: a rencontre
+    # saved from here always states its format, while the rows that predate the
+    # field keep their honest NULL rather than being backfilled with a guess.
+    if meeting_format not in MEETING_FORMATS:
+        errors.append("Indiquez si la rencontre est en présentiel ou en visio.")
+    elif meeting_format == "presentiel" and not meeting_place:
+        errors.append("Indiquez le lieu de la rencontre en présentiel.")
     if not summary:
         errors.append("Un bref résumé est obligatoire.")
     if not fu_ok:
         errors.append("La date de relance est invalide (format JJ/MM/AAAA).")
+    alt_dates = _alt_dates_from_form(errors, meeting_date)
     file, stored_name, orig_name = _stage_upload(errors)
 
     if errors:
@@ -967,12 +1116,14 @@ def _save_meeting(db, meeting):
         cur = db.execute(
             """
             INSERT INTO meetings (
-                meeting_date, meeting_time, summary, details, follow_up_date,
+                meeting_date, meeting_time, meeting_format, meeting_place,
+                alt_dates, summary, follow_up_date,
                 recorded_by, validated_by,
                 document_stored_name, document_orig_name, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (meeting_date, meeting_time or None, summary, details or None,
+            (meeting_date, meeting_time or None, meeting_format,
+             meeting_place or None, alt_dates, summary,
              follow_up_date or None,
              recorded_by, validated_by, stored_name, orig_name,
              datetime.utcnow().isoformat(timespec="seconds")),
@@ -990,19 +1141,42 @@ def _save_meeting(db, meeting):
             new_stored, new_orig = None, None
         db.execute(
             """
-            UPDATE meetings SET meeting_date = ?, meeting_time = ?, summary = ?,
-                details = ?, follow_up_date = ?, recorded_by = ?, validated_by = ?,
+            UPDATE meetings SET meeting_date = ?, meeting_time = ?,
+                meeting_format = ?, meeting_place = ?, alt_dates = ?, summary = ?,
+                follow_up_date = ?, recorded_by = ?, validated_by = ?,
                 document_stored_name = ?, document_orig_name = ? WHERE id = ?
             """,
-            (meeting_date, meeting_time or None, summary, details or None,
+            (meeting_date, meeting_time or None, meeting_format,
+             meeting_place or None, alt_dates, summary,
              follow_up_date or None,
              recorded_by, validated_by, new_stored, new_orig, meeting_id),
+        )
+        # The candidate dates may have changed under the sign-ups made for them.
+        _prune_availability(
+            db, meeting_id, [meeting_date, *parse_alt_dates(alt_dates)]
         )
 
     if file and stored_name:
         file.save(UPLOAD_DIR / stored_name)
     _set_person_links(db, "meeting_persons", "meeting_id", meeting_id, person_id_ints)
     _set_meeting_moderators(db, meeting_id, participant_id_ints)
+    # A rencontre entering arbitration starts with the people already on it
+    # pencilled in for every candidate date. The form insists on at least one
+    # participant, so without this /repartition would open showing nobody
+    # signed up anywhere — red on every date — while the rencontre does in fact
+    # have someone attached. It is a starting point, not a claim: the grid is
+    # there to be corrected. Only ever seeded once, so a later edit of the
+    # rencontre never overwrites what people have since ticked.
+    if alt_dates and not db.execute(
+        "SELECT 1 FROM meeting_availability WHERE meeting_id = ?", (meeting_id,)
+    ).fetchone():
+        _set_meeting_availability(
+            db,
+            meeting_id,
+            [(mid, on_date)
+             for mid in participant_id_ints
+             for on_date in [meeting_date, *parse_alt_dates(alt_dates)]],
+        )
     db.commit()
     return meeting_id, []
 
@@ -1154,6 +1328,8 @@ def meeting_detail(meeting_id):
         participants=[r["name"] for r in participants],
         validated_by=validator["name"] if validator else None,
         recorded_by=recorder["name"] if recorder else None,
+        candidates=candidate_dates(meeting) if meeting["alt_dates"] else [],
+        availability=_availability(db, [meeting]).get(meeting["id"], {}),
     )
 
 
@@ -1230,7 +1406,11 @@ def todo():
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
-        WHERE m.meeting_date = ? AND m.done = 0
+        -- alt_dates IS NULL means the date is settled. A rencontre still under
+        -- arbitration is on /repartition and nowhere else: it has no date yet
+        -- worth calling "today", and taking sign-ups in two places would make
+        -- the same checkbox mean two different things.
+        WHERE m.meeting_date = ? AND m.done = 0 AND m.alt_dates IS NULL
         GROUP BY m.id
         ORDER BY COALESCE(m.meeting_time, '99:99'), m.id
         """,
@@ -1270,7 +1450,7 @@ def todo():
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
-        WHERE m.meeting_date > ? AND m.done = 0
+        WHERE m.meeting_date > ? AND m.done = 0 AND m.alt_dates IS NULL
         GROUP BY m.id
         ORDER BY m.meeting_date, COALESCE(m.meeting_time, '99:99'), m.id
         """,
@@ -1296,6 +1476,9 @@ def todo():
         moderators=_moderators(db),
         today=today_iso,
         min_participants=MIN_PARTICIPANTS,
+        to_schedule=db.execute(
+            "SELECT COUNT(*) FROM meetings WHERE alt_dates IS NOT NULL AND done = 0"
+        ).fetchone()[0],
     )
 
 
@@ -1405,6 +1588,149 @@ def sign_up_meeting(meeting_id):
     return redirect(url_for("todo"))
 
 
+# --------------------------------------------------------------------------- #
+# Répartition — choosing the date of a rencontre, and who goes on which date
+# --------------------------------------------------------------------------- #
+
+def _availability(db, meetings):
+    """Per meeting, per candidate date: who is down for it.
+
+    Returns {meeting_id: {iso_date: {"ids": {"3", "7"}, "names": ["Alice", …]}}},
+    with an entry for every candidate date, including the ones nobody picked.
+    """
+    out = {}
+    for m in meetings:
+        by_date = {d: {"ids": set(), "names": []} for d in candidate_dates(m)}
+        rows = db.execute(
+            """
+            SELECT a.on_date, mo.id, mo.name
+            FROM meeting_availability a
+            JOIN moderators mo ON mo.id = a.moderator_id
+            WHERE a.meeting_id = ?
+            ORDER BY mo.name COLLATE NOCASE
+            """,
+            (m["id"],),
+        ).fetchall()
+        for r in rows:
+            slot = by_date.get(r["on_date"])
+            if slot is None:      # a date dropped from the rencontre since
+                continue
+            slot["ids"].add(str(r["id"]))
+            slot["names"].append(r["name"])
+        out[m["id"]] = by_date
+    return out
+
+
+@app.route("/repartition")
+@login_required
+def repartition():
+    """Rencontres whose date is not settled yet.
+
+    A rencontre lands here as soon as it carries « Autres dates », and leaves
+    the moment one of its candidate dates is validated — at which point it
+    becomes an ordinary upcoming rencontre on /todo, with the people who said
+    they were free that day already signed up.
+    """
+    db = get_db()
+    meetings = db.execute(
+        """
+        SELECT m.*, GROUP_CONCAT(p.name, ', ') AS person_names
+        FROM meetings m
+        LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
+        LEFT JOIN persons p          ON p.id = mp.person_id
+        WHERE m.alt_dates IS NOT NULL AND m.done = 0
+        GROUP BY m.id
+        ORDER BY m.meeting_date, m.id
+        """
+    ).fetchall()
+
+    return render_template(
+        "repartition.html",
+        meetings=meetings,
+        candidates={m["id"]: candidate_dates(m) for m in meetings},
+        availability=_availability(db, meetings),
+        moderators=_moderators(db),
+        today=date.today().isoformat(),
+        min_participants=MIN_PARTICIPANTS,
+    )
+
+
+@app.route("/repartition/<int:meeting_id>/disponibilites", methods=["POST"])
+@login_required
+def set_availability(meeting_id):
+    """Record who is free on which candidate date.
+
+    The whole grid is submitted at once, so what arrives is the complete answer
+    and simply replaces what was there — same contract as the /todo sign-ups.
+    """
+    db = get_db()
+    meeting = db.execute(
+        "SELECT * FROM meetings WHERE id = ?", (meeting_id,)
+    ).fetchone()
+    if meeting is None or meeting["alt_dates"] is None:
+        abort(404)
+    mod_ids = {str(m["id"]) for m in _moderators(db)}
+    rows = [
+        (int(mid), on_date)
+        for on_date in candidate_dates(meeting)
+        for mid in request.form.getlist(f"dispo_{on_date}")
+        if mid in mod_ids
+    ]
+    _set_meeting_availability(db, meeting_id, rows)
+    db.commit()
+    flash("Disponibilités mises à jour.", "success")
+    return redirect(url_for("repartition"))
+
+
+@app.route("/repartition/<int:meeting_id>/valider", methods=["POST"])
+@login_required
+def confirm_meeting_date(meeting_id):
+    """Settle a rencontre on one of its candidate dates.
+
+    Voiding « Autres dates » is what moves it off this page, and the people
+    down for the chosen date become its participants — the availability rows
+    for the other dates have served their purpose and go. Fewer than
+    MIN_PARTICIPANTS is allowed but flagged: sometimes one person going is the
+    reality, and refusing to record that would not change it.
+    """
+    db = get_db()
+    meeting = db.execute(
+        "SELECT * FROM meetings WHERE id = ?", (meeting_id,)
+    ).fetchone()
+    if meeting is None or meeting["alt_dates"] is None:
+        abort(404)
+    on_date = (request.form.get("on_date") or "").strip()
+    if on_date not in candidate_dates(meeting):
+        abort(400)
+
+    going = [
+        r["moderator_id"]
+        for r in db.execute(
+            "SELECT moderator_id FROM meeting_availability "
+            "WHERE meeting_id = ? AND on_date = ?",
+            (meeting_id, on_date),
+        )
+    ]
+    db.execute(
+        "UPDATE meetings SET meeting_date = ?, alt_dates = NULL WHERE id = ?",
+        (on_date, meeting_id),
+    )
+    _set_meeting_moderators(db, meeting_id, going)
+    db.execute("DELETE FROM meeting_availability WHERE meeting_id = ?", (meeting_id,))
+    db.commit()
+
+    flash(f"Rencontre fixée au {fr_date(on_date)}.", "success")
+    if len(going) < MIN_PARTICIPANTS:
+        flash(
+            f"Attention : {len(going)} inscrit·e"
+            f"{'' if len(going) == 1 else 's'} pour cette date, "
+            f"il en faudrait {MIN_PARTICIPANTS}. "
+            "Vous pouvez compléter les inscriptions depuis le TODO.",
+            "error",
+        )
+    return redirect(url_for("todo"))
+
+
 @app.route("/calendar")
 @login_required
 def calendar_view():
@@ -1424,12 +1750,14 @@ def calendar_view():
     # Meetings and follow-up ("relance") dates falling inside the shown month.
     meetings = db.execute(
         """
-        SELECT m.id, m.meeting_date, m.meeting_time, m.summary,
+        SELECT m.id, m.meeting_date, m.meeting_time, m.summary, m.alt_dates,
                GROUP_CONCAT(p.name, ', ') AS person_names
         FROM meetings m
         LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
         LEFT JOIN persons p          ON p.id = mp.person_id
-        WHERE m.meeting_date BETWEEN ? AND ?
+        -- Rencontres under arbitration are pulled in whatever their main date,
+        -- because any of their candidate dates may fall inside the month shown.
+        WHERE m.meeting_date BETWEEN ? AND ? OR m.alt_dates IS NOT NULL
         GROUP BY m.id
         """,
         (lo, hi),
@@ -1450,6 +1778,18 @@ def calendar_view():
     for m in meetings:
         who = m["person_names"] or m["summary"]
         label = f"{m['meeting_time']} {who}" if m["meeting_time"] else who
+        # An unsettled rencontre shows on *every* date it might happen on, each
+        # marked as tentative — showing it once, at a date nobody has agreed to,
+        # would read as settled and hide the other options entirely.
+        if m["alt_dates"]:
+            for on_date in candidate_dates(m):
+                if lo <= on_date <= hi:
+                    events.setdefault(on_date, []).append({
+                        "type": "tentative",
+                        "label": "? " + label,
+                        "url": url_for("repartition"),
+                    })
+            continue
         events.setdefault(m["meeting_date"], []).append({
             "type": "meeting",
             "label": label,
@@ -2311,8 +2651,14 @@ def declarer_meeting():
         db = get_db()
         meeting_date, date_ok = _to_iso(request.form.get("meeting_date"))
         meeting_time, time_ok = _to_time(request.form.get("meeting_time"))
+        # Asked for, but not insisted on: this form is lenient by design, and a
+        # missing format is one more thing the moderator fills in at approval,
+        # where the shared rencontre form does require it.
+        meeting_format = (request.form.get("meeting_format") or "").strip()
+        if meeting_format not in MEETING_FORMATS:
+            meeting_format = ""
+        meeting_place = (request.form.get("meeting_place") or "").strip()
         summary = (request.form.get("summary") or "").strip()
-        details = (request.form.get("details") or "").strip()
         follow_up_date, fu_ok = _to_iso(request.form.get("follow_up_date"))
         proposed_people = (request.form.get("proposed_people") or "").strip()
         submitted_by = (request.form.get("submitted_by") or "").strip()
@@ -2339,12 +2685,14 @@ def declarer_meeting():
             db.execute(
                 """
                 INSERT INTO pending_meetings (
-                    meeting_date, meeting_time, summary, details, follow_up_date,
+                    meeting_date, meeting_time, meeting_format, meeting_place,
+                    summary, follow_up_date,
                     proposed_people, submitted_by, document_stored_name,
                     document_orig_name, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (meeting_date, meeting_time or None, summary, details or None,
+                (meeting_date, meeting_time or None, meeting_format or None,
+                 meeting_place or None, summary,
                  follow_up_date or None,
                  proposed_people, submitted_by or None, stored_name, orig_name,
                  datetime.utcnow().isoformat(timespec="seconds")),

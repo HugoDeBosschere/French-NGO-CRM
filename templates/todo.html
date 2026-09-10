@@ -4,6 +4,8 @@
 <div class="page-head">
   <h1 class="todo-title-head">TODO</h1>
   <span class="head-actions">
+    <a class="btn" href="{{ url_for('repartition') }}">Répartition{% if to_schedule %}
+      <span class="badge">{{ to_schedule }}</span>{% endif %}</a>
     <a class="btn" href="{{ url_for('fait') }}">Fait →</a>
     <a class="btn" href="{{ url_for('calendar_view') }}">📅 Calendrier</a>
   </span>
@@ -101,7 +103,10 @@
 <p class="hint">Inscrivez les utilisateurices qui s'y rendent. Une rencontre devrait
   réunir au moins {{ min_participants }} personnes — en dessous, elle est signalée en rouge.
   Ces inscriptions sont les participant·es de la rencontre : elles sont déjà
-  enregistrées dessus, rien à reporter.</p>
+  enregistrées dessus, rien à reporter. Les rencontres dont la date n'est pas
+  encore fixée ne sont pas ici mais dans
+  <a href="{{ url_for('repartition') }}">Répartition</a>{% if to_schedule %}
+  ({{ to_schedule }} en attente){% endif %}.</p>
 {% if not moderators %}
   <div class="notice">
     <span class="notice-icon">⚠️</span>

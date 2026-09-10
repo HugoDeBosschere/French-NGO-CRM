@@ -109,6 +109,57 @@
     </div>
   </div>
 
+  {# The format decides whether the free-text field below is a required place
+     or an optional link, so the two travel together. #}
+  <div class="field">
+    <label>Format de la rencontre <span class="req">*</span></label>
+    <div class="checklist checklist-inline" data-format-group>
+      {% for key, label in meeting_formats.items() %}
+        <label class="check">
+          <input type="radio" name="meeting_format" value="{{ key }}" required
+                 {% if form.get('meeting_format') == key %}checked{% endif %}>
+          {{ label }}
+        </label>
+      {% endfor %}
+    </div>
+    {% if current and not current['meeting_format'] %}
+    <p class="hint warn">Cette rencontre a été enregistrée avant que le champ
+      n'existe : son format n'est pas renseigné. Choisissez-le pour pouvoir
+      enregistrer.</p>
+    {% endif %}
+  </div>
+
+  <div class="field" id="meeting-place-field"
+       {% if form.get('meeting_format') not in meeting_formats %}hidden{% endif %}>
+    <label for="meeting_place">
+      <span data-place-label>{{ place_label(form.get('meeting_format')) }}</span>
+      <span class="req" data-place-req
+            {% if form.get('meeting_format') != 'presentiel' %}hidden{% endif %}>*</span>
+      <span class="muted" data-place-optional
+            {% if form.get('meeting_format') == 'presentiel' %}hidden{% endif %}>(facultatif)</span>
+    </label>
+    <input type="text" id="meeting_place" name="meeting_place"
+           value="{{ form.get('meeting_place', '') }}"
+           placeholder="Permanence, mairie, salon… ou lien de visio">
+    <p class="hint">En présentiel, indiquez où la rencontre a eu lieu — c'est
+      obligatoire. En visio, vous pouvez y mettre le lien ou la plateforme, ou
+      laisser vide.</p>
+  </div>
+
+  <div class="field">
+    <label>Autres dates possibles <span class="muted">(facultatif)</span></label>
+    <div class="alt-dates">
+      {% set alts = parse_alt_dates(current['alt_dates'] if current else '') %}
+      {% set posted = form.getlist('alt_dates') if form.getlist is defined else [] %}
+      {% for i in range(max_alt_dates) %}
+        <input type="text" name="alt_dates" inputmode="numeric" placeholder="JJ/MM/AAAA"
+               value="{{ (posted[i] if i < posted|length else (alts[i] if i < alts|length else '')) | fr_date }}">
+      {% endfor %}
+    </div>
+    <p class="hint">Jusqu'à {{ max_alt_dates }} autres dates possibles pour une
+      future rencontre.</p>
+  </div>
+
   <div class="field">
     <label for="follow_up_date">Relance prévue le <span class="muted">(facultatif)</span></label>
     <input type="text" id="follow_up_date" name="follow_up_date" inputmode="numeric"
@@ -117,22 +168,13 @@
            value="{{ (form.get('follow_up_date') or ('' if current else default_follow_up('meeting', form.get('meeting_date') or today))) | fr_date }}">
     <p class="hint">Pré-rempli à {{ follow_up_days['meeting'] }} jours après la rencontre, et
       recalculé si vous changez la date. Videz le champ pour indiquer qu'aucune relance
-      n'est prévue. C'est cette date qui devient la « Relance prévue » des personnes
-      rencontrées, tant que cette rencontre est leur échange le plus récent.</p>
+      n'est prévue.</p>
   </div>
 
   <div class="field">
     <label for="summary">Points clés de la rencontre <span class="req">*</span></label>
-    <textarea id="summary" name="summary" rows="5" required
+    <textarea id="summary" name="summary" rows="8" required
       placeholder="Sujets abordés, points clés, suites à donner…">{{ form.get('summary', '') }}</textarea>
-  </div>
-
-  <div class="field">
-    <label for="details">Compte rendu détaillé de la rencontre <span class="muted">(facultatif)</span></label>
-    <textarea id="details" name="details" rows="6"
-      placeholder="Notes complètes, verbatim, contexte…">{{ form.get('details', '') }}</textarea>
-    <p class="hint">Si vous disposez de plus d'informations ou de notes sur le contenu
-      de la rencontre, mettez les ici.</p>
   </div>
 
   <div class="grid-2">

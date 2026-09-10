@@ -615,3 +615,57 @@ a.cal-ev:hover {
 .site-header nav a.nav-todo { color: var(--todo-ink); font-weight: 700; }
 .site-header nav a.nav-todo:hover { color: var(--todo); }
 .todo-title-head { color: var(--todo-ink); }
+
+/* ---------- /repartition ---------- */
+/* Scheduling gets its own light green: neither a task due today (light red)
+   nor a relance (violet) — a decision waiting to be made. Two greens, by role:
+   --plan-soft (#e0fdd1) fills the surfaces — the date columns, the tags, the
+   calendar chips — while --plan-text (#a0ca66) is the darker one the headings
+   are written in. --plan-ink is darker still, for text sitting *on* a surface,
+   where the other two would vanish into it. */
+:root {
+  --plan: #75cb4d;
+  --plan-ink: #316916;
+  --plan-soft: #e0fdd1;
+  --plan-text: #a0ca66;
+}
+.site-header nav a.nav-repartition { color: var(--plan-text); font-weight: 600; }
+.site-header nav a.nav-repartition:hover { color: var(--plan-text); }
+.repartition-title-head { color: var(--plan-text); }
+
+/* The card itself stays on the app's white surface; the colour lives on the
+   date columns inside it, which is where the choice actually gets made. */
+.repartition-card {
+  border-left: 4px solid var(--plan);
+  margin-bottom: 1rem;
+}
+.repartition-card h2 { margin: 0; font-size: 1.05rem; }
+/* Every candidate date gone by: the rencontre needs new dates, not more ticks. */
+.repartition-stale { border-left-color: var(--danger); background: var(--danger-bg); }
+
+/* One column per candidate date, wrapping rather than scrolling on a narrow
+   screen. Each column carries the same red/green as a /todo sign-up, so the
+   "enough people?" signal reads identically in both places. */
+.date-grid { display: flex; flex-wrap: wrap; gap: .6rem; margin: .6rem 0; }
+.date-col {
+  flex: 1 1 12rem;
+  min-width: 11rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius);
+  padding: .6rem .7rem;
+  background: var(--plan-soft);
+}
+.date-col-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+/* A date already gone by stays visible but stops competing for attention. */
+.date-past { opacity: .55; }
+
+.validate-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.validate-row form { display: inline; }
+
+/* « date à confirmer », wherever an unsettled rencontre shows up in a list. */
+.tag-tentative { background: var(--plan-soft); color: var(--plan-ink); }
+.cal-tentative { background: var(--plan-soft); color: var(--plan-ink); font-style: italic; }
+
+.alt-dates { display: flex; flex-wrap: wrap; gap: .5rem; }
+.alt-dates input { flex: 0 1 9rem; }

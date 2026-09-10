@@ -97,7 +97,8 @@ _utilisateurices_) table and a set of `pending_*` staging tables for anonymous
 submissions:
 
 ```
-persons ──< meeting_persons >── meetings ──< meeting_moderators >── moderators
+persons ──< meeting_persons >── meetings ──< meeting_moderators   >── moderators
+                                        └──< meeting_availability >── moderators
 persons ──< mail_persons    >── mails
 
 pending_persons   pending_meetings   pending_mails      (anonymous drafts)
@@ -108,6 +109,23 @@ pending_persons   pending_meetings   pending_mails      (anonymous drafts)
 - Join tables use `ON DELETE CASCADE`, so deleting a person or a meeting/mail
   cleans up its links automatically. (`PRAGMA foreign_keys = ON` is set per
   connection.)
+- `meeting_format` is `presentiel` or `visio`, with `meeting_place` holding the
+  address (required in présentiel) or the link (optional in visio). The column
+  is nullable so that rencontres recorded before the field existed keep an
+  honest NULL — they display as « Non renseigné » — rather than being
+  backfilled with a format nobody chose. The form requires it, so editing an
+  old rencontre closes the gap. `utils/list_meetings_sans_format.py` lists the
+  ones still missing it.
+- `details` (« Compte rendu détaillé ») is gone: one free-text box is enough,
+  so `init_db()` folds whatever it held into `summary` after a blank line and
+  retires the column as `details_legacy` — nothing reads it, but the original
+  split is still recoverable. Runs once, on both `meetings` and
+  `pending_meetings`.
+- `alt_dates` holds the candidate dates of a rencontre whose date is not
+  settled, comma-joined. Non-NULL is what puts a rencontre on `/repartition`
+  instead of in the "à venir" list on `/todo`, and choosing a date clears it
+  back to NULL. The main `meeting_date` is always one of the candidates, so a
+  rencontre under arbitration still has a real date everywhere else.
 - Provenance columns (`recorded_by`, `validated_by`, `added_by`, `received_by`)
   reference `moderators(id)` with `ON DELETE SET NULL`, so removing an
   _utilisateurice_ keeps the record but clears the attribution.
@@ -117,12 +135,13 @@ Tables:
 | Table                | Key columns |
 |----------------------|-------------|
 | `persons`            | `id`, `name`, `political_group`, `stance`, `first_contacted`, `follow_up_date`, `notes`, `added_by`, `validated_by`, `created_at` |
-| `meetings`           | `id`, `meeting_date`, `meeting_time`, `summary`, `details`, `recorded_by`, `validated_by`, `document_*`, `created_at` |
+| `meetings`           | `id`, `meeting_date`, `meeting_time`, `meeting_format`, `meeting_place`, `alt_dates`, `summary`, `recorded_by`, `validated_by`, `document_*`, `created_at` |
 | `mails`              | `id`, `mail_date`, `direction` (`sent`/`received`), `important`, `summary`, `follow_up_date`, `received_by`, `validated_by`, `document_*`, `created_at` |
 | `moderators`         | `id`, `name` — the certified _utilisateurices_ |
 | `meeting_persons`    | `(meeting_id, person_id)` |
 | `mail_persons`       | `(mail_id, person_id)` |
 | `meeting_moderators` | `(meeting_id, moderator_id)` — who took part |
+| `meeting_availability` | `(meeting_id, moderator_id, on_date)` — who is free on which candidate date, until one is chosen |
 | `pending_persons`    | anonymous person drafts (`submitted_by`, …) |
 | `pending_meetings`   | anonymous meeting drafts (`proposed_people` free-text, `submitted_by`, …) |
 | `pending_mails`      | anonymous mail drafts (`proposed_people` free-text, `submitted_by`, …) |
