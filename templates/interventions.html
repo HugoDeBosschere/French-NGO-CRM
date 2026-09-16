@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Interventions{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="section-title section-interventions">Interventions</h1>
+  <a class="btn btn-primary" href="{{ url_for('new_intervention') }}">+ Nouvelle intervention</a>
+</div>
+
+<p class="hint">Les prises de parole de PauseIA : interviews données, plateaux TV,
+  tribunes publiées.</p>
+
+<form class="search" method="get" action="{{ url_for('interventions') }}">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="Rechercher par organisation, personne, type ou résumé…">
+  <button class="btn" type="submit">Rechercher</button>
+  {% if q %}<a class="btn btn-ghost" href="{{ url_for('interventions') }}">Effacer</a>{% endif %}
+</form>
+
+{{ ui.interventions_table(interventions) }}
+{% if interventions %}
+<p class="muted count">{{ interventions|length }} intervention{{ '' if interventions|length == 1 else 's' }}</p>
+{% endif %}
+{% endblock %}

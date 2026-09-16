@@ -224,4 +224,9 @@ meetings.db
 # don't end in .db, so *.db above does not cover them.
 *.db.bak*
 *.bak
+# Timestamped code backups taken before a migration
+# (app.py.bak-premerge-20260914-232030, templates-static.bak-….tar.gz): the
+# patterns above only catch names *ending* in .bak.
+*.bak-*
+*.bak-*.tar.gz
 uploads/

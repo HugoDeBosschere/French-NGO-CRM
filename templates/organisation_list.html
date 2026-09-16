@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Organisations{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Organisations</h1>
+  <span class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('new_organisation', org_type='Média') }}">+ Média</a>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation', org_type='Groupe politique') }}">+ Groupe politique</a>
+  </span>
+</div>
+
+<form class="search" method="get" action="{{ url_for('organisations') }}">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="Rechercher par nom, type, chambre ou position…">
+  {% if org_type %}<input type="hidden" name="org_type" value="{{ org_type }}">{% endif %}
+  <button class="btn" type="submit">Rechercher</button>
+  {% if q %}<a class="btn btn-ghost" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
+</form>
+
+<div class="filter-chips">
+  <a class="chip {{ 'chip-on' if not org_type }}"
+     href="{{ url_for('organisations', q=q or none) }}">Toutes <span class="muted">{{ total }}</span></a>
+  {% for t in org_types %}
+    <a class="chip {{ 'chip-on' if org_type == t }}"
+       href="{{ url_for('organisations', q=q or none, org_type=t) }}">
+      {{ t }}s <span class="muted">{{ counts.get(t, 0) }}</span></a>
+  {% endfor %}
+</div>
+
+{% if organisations %}
+<div class="table-wrap">
+  <table class="meetings">
+    <thead>
+      <tr>
+        <th>Nom</th><th>Type</th><th>Type de média / Chambre</th>
+        <th>Orientation</th><th>Position sur PauseIA</th>
+        <th>Personnes</th><th>Interventions</th><th>Contenus</th><th>Lien</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in organisations %}
+      <tr onclick="window.location='{{ url_for('organisation_detail', organisation_id=o['id']) }}'">
+        <td><strong>{{ o['name'] }}</strong></td>
+        <td class="nowrap">{{ ui.org_tag(o['org_type']) }}</td>
+        <td>{{ o['media_type'] or o['chambre'] or '—' }}</td>
+        <td>{{ o['orientation'] or '—' }}</td>
+        <td>{{ o['stance'] }}</td>
+        <td class="nowrap">{{ o['person_count'] }}</td>
+        <td class="nowrap">{{ o['intervention_count'] }}</td>
+        <td class="nowrap">{{ o['content_count'] }}</td>
+        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted count">{{ organisations|length }} organisation{{ '' if organisations|length == 1 else 's' }}</p>
+{% else %}
+<div class="empty">
+  {% if q or org_type %}
+    <p>Aucune organisation ne correspond à cette recherche.</p>
+    <a class="btn" href="{{ url_for('organisations') }}">Tout afficher</a>
+  {% else %}
+    <p>Aucune organisation enregistrée pour le moment.</p>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">Ajouter la première</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

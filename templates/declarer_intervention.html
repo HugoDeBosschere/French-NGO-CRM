@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Déclarer une intervention{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Déclarer une intervention</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<p class="muted">Une prise de parole de PauseIA : une interview donnée, un plateau
+  TV, une tribune publiée. Un membre de l'équipe relira votre déclaration.</p>
+
+<form class="card form" method="post" action="{{ url_for('declarer_intervention') }}">
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="intervention_date">Date de l'intervention <span class="req">*</span></label>
+      <input type="text" id="intervention_date" name="intervention_date" required
+             inputmode="numeric" placeholder="JJ/MM/AAAA"
+             value="{{ form.get('intervention_date', today) | fr_date }}">
+    </div>
+    {{ ui.label_select('intervention_type', "Type d'intervention",
+                        intervention_types, form, required=False) }}
+  </div>
+
+  {{ ui.proposed_organisation_field(form, organisation_names) }}
+  {{ ui.proposed_people_field(form) }}
+
+  <div class="field">
+    <label for="link">Lien vers l'intervention <span class="req">*</span></label>
+    <input type="text" id="link" name="link" required value="{{ form.get('link', '') }}"
+           placeholder="https://www.franceinter.fr/emissions/…">
+  </div>
+
+  <div class="field">
+    <label for="summary">Résumé <span class="muted">(facultatif)</span></label>
+    <textarea id="summary" name="summary" rows="4"
+      placeholder="Ce qui a été dit, ce qu'il faut en retenir…">{{ form.get('summary', '') }}</textarea>
+  </div>
+
+  {{ ui.declarant_fields(form, captcha_question) }}
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

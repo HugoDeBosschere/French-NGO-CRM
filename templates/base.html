@@ -9,22 +9,26 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="{{ url_for('index') }}">📋 Journal des rencontres</a>
+    <a class="brand" href="{{ url_for('index') }}">📋 Journal des rencontres et des médias</a>
     <nav>
       {% if session.get('authenticated') %}
+        {# Three chip families, by what the tab is for: the two pages you act
+           on (TODO red, Répartition green), the calendar, and the five record
+           types in the app's orange. Creating a record is done from its own
+           list page, which is where the « + Nouveau… » buttons live. #}
         <a class="nav-todo" href="{{ url_for('todo') }}">TODO</a>
         <a href="{{ url_for('fait') }}">Fait</a>
         <a class="nav-repartition" href="{{ url_for('repartition') }}">Répartition</a>
-        <a href="{{ url_for('index') }}">Rencontres</a>
-        <a href="{{ url_for('calendar_view') }}">Calendrier</a>
+        <a class="nav-calendar" href="{{ url_for('calendar_view') }}">Calendrier</a>
         <a href="{{ url_for('exchanges') }}">Suivi des échanges</a>
-        <a href="{{ url_for('people') }}">Personnes</a>
+        <a class="nav-record" href="{{ url_for('index') }}">Rencontres</a>
+        <a class="nav-record" href="{{ url_for('people') }}">Personnes</a>
+        <a class="nav-record" href="{{ url_for('organisations') }}">Organisations</a>
+        <a class="nav-record" href="{{ url_for('interventions') }}">Interventions</a>
+        <a class="nav-record" href="{{ url_for('contents') }}">Contenus</a>
         <a href="{{ url_for('moderation') }}">Modération{% if pending_count %}
           <span class="badge">{{ pending_count }}</span>{% endif %}</a>
         <a href="{{ url_for('moderators_admin') }}">Utilisateurices</a>
-        <a class="btn btn-primary" href="{{ url_for('new_meeting') }}">+ Rencontre</a>
-        <a class="btn btn-primary" href="{{ url_for('new_mail') }}">+ Courriel</a>
-        <a class="btn btn-primary" href="{{ url_for('new_person') }}">+ Personne</a>
         <a class="muted" href="{{ url_for('logout') }}">Déconnexion</a>
       {% endif %}
     </nav>
@@ -45,7 +49,7 @@
   </main>
 
   <footer class="site-footer">
-    <span class="muted">Journal des rencontres PauseIA — usage interne</span>
+    <span class="muted">Journal des rencontres et des médias PauseIA — usage interne</span>
   </footer>
 </body>
 </html>

@@ -1,0 +1,300 @@
+{# Pieces shared by several pages. Import with:
+     {% import "_macros.html" as ui with context %} #}
+
+{# « Relance » countdown badge next to an ISO date. #}
+{% macro due_badge(iso) %}
+  {% set d = iso | days_until %}
+  {% if d is none %}
+  {% elif d < 0 %}
+    <span class="due due-overdue">en retard de {{ -d }}&nbsp;j</span>
+  {% elif d == 0 %}
+    <span class="due due-soon">aujourd'hui</span>
+  {% else %}
+    <span class="due {{ 'due-soon' if d <= 7 else 'due-ok' }}">dans {{ d }}&nbsp;j</span>
+  {% endif %}
+{% endmacro %}
+
+{# Link shown truncated, opened in a new tab. #}
+{% macro ext_link(url) %}
+{% if url | safe_link %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">{{ url | truncate(60, True, '…') }}</a>{% else %}{{ url or '—' }}{% endif %}
+{% endmacro %}
+
+{# What an organisation is, in one tag: « Média » or « Groupe politique ». #}
+{% macro org_tag(org_type) %}
+<span class="tag {{ 'tag-media' if org_type == 'Média' else 'tag-groupe' }}">{{ org_type }}</span>
+{% endmacro %}
+
+{# What a person is, in one tag: « Journaliste » or « Politique ». #}
+{% macro contact_tag(contact_type) %}
+<span class="tag {{ 'tag-journaliste' if contact_type == 'Journaliste' else 'tag-politique' }}">{{ contact_type }}</span>
+{% endmacro %}
+
+{# Checkbox list of people, with a dropdown to tick one quickly. #}
+{% macro person_picker(people, selected_ids, label, required=True) %}
+<div class="field">
+  <label>{{ label }} {% if required %}<span class="req">*</span>{% else %}<span class="muted">(facultatif)</span>{% endif %}</label>
+  <div class="person-picker">
+    <label for="person_picker" class="muted">Cocher une personne depuis la liste</label>
+    <select id="person_picker" data-check-group="person_ids">
+      <option value="">— Choisir une personne —</option>
+      {% for p in people %}
+      <option value="{{ p['id'] }}">{{ p['name'] }}{% if p['organisation_names'] %} — {{ p['organisation_names'] }}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="checklist">
+    {% for p in people %}
+      <label class="check">
+        <input type="checkbox" name="person_ids" value="{{ p['id'] }}"
+               {% if (p['id']|string) in selected_ids %}checked{% endif %}>
+        {{ p['name'] }}{% if p['organisation_names'] %} <span class="muted">— {{ p['organisation_names'] }}</span>{% endif %}
+      </label>
+    {% else %}
+      <p class="muted">Aucune personne enregistrée.</p>
+    {% endfor %}
+  </div>
+  <p class="hint">
+    Quelqu'un manque ? <a href="{{ url_for('new_person') }}">Ajouter une personne</a>.
+  </p>
+</div>
+{% endmacro %}
+
+{# Checkbox list of organisations, filtered live by the type de contact chosen
+   above it (see static/form-masks.js, which reads data-org-type). Rendering
+   every organisation and hiding the wrong ones is what lets the type change
+   without a round trip; the server keeps only the ids of the matching type. #}
+{% macro organisation_checklist(organisations, selected_ids) %}
+<div class="field" id="organisation-field">
+  <label>Organisation<span class="muted"> — plusieurs choix possibles</span></label>
+  <div class="person-picker">
+    <label for="organisation_picker" class="muted">Cocher une organisation depuis la liste</label>
+    <select id="organisation_picker" data-check-group="organisation_ids">
+      <option value="">— Choisir une organisation —</option>
+      {% for o in organisations %}
+      <option value="{{ o['id'] }}" data-org-type="{{ o['org_type'] }}">{{ o['name'] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="checklist" data-org-checklist>
+    {% for o in organisations %}
+      <label class="check" data-org-type="{{ o['org_type'] }}">
+        <input type="checkbox" name="organisation_ids" value="{{ o['id'] }}"
+               {% if (o['id']|string) in selected_ids %}checked{% endif %}>
+        {{ o['name'] }}
+        <span class="muted">— {{ o['media_type'] or o['chambre'] or o['org_type'] }}</span>
+      </label>
+    {% else %}
+      <p class="muted">Aucune organisation enregistrée.</p>
+    {% endfor %}
+  </div>
+  <p class="hint" data-org-hint-journaliste hidden>
+    Le ou les médias pour lesquels cette personne travaille.
+    Un média manque ?
+    <a href="{{ url_for('new_organisation', org_type='Média') }}">Ajouter un média</a>.
+  </p>
+  <p class="hint" data-org-hint-politique hidden>
+    Le groupe politique de cette personne — obligatoire.
+    Un groupe manque ?
+    <a href="{{ url_for('new_organisation', org_type='Groupe politique') }}">Ajouter un groupe politique</a>.
+  </p>
+</div>
+{% endmacro %}
+
+{# Single organisation dropdown (a contenu / an intervention has exactly one).
+   Médias and groupes politiques are offered in separate groups: both are
+   allowed, and the grouping is what keeps a list of ~200 navigable. #}
+{% macro organisation_select(organisations, selected) %}
+<div class="field">
+  <label for="organisation_id">Organisation <span class="req">*</span></label>
+  <select id="organisation_id" name="organisation_id" required>
+    <option value="" disabled {% if not selected %}selected{% endif %}>Choisir une organisation…</option>
+    {% for group in org_types %}
+      {% set in_group = organisations | selectattr('org_type', 'equalto', group) | list %}
+      {% if in_group %}
+      <optgroup label="{{ group }}">
+        {% for o in in_group %}
+          <option value="{{ o['id'] }}" {% if selected|string == o['id']|string %}selected{% endif %}>{{ o['name'] }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <p class="hint">Une organisation manque ?
+    <a href="{{ url_for('new_organisation') }}">Ajouter une organisation</a>.
+    Les personnes choisies seront rattachées à cette organisation.</p>
+</div>
+{% endmacro %}
+
+{# Dropdown of utilisateurices for a provenance field. #}
+{% macro moderator_select(field, label, moderators, form, remember=False) %}
+<div class="field">
+  <label for="{{ field }}">{{ label }} <span class="req">*</span></label>
+  <select id="{{ field }}" name="{{ field }}" required {% if remember %}data-remember="{{ field }}"{% endif %}>
+    <option value="" disabled {% if not form.get(field) %}selected{% endif %}>
+      Choisir un utilisateurice…
+    </option>
+    {% for mo in moderators %}
+      <option value="{{ mo['id'] }}"
+        {% if form.get(field)|string == mo['id']|string %}selected{% endif %}>{{ mo['name'] }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{# Checkbox list of utilisateurices (who took part / who spoke for PauseIA). #}
+{% macro moderator_checklist(moderators, selected_mods, label) %}
+<div class="field">
+  <label>{{ label }} <span class="req">*</span></label>
+  <div class="checklist">
+    {% for mo in moderators %}
+      <label class="check">
+        <input type="checkbox" name="participant_ids" value="{{ mo['id'] }}"
+               {% if (mo['id']|string) in selected_mods %}checked{% endif %}>
+        {{ mo['name'] }}
+      </label>
+    {% else %}
+      <p class="muted">Aucun·e utilisateurice enregistré·e.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{# Select among a list of plain labels. #}
+{% macro label_select(field, label, options, form, required=True, placeholder="Choisir…") %}
+<div class="field">
+  <label for="{{ field }}">{{ label }} {% if required %}<span class="req">*</span>{% else %}<span class="muted">(facultatif)</span>{% endif %}</label>
+  <select id="{{ field }}" name="{{ field }}" {% if required %}required{% endif %}>
+    <option value="" {% if required %}disabled{% endif %} {% if not form.get(field) %}selected{% endif %}>{{ placeholder }}</option>
+    {% for o in options %}
+      <option value="{{ o }}" {% if form.get(field) == o %}selected{% endif %}>{{ o }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% macro no_moderators_notice(moderators) %}
+{% if not moderators %}
+<div class="notice">
+  <span class="notice-icon">⚠️</span>
+  <span>Aucun·e utilisateurice n'est encore enregistré·e. Pour renseigner les champs
+    ci-dessous, <a href="{{ url_for('moderators_admin') }}">ajoutez d'abord un utilisateurice</a>.</span>
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Interventions list (black title, orange underline on detail pages). #}
+{% macro interventions_table(rows, show_organisation=True) %}
+{% if rows %}
+<div class="table-wrap">
+  <table class="meetings">
+    <thead>
+      <tr><th>Date</th>{% if show_organisation %}<th>Organisation</th>{% endif %}<th>Personne(s)</th><th>Type</th><th>Résumé</th><th>Lien</th></tr>
+    </thead>
+    <tbody>
+      {% for i in rows %}
+      <tr onclick="window.location='{{ url_for('intervention_detail', intervention_id=i['id']) }}'">
+        <td class="nowrap">{{ i['intervention_date'] | fr_date }}</td>
+        {% if show_organisation %}<td><strong>{{ i['organisation_name'] }}</strong></td>{% endif %}
+        <td>{{ i['person_names'] or '—' }}</td>
+        <td class="nowrap"><span class="tag tag-intervention">{{ i['intervention_type'] }}</span></td>
+        <td class="summary-cell">{{ i['summary'] or '—' }}</td>
+        <td class="nowrap">{% if i['link'] | safe_link %}<a href="{{ i['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty"><p>Aucune intervention enregistrée pour le moment.</p></div>
+{% endif %}
+{% endmacro %}
+
+{# Contenus list (black title, brown underline on detail pages). #}
+{% macro contents_table(rows, show_organisation=True) %}
+{% if rows %}
+<div class="table-wrap">
+  <table class="meetings">
+    <thead>
+      <tr><th>Publication</th>{% if show_organisation %}<th>Organisation</th>{% endif %}<th>Personne(s)</th><th>Type</th><th>Résumé</th><th>Lien</th></tr>
+    </thead>
+    <tbody>
+      {% for c in rows %}
+      <tr onclick="window.location='{{ url_for('content_detail', content_id=c['id']) }}'">
+        <td class="nowrap">{{ c['published_on'] | fr_date }}</td>
+        {% if show_organisation %}<td><strong>{{ c['organisation_name'] }}</strong></td>{% endif %}
+        <td>{{ c['person_names'] or '—' }}</td>
+        <td class="nowrap"><span class="tag tag-content">{{ c['content_type'] }}</span></td>
+        <td class="summary-cell">{{ c['summary'] or '—' }}</td>
+        <td class="nowrap">{% if c['link'] | safe_link %}<a href="{{ c['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty"><p>Aucun contenu enregistré pour le moment.</p></div>
+{% endif %}
+{% endmacro %}
+
+{# Captcha + « who are you » fields shared by the public declaration forms. #}
+{% macro declarant_fields(form, captcha_question) %}
+<div class="field">
+  <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
+  <input type="text" id="submitted_by" name="submitted_by"
+         value="{{ form.get('submitted_by', '') }}" required
+         placeholder="ex. Marie L. ou marie_l#1234"
+         autocomplete="nickname" data-remember="submitted_by">
+  <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
+    Si vous préférez ne pas répondre, indiquez simplement « anonyme ».
+    Ce nom est retenu par votre navigateur pour vos prochaines déclarations ;
+    il reste sur votre appareil et ne nous parvient qu'avec le formulaire.</p>
+</div>
+
+<div class="field">
+  <label for="captcha">Combien font {{ captcha_question }} ? <span class="req">*</span></label>
+  <input type="text" id="captcha" name="captcha" inputmode="numeric"
+         autocomplete="off" required placeholder="Vérification anti-robot">
+</div>
+{% endmacro %}
+
+{# Free-text organisation field with a picker of known ones, on the public forms. #}
+{% macro proposed_organisation_field(form, organisation_names, multiple=False) %}
+<div class="field">
+  <label for="proposed_organisation">{{ 'Organisations' if multiple else 'Organisation' }} {% if multiple %}<span class="muted">(facultatif)</span>{% else %}<span class="req">*</span>{% endif %}</label>
+  <input type="text" id="proposed_organisation" name="proposed_organisation" {% if not multiple %}required{% endif %}
+         value="{{ form.get('proposed_organisation', '') }}"
+         placeholder="{{ 'ex. Le Monde, Les Démocrates (MoDem)…' if multiple else 'ex. Le Monde' }}">
+  {% if organisation_names %}
+  <div class="depute-picker">
+    <label for="organisation_name_picker">Choisir depuis la liste</label>
+    <select id="organisation_name_picker" data-target="proposed_organisation"{% if not multiple %} data-single{% endif %}>
+      <option value="">— Choisir une organisation —</option>
+      {% for group in org_types %}
+        {% set in_group = organisation_names | selectattr('org_type', 'equalto', group) | list %}
+        {% if in_group %}
+        <optgroup label="{{ group }}">
+          {% for o in in_group %}
+          <option value="{{ o['name'] }}">{{ o['name'] }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <p class="hint">Si l'organisation n'est pas dans la liste, écrivez son nom ; un membre
+    de l'équipe fera le lien (ou
+    <a href="{{ url_for('declarer_organisation') }}">proposez-la d'abord</a>).</p>
+</div>
+{% endmacro %}
+
+{% macro proposed_people_field(form) %}
+<div class="field">
+  <label for="proposed_people">Personnes concernées <span class="req">*</span></label>
+  <textarea id="proposed_people" name="proposed_people" rows="2" required
+    placeholder="ex. Jean Dupont, Marie Martin…">{{ form.get('proposed_people', '') }}</textarea>
+  <p class="hint">Indiquez les noms, séparés par des virgules ; un membre de l'équipe
+    fera le lien avec les fiches. Si une personne n'a pas encore de fiche, vous
+    pouvez <a href="{{ url_for('declarer_person') }}">la proposer d'abord</a>.</p>
+</div>
+{% endmacro %}

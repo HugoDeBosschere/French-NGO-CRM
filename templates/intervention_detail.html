@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Intervention du {{ i['intervention_date'] | fr_date }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Intervention du {{ i['intervention_date'] | fr_date }}
+    <span class="tag tag-intervention">{{ i['intervention_type'] }}</span>
+  </h1>
+  <span class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('edit_intervention', intervention_id=i['id']) }}">Modifier</a>
+    <a class="btn btn-ghost" href="{{ url_for('interventions') }}">Retour</a>
+    <form method="post" action="{{ url_for('delete_intervention', intervention_id=i['id']) }}"
+          onsubmit="return confirm('Supprimer définitivement cette intervention ? Cette action est irréversible.');">
+      <button class="btn btn-danger" type="submit">Supprimer</button>
+    </form>
+  </span>
+</div>
+
+<div class="card">
+  <div class="grid-2">
+    <div class="field">
+      <label>Organisation</label>
+      <p><a class="tag" href="{{ url_for('organisation_detail', organisation_id=i['organisation_id']) }}">{{ i['organisation_name'] }}</a>
+         {{ ui.org_tag(i['organisation_type']) }}</p>
+    </div>
+    <div class="field">
+      <label>Date</label>
+      <p>{{ i['intervention_date'] | fr_date }}</p>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Personne{% if people|length > 1 %}s{% endif %} concernée{% if people|length > 1 %}s{% endif %}</label>
+    <ul class="people-list">
+      {% for p in people %}
+        <li><a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+          {{ ui.contact_tag(p['contact_type']) }}</li>
+      {% else %}<li class="muted">—</li>{% endfor %}
+    </ul>
+  </div>
+
+  <div class="field">
+    <label>Qui est intervenu pour PauseIA</label>
+    <p>{{ participants | join(', ') or '—' }}</p>
+  </div>
+
+  <div class="field">
+    <label>Lien</label>
+    <p>{{ ui.ext_link(i['link']) }}</p>
+  </div>
+
+  {% if i['summary'] %}
+  <div class="field">
+    <label>Résumé</label>
+    <p class="prose">{{ i['summary'] }}</p>
+  </div>
+  {% endif %}
+
+  <div class="grid-2">
+    <div class="field">
+      <label>Saisi par</label>
+      <p>{{ recorded_by or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Validé par</label>
+      <p>{{ validated_by or '—' }}</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -9,7 +9,7 @@
         <th>Date</th>
         <th>Personne(s)</th>
         <th>Courriel</th>
-        <th>Groupe politique</th>
+        <th>Organisation</th>
         <th>Résumé</th>
         <th>Doc</th>
       </tr>
@@ -29,8 +29,8 @@
           {% endfor %}
         </td>
         <td>
-          {% for grp in (m['groups'] or '').split(',') if grp %}
-            <span class="tag">{{ grp }}</span>
+          {% for name in (m['organisation_names'] or '').split('|') if name %}
+            <span class="tag">{{ name }}</span>
           {% endfor %}
         </td>
         <td class="summary-cell">{{ m['summary'] }}</td>

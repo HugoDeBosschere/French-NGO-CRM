@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ heading }}</h1>
+  <a class="btn btn-ghost" href="{{ cancel_url }}">Annuler</a>
+</div>
+
+{% include "_moderation_origin.html" %}
+
+{# Like the person form, both type blocks are rendered and one is hidden, so
+   the type can change without a round trip. _save_organisation drops the
+   other type's fields rather than trusting what was posted. #}
+<form class="card form" method="post" action="{{ action_url }}" data-org-type-form>
+
+  {{ ui.no_moderators_notice(moderators) }}
+
+  <div class="field">
+    <label for="name">Nom <span class="req">*</span></label>
+    <input type="text" id="name" name="name" value="{{ form.get('name', '') }}"
+           autofocus required placeholder="ex. Le Monde, ou Les Démocrates (MoDem)">
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="org_type">Type d'organisation <span class="req">*</span></label>
+      <select id="org_type" name="org_type" required data-org-type>
+        <option value="" disabled {% if not form.get('org_type') %}selected{% endif %}>
+          Média ou groupe politique ?
+        </option>
+        {% for t in org_types %}
+          <option value="{{ t }}"
+            {% if form.get('org_type') == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {{ ui.label_select('stance', 'Position sur PauseIA', stances, form,
+                        placeholder="Quel est son ressenti vis-à-vis de PauseIA ?") }}
+  </div>
+
+  {# Média only. #}
+  <div data-org-block="Média" {% if form.get('org_type') != 'Média' %}hidden{% endif %}>
+    <div class="grid-2">
+      {{ ui.label_select('media_type', 'Type de média', media_types, form) }}
+      {{ ui.label_select('orientation', 'Orientation politique', orientations, form,
+                          placeholder="« Inconnue » si besoin") }}
+    </div>
+  </div>
+
+  {# Groupe politique only: a chambre, and deliberately no orientation — the
+     political leaning of a group is too fuzzy a thing to record as a field. #}
+  <div data-org-block="Groupe politique"
+       {% if form.get('org_type') != 'Groupe politique' %}hidden{% endif %}>
+    {{ ui.label_select('chambre', 'Chambre', chambers, form, required=False,
+                        placeholder="Assemblée nationale, Sénat…") }}
+  </div>
+
+  <div class="field">
+    <label for="link">Lien <span class="muted">(facultatif)</span></label>
+    <input type="text" id="link" name="link" value="{{ form.get('link', '') }}"
+           placeholder="https://www.lemonde.fr">
+    <p class="hint">Le site de l'organisation.</p>
+  </div>
+
+  <div class="field">
+    <label for="notes">Notes <span class="muted">(facultatif)</span></label>
+    <textarea id="notes" name="notes" rows="4"
+      placeholder="Tout ce qu'il est utile de retenir sur cette organisation…">{{ form.get('notes', '') }}</textarea>
+  </div>
+
+  <div class="grid-2">
+    {{ ui.moderator_select('added_by', "Qui a ajouté l'organisation ?", moderators, form) }}
+    {{ ui.moderator_select('validated_by', 'Validé par', moderators, form, remember=True) }}
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Enregistrer</button>
+    <a class="btn btn-ghost" href="{{ cancel_url }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

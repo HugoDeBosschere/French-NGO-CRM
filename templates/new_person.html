@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}{{ heading }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -6,23 +7,16 @@
   <a class="btn btn-ghost" href="{{ cancel_url }}">Annuler</a>
 </div>
 
-{% if submitted_by %}
-<div class="card flash-info" style="margin-bottom:1rem">
-  <strong>Personne proposée par :</strong> {{ submitted_by }}
-  <p class="hint">Nom ou pseudo Discord indiqué par l'utilisateurice anonyme qui a
-    soumis cette fiche.</p>
-</div>
-{% endif %}
+{% include "_moderation_origin.html" %}
 
-<form class="card form" method="post" action="{{ action_url }}">
+{% set chosen = selected_roles(form) %}
+{# The type de contact drives the rest of the form. Every type's block is
+   rendered and all but one hidden, so switching type needs no round trip; the
+   server keeps only the fields and the organisations of the type submitted. #}
+<form class="card form" method="post" action="{{ action_url }}"
+      data-contact-type-form>
 
-  {% if not moderators %}
-  <div class="notice">
-    <span class="notice-icon">⚠️</span>
-    <span>Aucun·e utilisateurice n'est encore enregistré·e. Pour renseigner les champs
-      « Qui a ajouté » et « Validé par », <a href="{{ url_for('moderators_admin') }}">ajoutez d'abord un utilisateurice</a>.</span>
-  </div>
-  {% endif %}
+  {{ ui.no_moderators_notice(moderators) }}
 
   <div class="field">
     <label for="name">Nom <span class="req">*</span></label>
@@ -31,8 +25,41 @@
            placeholder="ex. Jean Dupont">
   </div>
 
-  {% set chosen = selected_roles(form) %}
-  <div class="field">
+  <div class="grid-2">
+    <div class="field">
+      <label for="contact_type">Type de contact <span class="req">*</span></label>
+      <select id="contact_type" name="contact_type" required data-contact-type>
+        <option value="" disabled {% if not form.get('contact_type') %}selected{% endif %}>
+          Journaliste ou politique ?
+        </option>
+        {% for t in contact_types %}
+          <option value="{{ t }}"
+            {% if form.get('contact_type') == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">Ce choix détermine les fonctions proposées et le type
+        d'organisation à laquelle cette personne est rattachée.</p>
+    </div>
+
+    <div class="field">
+      <label for="stance">Position sur PauseIA <span class="req">*</span></label>
+      <select id="stance" name="stance" required>
+        <option value="" disabled {% if not form.get('stance') %}selected{% endif %}>
+          Quel est son ressenti vis-à-vis de PauseIA ?
+        </option>
+        {% for s in stances %}
+          <option value="{{ s }}" {% if form.get('stance') == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# One checklist per type de contact. Only the visible one's boxes can be
+     ticked in practice, and _roles_from_form drops anything belonging to the
+     other type, so changing someone's type does not leave a stale fonction. #}
+  {% for type, roles in roles_by_contact_type.items() %}
+  <div class="field" data-role-block="{{ type }}"
+       {% if form.get('contact_type') != type %}hidden{% endif %}>
     <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
     <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
       {% for r in roles %}
@@ -44,11 +71,20 @@
       {% endfor %}
     </div>
     <p class="hint">
-      Une même personne peut cumuler plusieurs fonctions
-      (un·e ministre est souvent aussi député·e).
+      {% if type == 'Politique' %}
+        Une même personne peut cumuler plusieurs fonctions
+        (un·e ministre est souvent aussi député·e).
+      {% else %}
+        Une même personne peut cumuler plusieurs fonctions
+        (un·e éditorialiste est souvent aussi chroniqueur·euse).
+      {% endif %}
     </p>
   </div>
+  {% endfor %}
 
+  {{ ui.organisation_checklist(organisations, selected_orgs) }}
+
+  {# Only meaningful for a government post, and only for a politique. #}
   <div class="field" id="portefeuille-field"
        {% if not chosen|select('in', portfolio_roles)|list %}hidden{% endif %}>
     <label for="portefeuille">Portefeuille <span class="muted">(facultatif)</span></label>
@@ -56,37 +92,6 @@
            value="{{ form.get('portefeuille', '') }}"
            placeholder="ex. chargé·e de l'intelligence artificielle et du numérique">
     <p class="hint">Le domaine confié : « chargé·e de l'énergie », « porte-parole du Gouvernement »…</p>
-  </div>
-
-  <div class="grid-2">
-    <div class="field">
-      <label for="political_group">Groupe politique <span class="req">*</span></label>
-      <select id="political_group" name="political_group" required>
-        <option value="" disabled {% if not form.get('political_group') %}selected{% endif %}>
-          Choisir un groupe politique…
-        </option>
-        {% for institution, names in groups.items() %}
-          <optgroup label="{{ institution }}">
-            {% for name in names %}
-              <option value="{{ name }}"
-                {% if form.get('political_group') == name %}selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-          </optgroup>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="field">
-      <label for="stance">Position sur PauseAI <span class="req">*</span></label>
-      <select id="stance" name="stance" required>
-        <option value="" disabled {% if not form.get('stance') %}selected{% endif %}>
-          Quel est son ressenti vis-à-vis de PauseAI ?
-        </option>
-        {% for s in stances %}
-          <option value="{{ s }}" {% if form.get('stance') == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </div>
   </div>
 
   <div class="grid-2">
@@ -109,18 +114,34 @@
     </div>
   </div>
 
+  {# Contact details: the same for everyone, journaliste or politique. #}
   <div class="grid-2">
-    <div class="field">
-      <label for="circonscription">Circonscription <span class="muted">(facultatif)</span></label>
-      <input type="text" id="circonscription" name="circonscription"
-             placeholder="ex. Ariège (09-2)" value="{{ form.get('circonscription', '') }}">
-    </div>
-
     <div class="field">
       <label for="email">Courriel <span class="muted">(facultatif)</span></label>
       <input type="email" id="email" name="email"
              placeholder="prenom.nom@assemblee-nationale.fr" value="{{ form.get('email', '') }}">
     </div>
+
+    <div class="field">
+      <label for="phone">Téléphone <span class="muted">(facultatif)</span></label>
+      <input type="tel" id="phone" name="phone"
+             placeholder="ex. 01 23 45 67 89" value="{{ form.get('phone', '') }}">
+    </div>
+  </div>
+
+  {# Circonscription is a mandate detail: shown for a politique only. #}
+  <div class="field" data-politique-only
+       {% if form.get('contact_type') != 'Politique' %}hidden{% endif %}>
+    <label for="circonscription">Circonscription <span class="muted">(facultatif)</span></label>
+    <input type="text" id="circonscription" name="circonscription"
+           placeholder="ex. Ariège (09-2)" value="{{ form.get('circonscription', '') }}">
+  </div>
+
+  <div class="field">
+    <label for="social_links">Réseaux sociaux <span class="muted">(facultatif)</span></label>
+    <textarea id="social_links" name="social_links" rows="3"
+      placeholder="Un lien par ligne : https://x.com/…">{{ form.get('social_links', '') }}</textarea>
+    <p class="hint">Un lien par ligne.</p>
   </div>
 
   <div class="field">
@@ -130,31 +151,8 @@
   </div>
 
   <div class="grid-2">
-    <div class="field">
-      <label for="added_by">Qui a ajouté la personne ? <span class="req">*</span></label>
-      <select id="added_by" name="added_by" required>
-        <option value="" disabled {% if not form.get('added_by') %}selected{% endif %}>
-          Choisir un utilisateurice…
-        </option>
-        {% for mo in moderators %}
-          <option value="{{ mo['id'] }}"
-            {% if form.get('added_by')|string == mo['id']|string %}selected{% endif %}>{{ mo['name'] }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="field">
-      <label for="validated_by">Validé par <span class="req">*</span></label>
-      <select id="validated_by" name="validated_by" required data-remember="validated_by">
-        <option value="" disabled {% if not form.get('validated_by') %}selected{% endif %}>
-          Choisir un utilisateurice…
-        </option>
-        {% for mo in moderators %}
-          <option value="{{ mo['id'] }}"
-            {% if form.get('validated_by')|string == mo['id']|string %}selected{% endif %}>{{ mo['name'] }}</option>
-        {% endfor %}
-      </select>
-    </div>
+    {{ ui.moderator_select('added_by', "Qui a ajouté la personne ?", moderators, form) }}
+    {{ ui.moderator_select('validated_by', 'Validé par', moderators, form, remember=True) }}
   </div>
 
   <div class="actions">

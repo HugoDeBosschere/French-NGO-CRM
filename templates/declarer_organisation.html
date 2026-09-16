@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Proposer une organisation{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Proposer une organisation</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<p class="muted">Un média ou un groupe politique. Donnez ce que vous savez — un
+  membre de l'équipe complétera et validera la fiche. Seul le nom est obligatoire.</p>
+
+<form class="card form" method="post" action="{{ url_for('declarer_organisation') }}"
+      data-org-type-form>
+
+  <div class="field">
+    <label for="name">Nom <span class="req">*</span></label>
+    <input type="text" id="name" name="name" value="{{ form.get('name', '') }}"
+           autofocus required placeholder="ex. Le Monde, ou Les Démocrates (MoDem)">
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="org_type">Type d'organisation <span class="muted">(facultatif)</span></label>
+      <select id="org_type" name="org_type" data-org-type>
+        <option value="" {% if not form.get('org_type') %}selected{% endif %}>
+          Média ou groupe politique ?
+        </option>
+        {% for t in org_types %}
+          <option value="{{ t }}"
+            {% if form.get('org_type') == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {{ ui.label_select('stance', 'Position sur PauseIA', stances, form, required=False,
+                        placeholder="Quel est son ressenti vis-à-vis de PauseIA ?") }}
+  </div>
+
+  <div data-org-block="Média" {% if form.get('org_type') != 'Média' %}hidden{% endif %}>
+    <div class="grid-2">
+      {{ ui.label_select('media_type', 'Type de média', media_types, form, required=False) }}
+      {{ ui.label_select('orientation', 'Orientation politique', orientations, form,
+                          required=False, placeholder="« Inconnue » si besoin") }}
+    </div>
+  </div>
+
+  <div data-org-block="Groupe politique"
+       {% if form.get('org_type') != 'Groupe politique' %}hidden{% endif %}>
+    {{ ui.label_select('chambre', 'Chambre', chambers, form, required=False,
+                        placeholder="Assemblée nationale, Sénat…") }}
+  </div>
+
+  <div class="field">
+    <label for="link">Lien <span class="muted">(facultatif)</span></label>
+    <input type="text" id="link" name="link" value="{{ form.get('link', '') }}"
+           placeholder="https://www.lemonde.fr">
+  </div>
+
+  <div class="field">
+    <label for="notes">Notes <span class="muted">(facultatif)</span></label>
+    <textarea id="notes" name="notes" rows="4"
+      placeholder="Tout ce qu'il est utile de retenir sur cette organisation…">{{ form.get('notes', '') }}</textarea>
+  </div>
+
+  {{ ui.declarant_fields(form, captcha_question) }}
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

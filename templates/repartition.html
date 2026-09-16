@@ -6,6 +6,7 @@
   <span class="head-actions">
     <a class="btn" href="{{ url_for('todo') }}">← TODO</a>
     <a class="btn" href="{{ url_for('calendar_view') }}">📅 Calendrier</a>
+    <a class="btn btn-primary" href="{{ url_for('new_meeting', repartition=1) }}">+ Nouvelle répartition</a>
   </span>
 </div>
 
@@ -23,7 +24,7 @@
 {% if not meetings %}
 <div class="empty">
   <p>Aucune rencontre en cours de répartition.</p>
-  <a class="btn btn-primary" href="{{ url_for('new_meeting') }}">+ Nouvelle rencontre</a>
+  <a class="btn btn-primary" href="{{ url_for('new_meeting', repartition=1) }}">+ Nouvelle répartition</a>
 </div>
 {% else %}
 
@@ -37,7 +38,6 @@
     <h2>
       <a href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
         {{ m['person_names'] or 'Rencontre' }}</a>
-      {% if m['meeting_time'] %}<span class="muted">— {{ m['meeting_time'] }}</span>{% endif %}
     </h2>
     <a class="btn btn-ghost" href="{{ url_for('edit_meeting', meeting_id=m['id']) }}">Modifier</a>
   </div>
@@ -49,23 +49,31 @@
   <p class="warn">Toutes les dates proposées sont passées — à replanifier.</p>
   {% endif %}
 
-  <form class="signup-form" method="post"
+  {# data-autosave: ticking a box saves the whole grid straight away, and the
+     counts, the colours and the Valider buttons are recomputed in the page —
+     the count for a date is exactly the number of boxes ticked in its column,
+     so nothing has to come back from the server to show it. #}
+  <form class="signup-form" method="post" data-autosave
+        data-min-participants="{{ min_participants }}"
+        data-short-title="Il faut au moins {{ min_participants }} personnes disponibles pour fixer cette date"
         action="{{ url_for('set_availability', meeting_id=m['id']) }}">
     <div class="date-grid">
       {% for d in dates %}
       {% set slot = slots[d] %}
       {% set count = slot['ids'] | length %}
-      {% set past = d < today %}
-      <div class="date-col{{ ' signup-ok' if count >= min_participants else ' signup-short' }}{{ ' date-past' if past else '' }}">
+      {% set past = slot_date(d) < today %}
+      <div class="date-col{{ ' signup-ok' if count >= min_participants else ' signup-short' }}{{ ' date-past' if past else '' }}"
+           data-date-col="{{ d }}">
         <div class="date-col-head">
-          <strong>{{ d | fr_date }}</strong>
-          {% if d == m['meeting_date'] %}<span class="tag">date principale</span>{% endif %}
+          <strong>{{ d | fr_slot }}</strong>
+          {% if d == main_slot(m) %}<span class="tag">date principale</span>{% endif %}
           {% if past %}<span class="tag tag-inactive">passée</span>{% endif %}
         </div>
         <p class="todo-sub">
-          <span class="signup-count">{{ count }}
-            dispo{{ '' if count == 1 else 's' }}</span>
-          {% if count < min_participants %}<span class="warn">— il en faut {{ min_participants }}</span>{% endif %}
+          <span class="signup-count"><span data-count>{{ count }}</span>
+            dispo<span data-plural>{{ '' if count == 1 else 's' }}</span></span>
+          <span class="warn" data-short-note
+                {% if count >= min_participants %}hidden{% endif %}>— il en faut {{ min_participants }}</span>
         </p>
         <div class="checklist">
           {% for mo in moderators %}
@@ -80,7 +88,13 @@
       {% endfor %}
     </div>
     {% if moderators %}
-    <button class="btn btn-primary" type="submit">Enregistrer les disponibilités</button>
+    {# Kept for browsers without JavaScript; the auto-save hides it. #}
+    <button class="btn btn-primary" type="submit" data-autosave-fallback>Enregistrer les disponibilités</button>
+    {# The labels live here, not in the script: every user-facing
+       string stays in the templates. #}
+    <span class="autosave-status" data-autosave-status aria-live="polite"
+          data-saving="Enregistrement…" data-saved="✓ Enregistré"
+          data-failed="⚠ Échec de l'enregistrement — utilisez le bouton"></span>
     {% endif %}
   </form>
 
@@ -90,12 +104,19 @@
     <span class="muted">Valider une date :</span>
     {% for d in dates %}
     {% set count = slots[d]['ids'] | length %}
+    {% set enough = count >= min_participants %}
     <form method="post"
           action="{{ url_for('confirm_meeting_date', meeting_id=m['id']) }}"
-          onsubmit="return confirm('Fixer cette rencontre au {{ d | fr_date }} ? Les {{ count }} personne(s) disponibles ce jour-là en deviendront les participant·es, et les autres dates seront abandonnées.');">
+          onsubmit="return confirm('Fixer cette rencontre au {{ d | fr_slot }} ? Les personnes disponibles sur ce créneau en deviendront les participant·es, et les autres dates seront abandonnées.');">
       <input type="hidden" name="on_date" value="{{ d }}">
-      <button class="btn {{ 'btn-primary' if count >= min_participants else '' }}"
-              type="submit">{{ d | fr_date }} ({{ count }})</button>
+      {# Disabled below the minimum: validating discards every other candidate
+         date, so an understaffed date must not be one click away. The route
+         refuses it too. #}
+      <button class="btn {{ 'btn-primary' if enough else '' }}"
+              type="submit" data-validate-date="{{ d }}"
+              {% if not enough %}disabled
+              title="Il faut au moins {{ min_participants }} personnes disponibles pour fixer cette date"{% endif %}>
+        {{ d | fr_slot }} (<span data-count>{{ count }}</span>)</button>
     </form>
     {% endfor %}
   </div>

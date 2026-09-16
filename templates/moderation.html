@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Modération{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -11,12 +12,25 @@
   <strong>Rejeter</strong> supprime définitivement le brouillon.
 </p>
 
-{% if not pending_persons and not pending_meetings and not pending_mails %}
+{# Every section's buttons are the same two, differing only in the kind in the
+   URL — hence one macro rather than six copies. #}
+{% macro draft_actions(kind, endpoint, pid) %}
+<div class="actions">
+  <a class="btn btn-primary" href="{{ url_for('approve_pending_' ~ endpoint, pid=pid) }}">Valider</a>
+  <form method="post" action="{{ url_for('reject_pending', kind=kind, pid=pid) }}"
+        onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
+    <button class="btn btn-ghost" type="submit">Rejeter</button>
+  </form>
+</div>
+{% endmacro %}
+
+{% if not (pending_persons or pending_organisations or pending_meetings
+           or pending_mails or pending_interventions or pending_contents) %}
   <div class="empty"><p>Aucune déclaration en attente. 🎉</p></div>
 {% endif %}
 
 {% if pending_meetings %}
-<h2>Rencontres ({{ pending_meetings|length }})</h2>
+<h2 class="section-title section-meetings">Rencontres ({{ pending_meetings|length }})</h2>
 <div class="card-list">
   {% for m in pending_meetings %}
   <div class="card">
@@ -27,20 +41,14 @@
       {% if m['document_orig_name'] %}<p class="hint">📎 {{ m['document_orig_name'] }}</p>{% endif %}
       {% if m['submitted_by'] %}<p class="hint">Déclaré par {{ m['submitted_by'] }}</p>{% endif %}
     </div>
-    <div class="actions">
-      <a class="btn btn-primary" href="{{ url_for('approve_pending_meeting', pid=m['id']) }}">Valider</a>
-      <form method="post" action="{{ url_for('reject_pending_meeting', pid=m['id']) }}"
-            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
-        <button class="btn btn-ghost" type="submit">Rejeter</button>
-      </form>
-    </div>
+    {{ draft_actions('rencontre', 'meeting', m['id']) }}
   </div>
   {% endfor %}
 </div>
 {% endif %}
 
 {% if pending_mails %}
-<h2>Courriels ({{ pending_mails|length }})</h2>
+<h2 class="section-title section-mails">Courriels ({{ pending_mails|length }})</h2>
 <div class="card-list">
   {% for x in pending_mails %}
   <div class="card">
@@ -52,38 +60,85 @@
       {% if x['document_orig_name'] %}<p class="hint">📎 {{ x['document_orig_name'] }}</p>{% endif %}
       {% if x['submitted_by'] %}<p class="hint">Déclaré par {{ x['submitted_by'] }}</p>{% endif %}
     </div>
-    <div class="actions">
-      <a class="btn btn-primary" href="{{ url_for('approve_pending_mail', pid=x['id']) }}">Valider</a>
-      <form method="post" action="{{ url_for('reject_pending_mail', pid=x['id']) }}"
-            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
-        <button class="btn btn-ghost" type="submit">Rejeter</button>
-      </form>
+    {{ draft_actions('courriel', 'mail', x['id']) }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if pending_interventions %}
+<h2 class="section-title section-interventions">Interventions ({{ pending_interventions|length }})</h2>
+<div class="card-list">
+  {% for i in pending_interventions %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ i['intervention_date'] | fr_date }}</strong>
+      {% if i['intervention_type'] %} · <span class="tag tag-intervention">{{ i['intervention_type'] }}</span>{% endif %}
+      — {{ i['proposed_organisation'] }} · {{ i['proposed_people'] }}
+      <p>{{ i['summary'] or '' }}</p>
+      <p class="hint">{{ ui.ext_link(i['link']) }}</p>
+      {% if i['submitted_by'] %}<p class="hint">Déclaré par {{ i['submitted_by'] }}</p>{% endif %}
     </div>
+    {{ draft_actions('intervention', 'intervention', i['id']) }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if pending_contents %}
+<h2 class="section-title section-contents">Contenus ({{ pending_contents|length }})</h2>
+<div class="card-list">
+  {% for c in pending_contents %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ c['published_on'] | fr_date }}</strong>
+      {% if c['content_type'] %} · <span class="tag tag-content">{{ c['content_type'] }}</span>{% endif %}
+      — {{ c['proposed_organisation'] }} · {{ c['proposed_people'] }}
+      <p>{{ c['summary'] or '' }}</p>
+      <p class="hint">{{ ui.ext_link(c['link']) }}</p>
+      {% if c['submitted_by'] %}<p class="hint">Déclaré par {{ c['submitted_by'] }}</p>{% endif %}
+    </div>
+    {{ draft_actions('contenu', 'content', c['id']) }}
   </div>
   {% endfor %}
 </div>
 {% endif %}
 
 {% if pending_persons %}
-<h2>Personnes ({{ pending_persons|length }})</h2>
+<h2 class="section-title section-people">Personnes ({{ pending_persons|length }})</h2>
 <div class="card-list">
   {% for p in pending_persons %}
   <div class="card">
     <div class="card-body">
       <strong>{{ p['name'] }}</strong>
+      {% if p['contact_type'] %} {{ ui.contact_tag(p['contact_type']) }}{% endif %}
       {% if p['role'] %} — {{ p['role'] }}{% endif %}
-      {% if p['political_group'] %} <span class="muted">({{ p['political_group'] }})</span>{% endif %}
+      {% if p['proposed_organisation'] %} <span class="muted">({{ p['proposed_organisation'] }})</span>{% endif %}
       {% if p['stance'] %}<p class="hint">Position : {{ p['stance'] }}</p>{% endif %}
       {% if p['notes'] %}<p>{{ p['notes'] }}</p>{% endif %}
       {% if p['submitted_by'] %}<p class="hint">Déclaré par {{ p['submitted_by'] }}</p>{% endif %}
     </div>
-    <div class="actions">
-      <a class="btn btn-primary" href="{{ url_for('approve_pending_person', pid=p['id']) }}">Valider</a>
-      <form method="post" action="{{ url_for('reject_pending_person', pid=p['id']) }}"
-            onsubmit="return confirm('Rejeter définitivement ce brouillon ?');">
-        <button class="btn btn-ghost" type="submit">Rejeter</button>
-      </form>
+    {{ draft_actions('personne', 'person', p['id']) }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if pending_organisations %}
+<h2 class="section-title section-people">Organisations ({{ pending_organisations|length }})</h2>
+<div class="card-list">
+  {% for o in pending_organisations %}
+  <div class="card">
+    <div class="card-body">
+      <strong>{{ o['name'] }}</strong>
+      {% if o['org_type'] %} {{ ui.org_tag(o['org_type']) }}{% endif %}
+      {% if o['media_type'] or o['chambre'] %} — {{ o['media_type'] or o['chambre'] }}{% endif %}
+      {% if o['stance'] %}<p class="hint">Position : {{ o['stance'] }}</p>{% endif %}
+      {% if o['link'] %}<p class="hint">{{ ui.ext_link(o['link']) }}</p>{% endif %}
+      {% if o['notes'] %}<p>{{ o['notes'] }}</p>{% endif %}
+      {% if o['submitted_by'] %}<p class="hint">Déclaré par {{ o['submitted_by'] }}</p>{% endif %}
     </div>
+    {{ draft_actions('organisation', 'organisation', o['id']) }}
   </div>
   {% endfor %}
 </div>

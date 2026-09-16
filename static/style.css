@@ -1,4 +1,4 @@
-/* PauseIA — Journal des rencontres
+/* PauseIA — Journal des rencontres et des médias
    Lightweight, friendly stylesheet. No build step, no dependencies. */
 
 :root {
@@ -7,9 +7,25 @@
   --ink:       #1c2733;
   --muted:     #67788a;
   --line:      #e2e8f0;
-  --brand:     #ff971b;   /* orange */
+  --brand:     #ff971b;   /* orange — the app's primary colour */
   --brand-ink: #b45309;   /* deep amber — readable as text on white/soft */
   --brand-soft:#ffedd5;
+  /* The press blue. Orange stays the primary colour (buttons, Rencontre,
+     Relance countdowns); this second family marks the records that came from
+     the journalist CRM — Personnes, Organisations, Interventions, Contenus —
+     so they read as one group in the nav and on their own pages. */
+  --press:        #ddf4ff;   /* light blue — too pale for white text on it */
+  --press-ink:    #0550ae;   /* dark blue — text on white or on --press */
+  --press-line:   #9fd3f7;   /* borders and focus rings around --press */
+  --press-strong: #58a6ff;   /* strokes that must stand out on white */
+  /* Section underlines on the personne / organisation pages. */
+  --intervention:      #ff9416;   /* orange — also the calendar colour */
+  --intervention-ink:  #9a4a00;   /* dark orange — text on the soft tint */
+  --intervention-soft: #fff1e0;
+  --rencontre:    #7e22ce;   /* violet */
+  --courriel:     #eab308;   /* medium yellow */
+  --contenu:      #8b5a2b;   /* brown */
+  --contenu-soft: #f5ebe0;
   --danger:    #b42318;
   --danger-bg: #fef3f2;
   --relance:      #7e22ce;   /* violet — « Relance », everywhere it appears */
@@ -22,6 +38,12 @@
 }
 
 * { box-sizing: border-box; }
+
+/* `el.hidden = true` has to win. The browser's own [hidden] rule is
+   origin=UA, so any author rule setting `display` beats it — `.check`
+   below sets display:flex, which kept hidden organisation rows on screen.
+   One important author rule settles it for every toggle in the app. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -49,7 +71,7 @@ a:hover { text-decoration: underline; }
 }
 .brand { font-weight: 700; font-size: 1.15rem; color: var(--ink); }
 .brand:hover { text-decoration: none; }
-.site-header nav { display: flex; align-items: center; gap: 1rem; }
+.site-header nav { display: flex; align-items: center; gap: .4rem 1rem; flex-wrap: wrap; justify-content: flex-end; }
 .site-header nav a { color: var(--muted); font-weight: 500; }
 .site-header nav a:hover { color: var(--ink); text-decoration: none; }
 
@@ -336,7 +358,11 @@ a.cal-ev:hover {
   padding: .6rem .75rem;
   background: #fafbfc;
 }
-.check { display: flex; align-items: center; gap: .55rem; font-weight: 400; cursor: pointer; }
+/* `:not([hidden])` so this rule stops fighting the browser's own
+   [hidden] { display: none }: a hidden row then gets no display from us at
+   all. Plain `.check` used to win on origin and keep hidden rows on screen —
+   which is what stopped the organisation list filtering by type de contact. */
+.check:not([hidden]) { display: flex; align-items: center; gap: .55rem; font-weight: 400; cursor: pointer; }
 .check input { width: auto; }
 
 /* ---------- People list (on detail page) ---------- */
@@ -435,6 +461,17 @@ a.cal-ev:hover {
 .subtab.active {
   color: var(--brand-ink);
   border-bottom-color: var(--brand);
+}
+
+/* « Nobody declared yet » — a rencontre whose participants are still open.
+   Deliberately plain and a touch monospaced: it reads as a placeholder value,
+   not as a person's name. */
+.tag-unknown {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .78rem;
 }
 
 /* "No longer in office" badge on kept-but-inactive officials */
@@ -604,16 +641,52 @@ a.cal-ev:hover {
 .signup-ok    .signup-count { color: var(--ok); font-weight: 700; }
 .warn { color: var(--danger); font-weight: 600; }
 
+/* A candidate date nobody can make yet: the date itself goes red, not just the
+   count beside it, so scanning the row of dates is enough to see which ones are
+   still short. A faint wash carries it without swallowing the checkboxes. */
+.date-col.signup-short {
+  background: var(--danger-bg);
+}
+.date-col.signup-short .date-col-head strong { color: var(--danger); }
+.date-col.signup-ok .date-col-head strong { color: var(--ok); }
+
+/* What the auto-save is doing, next to where the button used to be. */
+.autosave-status {
+  font-size: .82rem;
+  color: var(--muted);
+  margin-left: .1rem;
+}
+.autosave-status.is-failed { color: var(--danger); font-weight: 600; }
+
+/* A Valider button for a date that is still short. Kept visible rather than
+   hidden: the date is a real option, it just needs another person first. */
+.validate-row .btn[disabled] {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
 .checklist-inline { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: .45rem 0; }
 .signup-form { margin-top: .3rem; }
 
 /* TODO gets its own light red, kept clear of the dark red that flags an
    under-staffed rencontre and of the violet that means "relance". */
-:root { --todo: #e57373; --todo-ink: #c0392b; --todo-soft: #fdecea; }
+:root {
+  --todo: #e57373;
+  --todo-ink: #c0392b;
+  --todo-soft: #fdecea;
+  /* Chip border: the same tonal step from --todo-soft that
+     --press-line is from --press, so the nav chips match. */
+  --todo-line: #f3b4ab;
+}
 /* Scoped to match `.site-header nav a` above, which is more specific than a
    bare .nav-todo and would otherwise win and paint the link grey. */
-.site-header nav a.nav-todo { color: var(--todo-ink); font-weight: 700; }
-.site-header nav a.nav-todo:hover { color: var(--todo); }
+.site-header nav a.nav-todo {
+  background: var(--todo-soft);
+  color: var(--todo-ink);
+  border-color: var(--todo-line);
+  font-weight: 700;
+}
+.site-header nav a.nav-todo:hover { background: #fbdad5; color: var(--todo-ink); }
 .todo-title-head { color: var(--todo-ink); }
 
 /* ---------- /repartition ---------- */
@@ -628,9 +701,16 @@ a.cal-ev:hover {
   --plan-ink: #316916;
   --plan-soft: #e0fdd1;
   --plan-text: #a0ca66;
+  /* Chip border, matching --todo-line / --press-line. */
+  --plan-line: #a6dd84;
 }
-.site-header nav a.nav-repartition { color: var(--plan-text); font-weight: 600; }
-.site-header nav a.nav-repartition:hover { color: var(--plan-text); }
+.site-header nav a.nav-repartition {
+  background: var(--plan-soft);
+  color: var(--plan-ink);
+  border-color: var(--plan-line);
+  font-weight: 600;
+}
+.site-header nav a.nav-repartition:hover { background: #cdf7b7; color: var(--plan-ink); }
 .repartition-title-head { color: var(--plan-text); }
 
 /* The card itself stays on the app's white surface; the colour lives on the
@@ -667,5 +747,105 @@ a.cal-ev:hover {
 .tag-tentative { background: var(--plan-soft); color: var(--plan-ink); }
 .cal-tentative { background: var(--plan-soft); color: var(--plan-ink); font-style: italic; }
 
+/* One alternative = a date and, when the date is repeated, an heure beside it. */
 .alt-dates { display: flex; flex-wrap: wrap; gap: .5rem; }
-.alt-dates input { flex: 0 1 9rem; }
+.alt-slot { display: flex; gap: .3rem; flex: 0 1 15rem; }
+.alt-slot input[data-alt-date] { flex: 1 1 8rem; min-width: 0; }
+.alt-slot input[data-alt-time] { flex: 0 0 5.5rem; }
+
+
+/* ---------- Press records: personnes, organisations, interventions, contenus ---- */
+/* These four tabs sit on the press blue so they stand apart from the
+   rencontre / courriel tabs at a glance. */
+/* Every nav chip shares one shape; only the colours differ, so the families
+   read as families. Scoped to `.site-header nav a` to beat the bare rule above,
+   which would otherwise win on specificity and paint the link grey. */
+.site-header nav a.nav-record,
+.site-header nav a.nav-calendar,
+.site-header nav a.nav-todo,
+.site-header nav a.nav-repartition {
+  border-radius: 6px;
+  padding: .15rem .55rem;
+  /* Width and style only — never the colour. This rule sits *after* the
+     .nav-todo and .nav-repartition rules above and has the same specificity,
+     so the `border` shorthand used to win and reset their border-color to
+     transparent: both chips rendered with no outline at all, while Calendrier
+     (coloured below this rule) kept its own. Longhands can't do that. */
+  border-width: 1px;
+  border-style: solid;
+}
+
+/* The five record types — Rencontres, Personnes, Organisations, Interventions,
+   Contenus — in the app's orange, the same fill as the « + Nouveau… » buttons
+   on their list pages. */
+.site-header nav a.nav-record {
+  background: var(--brand);
+  /* Filled, so the border is there only to match the others' box size. */
+  border-color: transparent;
+  color: #fff;
+  /* 500, matching .btn — the same #fff at 600 reads harsher against the
+     orange, because the heavier strokes carry more of it. */
+  font-weight: 500;
+}
+.site-header nav a.nav-record:hover { background: var(--brand-ink); color: #fff; }
+
+/* Calendrier: the press blue, on its own now that the record tabs are orange. */
+.site-header nav a.nav-calendar {
+  background: var(--press);
+  color: var(--press-ink);
+  border-color: var(--press-line);
+}
+.site-header nav a.nav-calendar:hover { background: #c3e9ff; color: var(--press-ink); }
+
+/* Black title, coloured underline: orange for Interventions, brown for
+   Contenus, violet for Rencontres, yellow for Courriels, blue for Personnes.
+   The intervention and contenu tags in the lists carry the same colour. */
+.section-title {
+  color: #000;
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: .35em;
+  margin-top: 2.25rem;
+}
+.section-interventions { text-decoration-color: var(--intervention); }
+.section-contents      { text-decoration-color: var(--contenu); }
+.section-meetings      { text-decoration-color: var(--rencontre); }
+.section-mails         { text-decoration-color: var(--courriel); }
+.section-people        { text-decoration-color: var(--press-strong); }
+
+.tag-intervention { background: var(--intervention-soft); color: var(--intervention-ink); }
+.cal-intervention { background: var(--intervention-soft); color: var(--intervention-ink);
+                    border-left: 3px solid var(--intervention); }
+.tag-content      { background: var(--contenu-soft); color: var(--contenu); }
+/* What a record is: a média or a groupe politique, a journaliste or a
+   politique. Both pairs use the press blue, filled for the press half. */
+.tag-media, .tag-journaliste { background: var(--press); color: var(--press-ink);
+                               border: 1px solid var(--press-line); }
+.tag-groupe, .tag-politique  { background: var(--relance-soft); color: var(--relance-ink); }
+a.tag:hover { text-decoration: none; filter: brightness(.96); }
+
+/* ---------- Filter chips (type de contact, type d'organisation) ---------- */
+/* Narrowing a list is optional everywhere: « Tous » is the default and stays
+   one click away, so these are links, never a required choice. */
+.filter-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .35rem;
+  padding: .25rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: .9rem;
+  text-decoration: none;
+}
+.chip:hover { border-color: var(--press-line); text-decoration: none; }
+.chip-on {
+  background: var(--press);
+  border-color: var(--press-line);
+  color: var(--press-ink);
+  font-weight: 600;
+}
+.chip-on .muted { color: var(--press-ink); opacity: .75; }
+

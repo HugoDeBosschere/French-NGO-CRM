@@ -60,7 +60,7 @@
       <select id="person_picker" data-check-group="person_ids">
         <option value="">— Choisir une personne —</option>
         {% for p in people %}
-        <option value="{{ p['id'] }}">{{ p['name'] }} — {{ p['political_group'] }}</option>
+        <option value="{{ p['id'] }}">{{ p['name'] }}{% if p['organisation_names'] %} — {{ p['organisation_names'] }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -69,7 +69,7 @@
         <label class="check">
           <input type="checkbox" name="person_ids" value="{{ p['id'] }}"
                  {% if (p['id']|string) in selected_ids %}checked{% endif %}>
-          {{ p['name'] }} <span class="muted">— {{ p['political_group'] }}</span>
+          {{ p['name'] }}{% if p['organisation_names'] %} <span class="muted">— {{ p['organisation_names'] }}</span>{% endif %}
         </label>
       {% endfor %}
     </div>

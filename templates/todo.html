@@ -125,13 +125,17 @@
         — {{ m['person_names'] or 'Rencontre' }}
       </a>
       <p class="todo-sub">
-        <span class="signup-count">{{ m['participant_count'] }}
-          inscrit{{ '' if m['participant_count'] == 1 else 's' }}·e{{ '' if m['participant_count'] == 1 else 's' }}</span>
-        {% if not enough %}<span class="warn">— il en faut au moins {{ min_participants }}</span>{% endif %}
+        <span class="signup-count"><span data-count>{{ m['participant_count'] }}</span>
+          inscrit<span data-plural>{{ '' if m['participant_count'] == 1 else 's' }}</span>·e<span data-plural>{{ '' if m['participant_count'] == 1 else 's' }}</span></span>
+        <span class="warn" data-short-note {% if enough %}hidden{% endif %}>— il en faut au moins {{ min_participants }}</span>
       </p>
-      <form class="signup-form" method="post"
+      {# data-autosave: ticking a name signs them up straight away. The count
+         beside it is simply the number of boxes ticked, so the page keeps it
+         current itself. #}
+      <form class="signup-form" method="post" data-autosave
+            data-min-participants="{{ min_participants }}"
             action="{{ url_for('sign_up_meeting', meeting_id=m['id']) }}">
-        <div class="checklist checklist-inline">
+        <div class="checklist checklist-inline" data-date-col>
           {% for mo in moderators %}
             <label class="check">
               <input type="checkbox" name="participant_ids" value="{{ mo['id'] }}"
@@ -141,7 +145,13 @@
           {% endfor %}
         </div>
         {% if moderators %}
-        <button class="btn btn-primary" type="submit">Enregistrer les inscriptions</button>
+        {# Kept for browsers without JavaScript; the auto-save hides it. #}
+        <button class="btn btn-primary" type="submit" data-autosave-fallback>Enregistrer les inscriptions</button>
+        {# The labels live here, not in the script: every user-facing
+           string stays in the templates. #}
+        <span class="autosave-status" data-autosave-status aria-live="polite"
+              data-saving="Enregistrement…" data-saved="✓ Enregistré"
+              data-failed="⚠ Échec de l'enregistrement — utilisez le bouton"></span>
         {% endif %}
       </form>
     </div>

@@ -18,7 +18,7 @@
   <p class="hint">Nom ou pseudo Discord indiqué par l'utilisateurice anonyme qui a
     soumis cette rencontre. S'il correspond à un·e utilisateurice enregistré·e,
     cette personne est déjà renseignée dans « Saisi par » et cochée sous
-    « Qui a participé à la rencontre ? ». Sinon, à vous de les renseigner.</p>
+    « Qui a/va participé.er à la rencontre ? ». Sinon, à vous de les renseigner.</p>
 </div>
 {% endif %}
 {% if proposed_people %}
@@ -47,6 +47,20 @@
 <form class="card form" method="post" enctype="multipart/form-data"
       action="{{ action_url }}">
 
+  {% if repartition %}
+  {# Kept through a validation error, so the form does not quietly fall back to
+     being an ordinary rencontre on the second attempt. #}
+  <input type="hidden" name="repartition" value="1">
+  <div class="notice">
+    <span class="notice-icon">🗓️</span>
+    <span>Cette rencontre entre en <strong>répartition</strong> : sa date n'est pas
+      encore arrêtée. Renseignez la date principale et au moins une
+      « autre date possible » ci-dessous — chacun·e indiquera ensuite ses
+      disponibilités sur <a href="{{ url_for('repartition') }}">Répartition
+      rencontre</a>, et la date sera fixée une fois assez de monde inscrit.</span>
+  </div>
+  {% endif %}
+
   {% if not moderators %}
   <div class="notice">
     <span class="notice-icon">⚠️</span>
@@ -62,7 +76,7 @@
       <select id="person_picker" data-check-group="person_ids">
         <option value="">— Choisir une personne —</option>
         {% for p in people %}
-        <option value="{{ p['id'] }}">{{ p['name'] }} — {{ p['political_group'] }}</option>
+        <option value="{{ p['id'] }}">{{ p['name'] }}{% if p['organisation_names'] %} — {{ p['organisation_names'] }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -71,7 +85,7 @@
         <label class="check">
           <input type="checkbox" name="person_ids" value="{{ p['id'] }}"
                  {% if (p['id']|string) in selected_ids %}checked{% endif %}>
-          {{ p['name'] }} <span class="muted">— {{ p['political_group'] }}</span>
+          {{ p['name'] }}{% if p['organisation_names'] %} <span class="muted">— {{ p['organisation_names'] }}</span>{% endif %}
         </label>
       {% endfor %}
     </div>
@@ -81,7 +95,7 @@
   </div>
 
   <div class="field">
-    <label>Qui a participé à la rencontre ? <span class="req">*</span></label>
+    <label>Qui a/va participé.er à la rencontre ? (mettre &lt;unknown&gt; si aucun.e candidat.e déclaré.e pour l'instant) <span class="req">*</span></label>
     <div class="checklist">
       {% for mo in moderators %}
         <label class="check">
@@ -147,17 +161,33 @@
   </div>
 
   <div class="field">
-    <label>Autres dates possibles <span class="muted">(facultatif)</span></label>
-    <div class="alt-dates">
+    <label>Autres dates possibles
+      {% if repartition %}<span class="req">*</span>{% else %}<span class="muted">(facultatif)</span>{% endif %}</label>
+    {# Each alternative is a date plus an optional heure. The heure field
+       appears as soon as its date is filled in (see static/form-masks.js); it
+       is always in the page, so the two lists the server reads stay aligned
+       index for index. #}
+    <div class="alt-dates" data-alt-slots>
       {% set alts = parse_alt_dates(current['alt_dates'] if current else '') %}
-      {% set posted = form.getlist('alt_dates') if form.getlist is defined else [] %}
+      {% set posted_d = form.getlist('alt_dates') if form.getlist is defined else [] %}
+      {% set posted_t = form.getlist('alt_times') if form.getlist is defined else [] %}
       {% for i in range(max_alt_dates) %}
-        <input type="text" name="alt_dates" inputmode="numeric" placeholder="JJ/MM/AAAA"
-               value="{{ (posted[i] if i < posted|length else (alts[i] if i < alts|length else '')) | fr_date }}">
+        {% set stored = alts[i] if i < alts|length else '' %}
+        {% set d_val = posted_d[i] if i < posted_d|length else split_slot(stored)[0] %}
+        {% set t_val = posted_t[i] if i < posted_t|length else (split_slot(stored)[1] or '') %}
+        <div class="alt-slot">
+          <input type="text" name="alt_dates" inputmode="numeric" placeholder="JJ/MM/AAAA"
+                 value="{{ d_val | fr_date }}" data-alt-date>
+          <input type="text" name="alt_times" inputmode="numeric" placeholder="HH:MM"
+                 value="{{ t_val }}" data-alt-time {% if not t_val %}hidden{% endif %}>
+        </div>
       {% endfor %}
     </div>
     <p class="hint">Jusqu'à {{ max_alt_dates }} autres dates possibles pour une
-      future rencontre.</p>
+      future rencontre. Un champ heure apparaît dès qu'une date est renseignée —
+      laissez-le vide si l'heure n'est pas encore connue. Indiquez deux fois la
+      même date avec deux heures pour proposer deux créneaux ce jour-là :
+      chacun·e s'inscrit alors sur l'un ou l'autre.</p>
   </div>
 
   <div class="field">

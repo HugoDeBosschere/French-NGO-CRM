@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Déclarer un contenu{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Déclarer un contenu</h1>
+  <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+</div>
+
+<p class="muted">Un article, une vidéo ou un reportage publié sur PauseIA ou sur
+  les risques de l'IA, sans que PauseIA prenne part à sa production. Un membre de
+  l'équipe relira votre déclaration.</p>
+
+<form class="card form" method="post" action="{{ url_for('declarer_content') }}">
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="published_on">Date de publication <span class="req">*</span></label>
+      <input type="text" id="published_on" name="published_on" required
+             inputmode="numeric" placeholder="JJ/MM/AAAA"
+             value="{{ form.get('published_on', today) | fr_date }}">
+    </div>
+    {{ ui.label_select('content_type', 'Type de contenu', content_types, form,
+                        required=False) }}
+  </div>
+
+  {{ ui.proposed_organisation_field(form, organisation_names) }}
+  {{ ui.proposed_people_field(form) }}
+
+  <div class="field">
+    <label for="link">Lien vers le contenu <span class="req">*</span></label>
+    <input type="text" id="link" name="link" required value="{{ form.get('link', '') }}"
+           placeholder="https://www.lemonde.fr/…">
+  </div>
+
+  <div class="field">
+    <label for="summary">Résumé <span class="muted">(facultatif)</span></label>
+    <textarea id="summary" name="summary" rows="4"
+      placeholder="De quoi parle ce contenu, ce qu'il faut en retenir…">{{ form.get('summary', '') }}</textarea>
+  </div>
+
+  {{ ui.declarant_fields(form, captcha_question) }}
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Transmettre</button>
+    <a class="btn btn-ghost" href="{{ url_for('declarer') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

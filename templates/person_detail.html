@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}{{ p['name'] }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>{{ p['name'] }}
+    {{ ui.contact_tag(p['contact_type']) }}
     {% if p['role'] and not p['in_office'] %}
       <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
     {% endif %}
@@ -11,7 +13,7 @@
     <a class="btn btn-primary" href="{{ url_for('edit_person', person_id=p['id']) }}">Modifier</a>
     <a class="btn btn-ghost" href="{{ url_for('people') }}">Retour</a>
     <form method="post" action="{{ url_for('delete_person', person_id=p['id']) }}"
-          onsubmit="return confirm('Supprimer définitivement cette personne ? Ses liens vers les rencontres et courriels seront retirés. Cette action est irréversible.');">
+          onsubmit="return confirm('Supprimer définitivement cette personne ? Ses liens vers les organisations, interventions, contenus, rencontres et courriels seront retirés. Cette action est irréversible.');">
       <button class="btn btn-danger" type="submit">Supprimer</button>
     </form>
   </span>
@@ -20,11 +22,15 @@
 <div class="card">
   <div class="grid-2">
     <div class="field">
-      <label>Groupe politique</label>
-      <p><span class="tag">{{ p['political_group'] }}</span></p>
+      <label>{% if p['contact_type'] == 'Politique' %}Groupe politique{% else %}Média{% if organisations|length > 1 %}s{% endif %}{% endif %}</label>
+      <p>
+        {% for o in organisations %}
+          <a class="tag" href="{{ url_for('organisation_detail', organisation_id=o['id']) }}">{{ o['name'] }}</a>
+        {% else %}<span class="muted">—</span>{% endfor %}
+      </p>
     </div>
     <div class="field">
-      <label>Position sur PauseAI</label>
+      <label>Position sur PauseIA</label>
       <p>{{ p['stance'] }}</p>
     </div>
   </div>
@@ -50,17 +56,7 @@
     <div class="field">
       <label>Relance prévue</label>
       {% if p['follow_up_date'] %}
-        {% set d = p['follow_up_date'] | days_until %}
-        <p>
-          {{ p['follow_up_date'] | fr_date }}
-          {% if d < 0 %}
-            <span class="due due-overdue">en retard de {{ -d }}&nbsp;j</span>
-          {% elif d == 0 %}
-            <span class="due due-soon">aujourd'hui</span>
-          {% else %}
-            <span class="due {{ 'due-soon' if d <= 7 else 'due-ok' }}">dans {{ d }}&nbsp;j</span>
-          {% endif %}
-        </p>
+        <p>{{ p['follow_up_date'] | fr_date }} {{ ui.due_badge(p['follow_up_date']) }}</p>
       {% else %}
         <p class="muted">—</p>
       {% endif %}
@@ -97,16 +93,32 @@
     </div>
   </div>
 
-  {% if p['circonscription'] or p['email'] %}
   <div class="grid-2">
-    <div class="field">
-      <label>Circonscription</label>
-      <p>{{ p['circonscription'] or '—' }}</p>
-    </div>
     <div class="field">
       <label>Courriel</label>
       <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>{% else %}—{% endif %}</p>
     </div>
+    <div class="field">
+      <label>Téléphone</label>
+      <p>{% if p['phone'] %}<a href="tel:{{ p['phone'] }}">{{ p['phone'] }}</a>{% else %}—{% endif %}</p>
+    </div>
+  </div>
+
+  {% if p['circonscription'] %}
+  <div class="field">
+    <label>Circonscription</label>
+    <p>{{ p['circonscription'] }}</p>
+  </div>
+  {% endif %}
+
+  {% if p['social_links'] %}
+  <div class="field">
+    <label>Réseaux sociaux</label>
+    <ul class="people-list">
+      {% for line in p['social_links'].splitlines() if line.strip() %}
+        <li>{{ ui.ext_link(line.strip()) }}</li>
+      {% endfor %}
+    </ul>
   </div>
   {% endif %}
 
@@ -129,7 +141,13 @@
   </div>
 </div>
 
-<h2>Rencontres</h2>
+<h2 class="section-title section-interventions">Interventions</h2>
+{{ ui.interventions_table(interventions) }}
+
+<h2 class="section-title section-contents">Contenus</h2>
+{{ ui.contents_table(contents) }}
+
+<h2 class="section-title section-meetings">Rencontres</h2>
 {% if meetings %}
 <div class="table-wrap">
   <table class="meetings">
@@ -151,7 +169,7 @@
 <div class="empty"><p>Aucune rencontre enregistrée avec cette personne pour le moment.</p></div>
 {% endif %}
 
-<h2>Courriels</h2>
+<h2 class="section-title section-mails">Courriels</h2>
 {% if conversations %}
 <div class="table-wrap">
   <table class="meetings">

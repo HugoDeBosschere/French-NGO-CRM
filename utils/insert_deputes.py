@@ -20,9 +20,13 @@ Idempotent: skips a deputy whose name already exists in `persons`.
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from orglink import link_group  # noqa: E402
+
 SRC = os.path.join(ROOT, "actual_dataset", "deputes_officiel.json")
 DB = os.path.join(ROOT, "meetings.db")
 
@@ -78,17 +82,19 @@ def main():
         if group is None:
             unmapped.append((name, d["groupe_sigle"]))
             continue
-        db.execute(
+        cur = db.execute(
             """
             INSERT INTO persons (
-                name, role, political_group, stance, first_contacted,
-                follow_up_date, notes, circonscription, email,
+                name, role, political_group, stance, first_contacted, notes, circonscription, email,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, NULL, NULL, ?)
+            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, ?)
             """,
             (name, "Député·e", group, "Inconnu",
              circonscription(d), official_email(d), now),
         )
+        # The fiche's groupe politique is an organisation now, not just this
+        # column: link it so the person shows their group straight away.
+        link_group(db, cur.lastrowid, group, "Assemblée nationale")
         inserted += 1
         existing.add(name)
 

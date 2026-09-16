@@ -1,0 +1,37 @@
+{# Banners shown on a form opened from /moderation, describing what the
+   anonymous declarant sent. Every variable is optional. #}
+{% if submitted_by %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Proposé par :</strong> {{ submitted_by }}
+  <p class="hint">Nom ou pseudo Discord indiqué par l'utilisateurice anonyme. S'il
+    correspond à un·e utilisateurice enregistré·e, cette personne est déjà
+    renseignée dans « Saisi par ». Sinon, à vous de le renseigner.</p>
+</div>
+{% endif %}
+{% if proposed_organisation %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Organisation indiquée par le déclarant :</strong> {{ proposed_organisation }}
+  {% if unmatched_organisations %}
+  <p class="hint"><strong>Sans correspondance</strong> — choisissez l'organisation à la
+    main ou <a href="{{ url_for('new_organisation') }}">créez la fiche manquante</a>.</p>
+  {% else %}
+  <p class="hint">L'organisation correspondante est déjà sélectionnée ;
+    vérifiez-la avant de valider.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% if proposed_people %}
+<div class="card flash-info" style="margin-bottom:1rem">
+  <strong>Personnes indiquées par le déclarant :</strong> {{ proposed_people }}
+  {% if unmatched_people %}
+  <p class="hint"><strong>Sans correspondance :</strong>
+    {{ unmatched_people | join(', ') }} — ces noms n'ont pas été retrouvés dans les
+    fiches, cochez-les à la main ou
+    <a href="{{ url_for('new_person') }}">créez la fiche manquante</a>.
+    Les autres sont déjà cochées ci-dessous ; vérifiez avant de valider.</p>
+  {% else %}
+  <p class="hint">Les personnes correspondantes sont déjà cochées ci-dessous ;
+    vérifiez avant de valider.</p>
+  {% endif %}
+</div>
+{% endif %}

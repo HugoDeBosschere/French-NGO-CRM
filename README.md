@@ -1,8 +1,10 @@
 # French-NGO-CRM
 
 A small internal Flask app for the **PauseIA** team to track its advocacy
-outreach: the **people** it talks to (politicians / officials), the **meetings**
-it has with them, and the **mails** it exchanges. The interface is in French;
+outreach: the **people** it talks to — politicians and journalists alike — the
+**organisations** they speak for (political groups and media outlets), the
+**meetings** it has with them, the **mails** it exchanges, the **interventions**
+where PauseIA itself speaks, and the **contenus** those organisations publish. The interface is in French;
 the code and comments are in English. However, this tool can be used by any NGO
 that wants to do some kind of lobbying towards French politicians. Apart from
 the "Position sur PauseIA" field and the PauseIA colors of the interface, it 
@@ -19,8 +21,9 @@ The app has **two audiences**, and the features below are split accordingly:
   reading, writing, editing, deleting, moderating submissions, and managing the
   list of certified _utilisateurices_.
 - **Contributors who don't have the password** — a public, write-only
-  declaration form for signalling a person, a meeting or a mail to the team,
-  without ever being able to read the journal.
+  declaration form for signalling a person, an organisation, a meeting, a
+  mail, an intervention or a contenu to the team, without ever being able to
+  read the journal.
 
 This is useful to harness the power of the collective while not giving admin 
 permissions to untrusted users.
@@ -91,31 +94,56 @@ journal until a team member approves it in the moderation queue.
 
 ## Data model
 
-Three main entities, each with its own integer primary key, linked
-**many-to-many** through join tables, plus a `moderators` (certified
-_utilisateurices_) table and a set of `pending_*` staging tables for anonymous
-submissions:
+A **person** is either a *journaliste* or a *politique* (`contact_type`), and
+belongs to **organisations** that are either *médias* or *groupes politiques*
+(`org_type`). The type de contact is the one field that conditions the rest:
+which functions the form offers, which kind of organisation the person can
+belong to, and whether the mandate-only fields (circonscription, portefeuille)
+appear. Everything else — email, téléphone, réseaux sociaux, notes, position
+sur PauseIA — is the same for everyone.
+
+Entities are linked **many-to-many** through join tables, alongside a
+`moderators` (certified _utilisateurices_) table and a set of `pending_*`
+staging tables for anonymous submissions:
 
 ```
-persons ──< meeting_persons >── meetings ──< meeting_moderators   >── moderators
-                                        └──< meeting_availability >── moderators
-persons ──< mail_persons    >── mails
+persons ──< person_organisations  >── organisations
+persons ──< meeting_persons       >── meetings ──< meeting_moderators   >── moderators
+                                              └──< meeting_availability >── moderators
+persons ──< mail_persons          >── mails
+persons ──< intervention_persons  >── interventions >── organisations
+                                              └──< intervention_moderators >── moderators
+persons ──< content_persons       >── contents      >── organisations
 
-pending_persons   pending_meetings   pending_mails      (anonymous drafts)
+pending_persons  pending_organisations  pending_meetings
+pending_mails    pending_interventions  pending_contents     (anonymous drafts)
 ```
 
-- A meeting / mail involves **1..n** persons.
-- A person appears in **0..n** meetings and **0..n** mails.
-- Join tables use `ON DELETE CASCADE`, so deleting a person or a meeting/mail
-  cleans up its links automatically. (`PRAGMA foreign_keys = ON` is set per
-  connection.)
+- A meeting / mail / intervention / contenu involves **1..n** persons.
+- A person belongs to **0..n** organisations — a pigiste writes for several
+  titles, and an élu·e who changes group can hold both while the change is
+  recorded. A *politique* must have at least one groupe politique; a
+  *journaliste*'s médias are optional.
+- An intervention or a contenu names exactly **one** organisation, and it may
+  be a groupe politique as readily as a média.
+- Saving an intervention or a contenu links its people to its organisation, but
+  **only where the types match**: a journaliste interviewed on a party's own
+  channel does not thereby join that party.
+- `persons.political_group` still exists, but it is now a **mirror** of the
+  person's groupe politique, not the source of truth. The app keeps it in step
+  (`_sync_group_mirror`), and it is NULL for a journaliste. It is kept because
+  `utils/insert_*.py` and `utils/export_contacts_xlsx.py` write and read it
+  directly; see `BACKWARD_COMPATIBILITY.md`.
+- Join tables use `ON DELETE CASCADE`, so deleting a person, an organisation or
+  a meeting/mail cleans up its links automatically. (`PRAGMA foreign_keys = ON`
+  is set per connection.) An organisation still holding contenus or
+  interventions refuses to be deleted, so that work cannot be lost by mistake.
 - `meeting_format` is `presentiel` or `visio`, with `meeting_place` holding the
   address (required in présentiel) or the link (optional in visio). The column
   is nullable so that rencontres recorded before the field existed keep an
   honest NULL — they display as « Non renseigné » — rather than being
   backfilled with a format nobody chose. The form requires it, so editing an
-  old rencontre closes the gap. `utils/list_meetings_sans_format.py` lists the
-  ones still missing it.
+  old rencontre closes the gap.
 - `details` (« Compte rendu détaillé ») is gone: one free-text box is enough,
   so `init_db()` folds whatever it held into `summary` after a blank line and
   retires the column as `details_legacy` — nothing reads it, but the original
@@ -132,24 +160,30 @@ pending_persons   pending_meetings   pending_mails      (anonymous drafts)
 
 Tables:
 
-| Table                | Key columns |
-|----------------------|-------------|
-| `persons`            | `id`, `name`, `political_group`, `stance`, `first_contacted`, `follow_up_date`, `notes`, `added_by`, `validated_by`, `created_at` |
-| `meetings`           | `id`, `meeting_date`, `meeting_time`, `meeting_format`, `meeting_place`, `alt_dates`, `summary`, `recorded_by`, `validated_by`, `document_*`, `created_at` |
-| `mails`              | `id`, `mail_date`, `direction` (`sent`/`received`), `important`, `summary`, `follow_up_date`, `received_by`, `validated_by`, `document_*`, `created_at` |
-| `moderators`         | `id`, `name` — the certified _utilisateurices_ |
-| `meeting_persons`    | `(meeting_id, person_id)` |
-| `mail_persons`       | `(mail_id, person_id)` |
-| `meeting_moderators` | `(meeting_id, moderator_id)` — who took part |
-| `meeting_availability` | `(meeting_id, moderator_id, on_date)` — who is free on which candidate date, until one is chosen |
-| `pending_persons`    | anonymous person drafts (`submitted_by`, …) |
-| `pending_meetings`   | anonymous meeting drafts (`proposed_people` free-text, `submitted_by`, …) |
-| `pending_mails`      | anonymous mail drafts (`proposed_people` free-text, `submitted_by`, …) |
+| Table                 | Key columns |
+|-----------------------|-------------|
+| `persons`             | `id`, `name`, `contact_type` (`Journaliste`/`Politique`), `role`, `political_group` (mirror), `stance`, `first_contacted`, `email`, `phone`, `social_links`, `circonscription`, `portefeuille`, `in_office`, `notes`, `added_by`, `validated_by`, `created_at` |
+| `organisations`       | `id`, `name`, `org_type` (`Média`/`Groupe politique`), `media_type`, `orientation` (média only), `chambre` (groupe only), `stance`, `link`, `notes`, `added_by`, `validated_by`, `created_at` |
+| `meetings`            | `id`, `meeting_date`, `meeting_time`, `meeting_format`, `meeting_place`, `alt_dates`, `summary`, `recorded_by`, `validated_by`, `document_*`, `created_at` |
+| `mails`               | `id`, `mail_date`, `direction` (`sent`/`received`), `important`, `subject`, `summary`, `follow_up_date`, `received_by`, `validated_by`, `document_*`, `created_at` |
+| `interventions`       | `id`, `organisation_id`, `intervention_date`, `intervention_type`, `link`, `summary`, `recorded_by`, `validated_by`, `created_at` |
+| `contents`            | `id`, `organisation_id`, `content_type`, `link`, `published_on`, `summary`, `recorded_by`, `validated_by`, `created_at` |
+| `moderators`          | `id`, `name` — the certified _utilisateurices_ |
+| `person_organisations`| `(person_id, organisation_id)` |
+| `meeting_persons`     | `(meeting_id, person_id)` |
+| `mail_persons`        | `(mail_id, person_id)` |
+| `intervention_persons`| `(intervention_id, person_id)` |
+| `content_persons`     | `(content_id, person_id)` |
+| `meeting_moderators`  | `(meeting_id, moderator_id)` — who took part |
+| `intervention_moderators` | `(intervention_id, moderator_id)` — who spoke for PauseIA |
+| `meeting_availability`| `(meeting_id, moderator_id, on_date)` — who is free on which candidate date, until one is chosen |
+| `pending_*`           | anonymous drafts, one table per kind (`submitted_by`, `proposed_people` / `proposed_organisation` free-text, …) |
 
 The database (`meetings.db`, SQLite) and the `uploads/` folder are created
 automatically on first run. `init_db()` also runs lightweight migrations that
-add newer columns (follow-up dates, provenance fields, document fields on
-drafts) to older tables if they are missing.
+add newer columns to older tables if they are missing, relax the old NOT NULL
+on `political_group`, and turn each distinct groupe politique already stored on
+a person into an `organisations` row.
 
 ## Running locally
 
@@ -202,9 +236,17 @@ start empty).
 ```
 app.py               Flask app: config, schema/migrations, routes
 static/style.css     Stylesheet (no build step)
-static/form-masks.js Client-side input helpers (date/time masks)
-templates/           Jinja templates (base, login, people, meetings, mails,
+static/form-masks.js Client-side input helpers (date/time masks, and the
+                     type-de-contact / type-d'organisation form toggles)
+templates/           Jinja templates (base, _macros, login, people,
+                     organisations, interventions, contenus, meetings, mails,
                      declarer_*, moderation, moderators)
+utils/               Bulk importers for the official lists of élu·es, the
+                     mail importers, insert_medias_journalistes.py (the médias
+                     and journalistes, baked into the script) and
+                     import_media_crm.py (import straight from the old
+                     journalist CRM's database)
 meetings.db          SQLite database (created on first run)
 uploads/             Attached documents (created on first run)
+BACKWARD_COMPATIBILITY.md  What the merge changed, and what it did not
 ```

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Courriel · {{ x['mail_date'] | fr_date }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -32,7 +33,8 @@
         {% for p in people %}
           <li>
             <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
-            <span class="tag">{{ p['political_group'] }}</span>
+            {% if p['organisation_names'] %}<span class="tag">{{ p['organisation_names'] }}</span>{% endif %}
+            {{ ui.contact_tag(p['contact_type']) }}
             <span class="muted">· {{ p['stance'] }}</span>
           </li>
         {% endfor %}

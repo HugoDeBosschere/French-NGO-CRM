@@ -28,10 +28,14 @@ import ast
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from orglink import link_group  # noqa: E402
+
 SRC = os.path.join(ROOT, "actual_dataset", "eurodeputes_fr.json")
 DB = os.path.join(ROOT, "meetings.db")
 
@@ -55,7 +59,8 @@ GROUPE_TO_GROUP = {
 
 
 def app_labels(chamber):
-    """Read POLITICAL_GROUPS / ROLES from app.py as plain text (no import — the
+    """Read POLITICAL_GROUPS / POLITICAL_ROLES from app.py as plain text (no
+    import — the
     app pulls in heavy deps). A safety check when this is run by hand, so a
     label renamed in app.py can't silently produce uneditable rows."""
     tree = ast.parse(open(os.path.join(ROOT, "app.py"), encoding="utf-8").read())
@@ -66,17 +71,21 @@ def app_labels(chamber):
         for target in node.targets:
             if getattr(target, "id", None) == "POLITICAL_GROUPS":
                 groups = ast.literal_eval(node.value)
-            elif getattr(target, "id", None) == "ROLES":
+            # POLITICAL_ROLES, not ROLES: the latter is a concatenation of
+            # the political and journalist lists since the merge, which
+            # literal_eval cannot evaluate. A MEP's role is political.
+            elif getattr(target, "id", None) == "POLITICAL_ROLES":
                 roles = ast.literal_eval(node.value)
     if groups is None or roles is None:
-        raise RuntimeError("POLITICAL_GROUPS or ROLES not found in app.py")
+        raise RuntimeError(
+            "POLITICAL_GROUPS or POLITICAL_ROLES not found in app.py")
     return set(groups[chamber]), set(roles)
 
 
 def main():
     valid_groups, valid_roles = app_labels("Parlement européen")
     if ROLE not in valid_roles:
-        raise SystemExit(f"{ROLE!r} is missing from ROLES in app.py")
+        raise SystemExit(f"{ROLE!r} is missing from POLITICAL_ROLES in app.py")
     bad = {k: v for k, v in GROUPE_TO_GROUP.items() if v not in valid_groups}
     if bad:
         raise SystemExit(
@@ -120,16 +129,17 @@ def main():
                     (m["email"], name, ROLE),
                 ).rowcount
             continue
-        db.execute(
+        cur = db.execute(
             """
             INSERT INTO persons (
-                name, role, political_group, stance, first_contacted,
-                follow_up_date, notes, circonscription, email,
+                name, role, political_group, stance, first_contacted, notes, circonscription, email,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?)
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)
             """,
             (name, ROLE, GROUPE_TO_GROUP[m["groupe"]], "Inconnu", m["email"], now),
         )
+        link_group(db, cur.lastrowid, GROUPE_TO_GROUP[m["groupe"]],
+                   "Parlement européen")
         inserted += 1
         existing.add(name)
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Proposer une personne{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -9,7 +10,8 @@
 <p class="muted">Donnez ce que vous savez — un membre de l'équipe complétera et
   validera la fiche. Seul le nom est obligatoire.</p>
 
-<form class="card form" method="post" action="{{ url_for('declarer_person') }}">
+<form class="card form" method="post" action="{{ url_for('declarer_person') }}"
+      data-contact-type-form>
 
   <div class="field">
     <label for="name">Nom <span class="req">*</span></label>
@@ -18,8 +20,40 @@
            placeholder="ex. Jean Dupont">
   </div>
 
+  <div class="grid-2">
+    <div class="field">
+      <label for="contact_type">Type de contact <span class="muted">(facultatif)</span></label>
+      <select id="contact_type" name="contact_type" data-contact-type>
+        <option value="" {% if not form.get('contact_type') %}selected{% endif %}>
+          Journaliste ou politique ?
+        </option>
+        {% for t in contact_types %}
+          <option value="{{ t }}"
+            {% if form.get('contact_type') == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">Choisissez-le pour voir les fonctions correspondantes.</p>
+    </div>
+
+    <div class="field">
+      <label for="stance">Position sur PauseIA <span class="muted">(facultatif)</span></label>
+      <select id="stance" name="stance">
+        <option value="" {% if not form.get('stance') %}selected{% endif %}>
+          Quel est son ressenti vis-à-vis de PauseIA ?
+        </option>
+        {% for s in stances %}
+          <option value="{{ s }}" {% if form.get('stance') == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
   {% set chosen = selected_roles(form) %}
-  <div class="field">
+  {# Both lists are rendered; the type chosen above shows one. Until a type is
+     chosen neither is shown, so nobody picks « Sénateur·ice » for a pigiste. #}
+  {% for type, roles in roles_by_contact_type.items() %}
+  <div class="field" data-role-block="{{ type }}"
+       {% if form.get('contact_type') != type %}hidden{% endif %}>
     <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
     <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
       {% for r in roles %}
@@ -31,6 +65,7 @@
       {% endfor %}
     </div>
   </div>
+  {% endfor %}
 
   <div class="field" id="portefeuille-field"
        {% if not chosen|select('in', portfolio_roles)|list %}hidden{% endif %}>
@@ -40,34 +75,18 @@
            placeholder="ex. chargé·e de l'intelligence artificielle et du numérique">
   </div>
 
+  {{ ui.proposed_organisation_field(form, organisation_names, multiple=True) }}
+
   <div class="grid-2">
     <div class="field">
-      <label for="political_group">Groupe politique <span class="muted">(facultatif)</span></label>
-      <select id="political_group" name="political_group">
-        <option value="" {% if not form.get('political_group') %}selected{% endif %}>
-          Choisir un groupe politique…
-        </option>
-        {% for institution, names in groups.items() %}
-          <optgroup label="{{ institution }}">
-            {% for name in names %}
-              <option value="{{ name }}"
-                {% if form.get('political_group') == name %}selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-          </optgroup>
-        {% endfor %}
-      </select>
+      <label for="email">Courriel <span class="muted">(facultatif)</span></label>
+      <input type="email" id="email" name="email" value="{{ form.get('email', '') }}"
+             placeholder="prenom.nom@exemple.fr">
     </div>
-
     <div class="field">
-      <label for="stance">Position sur PauseAI <span class="muted">(facultatif)</span></label>
-      <select id="stance" name="stance">
-        <option value="" {% if not form.get('stance') %}selected{% endif %}>
-          Quel est son ressenti vis-à-vis de PauseAI ?
-        </option>
-        {% for s in stances %}
-          <option value="{{ s }}" {% if form.get('stance') == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
+      <label for="phone">Téléphone <span class="muted">(facultatif)</span></label>
+      <input type="tel" id="phone" name="phone" value="{{ form.get('phone', '') }}"
+             placeholder="ex. 01 23 45 67 89">
     </div>
   </div>
 
@@ -77,23 +96,7 @@
       placeholder="Tout ce qu'il est utile de retenir sur cette personne…">{{ form.get('notes', '') }}</textarea>
   </div>
 
-  <div class="field">
-    <label for="submitted_by">Votre nom ou pseudo Discord <span class="req">*</span></label>
-    <input type="text" id="submitted_by" name="submitted_by"
-           value="{{ form.get('submitted_by', '') }}" required
-           placeholder="ex. Marie L. ou marie_l#1234"
-           autocomplete="nickname" data-remember="submitted_by">
-    <p class="hint">Pour qu'on puisse vous joindre si une correction est nécessaire.
-      Si vous préférez ne pas répondre, indiquez simplement « anonyme ».
-      Ce nom est retenu par votre navigateur pour vos prochaines déclarations ;
-      il reste sur votre appareil et ne nous parvient qu'avec le formulaire.</p>
-  </div>
-
-  <div class="field">
-    <label for="captcha">Combien font {{ captcha_question }} ? <span class="req">*</span></label>
-    <input type="text" id="captcha" name="captcha" inputmode="numeric"
-           autocomplete="off" required placeholder="Vérification anti-robot">
-  </div>
+  {{ ui.declarant_fields(form, captcha_question) }}
 
   <div class="actions">
     <button class="btn btn-primary" type="submit">Transmettre</button>

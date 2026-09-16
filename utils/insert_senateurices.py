@@ -24,11 +24,15 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import unicodedata
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from orglink import link_group  # noqa: E402
+
 SRC = os.path.join(ROOT, "actual_dataset", "senateurices_actifs.json")
 DB = os.path.join(ROOT, "meetings.db")
 
@@ -156,16 +160,18 @@ def main():
             unmapped.append((name, short))
             continue
         circo = (s.get("circonscription") or {}).get("libelle")
-        db.execute(
+        cur = db.execute(
             """
             INSERT INTO persons (
-                name, role, political_group, stance, first_contacted,
-                follow_up_date, notes, circonscription, email,
+                name, role, political_group, stance, first_contacted, notes, circonscription, email,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, NULL, NULL, ?)
+            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, ?)
             """,
             (name, "Sénateur·ice", group, "Inconnu", circo, email, now),
         )
+        # The fiche's groupe politique is an organisation now, not just this
+        # column: link it so the person shows their group straight away.
+        link_group(db, cur.lastrowid, group, "Sénat")
         inserted += 1
         existing.add(name)
 

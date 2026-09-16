@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Contenus{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="section-title section-contents">Contenus</h1>
+  <a class="btn btn-primary" href="{{ url_for('new_content') }}">+ Nouveau contenu</a>
+</div>
+
+<p class="hint">Ce que les organisations ont publié sur PauseIA ou sur les risques
+  de l'IA, sans que PauseIA prenne part à sa production.</p>
+
+<form class="search" method="get" action="{{ url_for('contents') }}">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="Rechercher par organisation, personne, type ou résumé…">
+  <button class="btn" type="submit">Rechercher</button>
+  {% if q %}<a class="btn btn-ghost" href="{{ url_for('contents') }}">Effacer</a>{% endif %}
+</form>
+
+{{ ui.contents_table(contents) }}
+{% if contents %}
+<p class="muted count">{{ contents|length }} contenu{{ '' if contents|length == 1 else 's' }}</p>
+{% endif %}
+{% endblock %}

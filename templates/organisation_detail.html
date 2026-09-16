@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}{{ o['name'] }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ o['name'] }} {{ ui.org_tag(o['org_type']) }}</h1>
+  <span class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('edit_organisation', organisation_id=o['id']) }}">Modifier</a>
+    <a class="btn btn-ghost" href="{{ url_for('organisations') }}">Retour</a>
+    <form method="post" action="{{ url_for('delete_organisation', organisation_id=o['id']) }}"
+          onsubmit="return confirm('Supprimer définitivement cette organisation ? Les personnes qui y sont rattachées seront conservées, mais le lien sera retiré. Cette action est irréversible.');">
+      <button class="btn btn-danger" type="submit">Supprimer</button>
+    </form>
+  </span>
+</div>
+
+<div class="card">
+  <div class="grid-2">
+    <div class="field">
+      <label>{% if o['org_type'] == 'Média' %}Type de média{% else %}Chambre{% endif %}</label>
+      <p>{{ o['media_type'] or o['chambre'] or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Position sur PauseIA</label>
+      <p>{{ o['stance'] }}</p>
+    </div>
+  </div>
+
+  {% if o['org_type'] == 'Média' %}
+  <div class="field">
+    <label>Orientation politique</label>
+    <p>{{ o['orientation'] or '—' }}</p>
+  </div>
+  {% endif %}
+
+  <div class="field">
+    <label>Lien</label>
+    <p>{{ ui.ext_link(o['link']) }}</p>
+  </div>
+
+  {% if o['notes'] %}
+  <div class="field">
+    <label>Notes</label>
+    <p class="prose">{{ o['notes'] }}</p>
+  </div>
+  {% endif %}
+
+  <div class="grid-2">
+    <div class="field">
+      <label>Qui a ajouté l'organisation</label>
+      <p>{{ added_by or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Validé par</label>
+      <p>{{ validated_by or '—' }}</p>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title section-people">Personnes</h2>
+{% if people %}
+<div class="table-wrap">
+  <table class="meetings">
+    <thead><tr><th>Nom</th><th>Type</th><th>Fonction</th><th>Position sur PauseIA</th></tr></thead>
+    <tbody>
+      {% for p in people %}
+      <tr onclick="window.location='{{ url_for('person_detail', person_id=p['id']) }}'">
+        <td><strong>{{ p['name'] }}</strong></td>
+        <td class="nowrap">{{ ui.contact_tag(p['contact_type']) }}</td>
+        <td>{{ p['role'] or '—' }}</td>
+        <td>{{ p['stance'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty">
+  <p>Aucune personne rattachée à cette organisation pour le moment.</p>
+  <a class="btn btn-primary" href="{{ url_for('new_person', organisation_id=o['id']) }}">+ Ajouter une personne</a>
+</div>
+{% endif %}
+
+<h2 class="section-title section-interventions">Interventions</h2>
+{{ ui.interventions_table(interventions, show_organisation=False) }}
+<p class="hint"><a href="{{ url_for('new_intervention', organisation_id=o['id']) }}">+ Nouvelle intervention</a> pour cette organisation.</p>
+
+<h2 class="section-title section-contents">Contenus</h2>
+{{ ui.contents_table(contents, show_organisation=False) }}
+<p class="hint"><a href="{{ url_for('new_content', organisation_id=o['id']) }}">+ Nouveau contenu</a> pour cette organisation.</p>
+{% endblock %}

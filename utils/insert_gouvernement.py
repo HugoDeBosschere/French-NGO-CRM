@@ -28,10 +28,14 @@ import ast
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from orglink import link_group  # noqa: E402
+
 SRC = os.path.join(ROOT, "actual_dataset", "gouvernement.json")
 DB = os.path.join(ROOT, "meetings.db")
 
@@ -63,14 +67,17 @@ def merge_roles(existing, new_role, order):
 
 
 def main():
-    roles_order = app_constant("ROLES")
+    # POLITICAL_ROLES, not ROLES: since the journalist CRM was merged in,
+    # ROLES is a concatenation of the two role lists and no longer a
+    # literal this reader can evaluate. A minister's role is political.
+    roles_order = app_constant("POLITICAL_ROLES")
     groups = app_constant("POLITICAL_GROUPS")
 
     membres = [m["membre"] for m in json.load(open(SRC, encoding="utf-8"))["gouvernement"]]
 
     unknown = sorted({m["role"] for m in membres} - set(roles_order))
     if unknown:
-        raise SystemExit(f"Roles absent from ROLES in app.py: {unknown}")
+        raise SystemExit(f"Roles absent from POLITICAL_ROLES in app.py: {unknown}")
     if DEFAULT_GROUP not in groups["Autre"]:
         raise SystemExit(f"{DEFAULT_GROUP!r} missing from POLITICAL_GROUPS['Autre']")
 
@@ -89,17 +96,18 @@ def main():
         name = m["nom_complet"]
         row = existing.get(name)
         if row is None:
-            db.execute(
+            cur = db.execute(
                 """
                 INSERT INTO persons (
                     name, role, portefeuille, political_group, stance,
-                    first_contacted, follow_up_date, notes, circonscription,
+                    first_contacted, notes, circonscription,
                     email, added_by, validated_by, created_at
-                ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?)
+                ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)
                 """,
                 (name, m["role"], m["portefeuille"], DEFAULT_GROUP, "Inconnu",
                  m["email"], now),
             )
+            link_group(db, cur.lastrowid, DEFAULT_GROUP, "Autre")
             created.append(f"{name} — {m['role']}")
             continue
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Personnes{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -8,10 +9,26 @@
 
 <form class="search" method="get" action="{{ url_for('people') }}">
   <input type="search" name="q" value="{{ q }}"
-         placeholder="Rechercher par nom, groupe politique ou position…">
+         placeholder="Rechercher par nom, fonction, organisation ou position…">
+  {# Keeping the filter in the search form means searching does not silently
+     drop it — and the filter links below keep the search term for the same
+     reason. #}
+  {% if contact_type %}<input type="hidden" name="contact_type" value="{{ contact_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('people') }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" href="{{ url_for('people', contact_type=contact_type or none) }}">Effacer</a>{% endif %}
 </form>
+
+{# The type de contact is a filter, never a requirement: « Tous » is the default
+   and stays one click away. #}
+<div class="filter-chips">
+  <a class="chip {{ 'chip-on' if not contact_type }}"
+     href="{{ url_for('people', q=q or none) }}">Tous <span class="muted">{{ total }}</span></a>
+  {% for t in contact_types %}
+    <a class="chip {{ 'chip-on' if contact_type == t }}"
+       href="{{ url_for('people', q=q or none, contact_type=t) }}">
+      {{ t }}s <span class="muted">{{ counts.get(t, 0) }}</span></a>
+  {% endfor %}
+</div>
 
 {% if persons %}
 <div class="table-wrap">
@@ -19,9 +36,10 @@
     <thead>
       <tr>
         <th>Nom</th>
+        <th>Type</th>
         <th>Fonction</th>
-        <th>Groupe politique</th>
-        <th>Position sur PauseAI</th>
+        <th>Organisation</th>
+        <th>Position sur PauseIA</th>
         <th>Courriels</th>
         <th>Rencontres</th>
         <th>Relance</th>
@@ -36,8 +54,13 @@
             <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
           {% endif %}
         </td>
+        <td class="nowrap">{{ ui.contact_tag(p['contact_type']) }}</td>
         <td>{{ p['role'] or '—' }}</td>
-        <td><span class="tag">{{ p['political_group'] }}</span></td>
+        <td>
+          {% for name in (p['organisation_names'] or '').split('|') if name %}
+            <span class="tag">{{ name }}</span>
+          {% else %}<span class="muted">—</span>{% endfor %}
+        </td>
         <td>{{ p['stance'] }}</td>
         <td class="nowrap">
           <span title="Envoyés">↗ {{ p['mails_sent'] }}</span> ·
@@ -46,15 +69,7 @@
         <td class="nowrap">{{ p['meeting_count'] }}</td>
         <td class="nowrap">
           {% if p['follow_up_date'] %}
-            {% set d = p['follow_up_date'] | days_until %}
-            {{ p['follow_up_date'] | fr_date }}
-            {% if d < 0 %}
-              <span class="due due-overdue">en retard de {{ -d }}&nbsp;j</span>
-            {% elif d == 0 %}
-              <span class="due due-soon">aujourd'hui</span>
-            {% else %}
-              <span class="due {{ 'due-soon' if d <= 7 else 'due-ok' }}">dans {{ d }}&nbsp;j</span>
-            {% endif %}
+            {{ p['follow_up_date'] | fr_date }} {{ ui.due_badge(p['follow_up_date']) }}
           {% else %}—{% endif %}
         </td>
       </tr>
@@ -65,8 +80,8 @@
 <p class="muted count">{{ persons|length }} personne{{ '' if persons|length == 1 else 's' }}</p>
 {% else %}
 <div class="empty">
-  {% if q %}
-    <p>Aucune personne ne correspond à « {{ q }} ».</p>
+  {% if q or contact_type %}
+    <p>Aucune personne ne correspond à cette recherche.</p>
     <a class="btn" href="{{ url_for('people') }}">Tout afficher</a>
   {% else %}
     <p>Aucune personne enregistrée pour le moment.</p>

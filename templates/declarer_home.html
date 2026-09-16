@@ -4,9 +4,10 @@
 <div class="auth-card">
   <h1>Déclarer une activité</h1>
   <p class="muted">
-    Merci de nous signaler une rencontre, un courriel ou une personne en lien
-    avec le plaidoyer de PauseIA. Votre déclaration sera relue par un membre de
-    l'équipe avant d'être enregistrée. Aucun mot de passe n'est nécessaire.
+    Merci de nous signaler une rencontre, un courriel, une intervention, un
+    contenu, une personne ou une organisation en lien avec le plaidoyer de
+    PauseIA. Votre déclaration sera relue par un membre de l'équipe avant
+    d'être enregistrée. Aucun mot de passe n'est nécessaire.
   </p>
 
   <div class="actions" style="flex-direction:column">
@@ -16,8 +17,17 @@
     <a class="btn btn-primary btn-block" href="{{ url_for('declarer_mail') }}">
       Déclarer un courriel
     </a>
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_intervention') }}">
+      Déclarer une intervention
+    </a>
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_content') }}">
+      Déclarer un contenu
+    </a>
     <a class="btn btn-primary btn-block" href="{{ url_for('declarer_person') }}">
       Proposer une personne
+    </a>
+    <a class="btn btn-primary btn-block" href="{{ url_for('declarer_organisation') }}">
+      Proposer une organisation
     </a>
   </div>
 
