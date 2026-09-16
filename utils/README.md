@@ -99,6 +99,46 @@ The eurodéputé timer (`sync-eurodeputes`) is now **superseded** by this job.
 python3 utils/sync_officials.py     # fetch + extract + insert, all four chambers
 ```
 
+## 3 bis. The other two types de contact (journalistes, religieux·ses)
+
+`persons` holds three kinds of contact — `Journaliste`, `Politique`,
+`Religieux·se` — and `organisations` the three matching kinds: `Média`,
+`Groupe politique`, `Culte`. The scripts above seed the political half. These
+seed the other two. All are **dry-run by default**: they print what they would
+do and write nothing until `--commit`, and all are idempotent, matched by name
+*within their own type* so that a journaliste who shares a name with an élu·e
+stays a separate fiche.
+
+- **`insert_medias_journalistes.py`** — the 165 médias and 133 journalistes
+  that came from the old journalist CRM, hard-coded in the file because that
+  database was never version-controlled.
+- **`insert_cultes.py`** — the religious organisations: each culte plus the
+  body that actually speaks for it (CEF, FPF, CNEF, AEOF, Consistoire central,
+  CRIF, Grande Mosquée de Paris, FORIF, UBF, CRCF). Fifteen rows, hard-coded.
+- **`extract_eveques.py`** + **`insert_eveques.py`** — the ~120 French bishops
+  from the Conférence des évêques de France's own annuaire. Creates each
+  diocèse as a `Culte` organisation, sets the fonction from the title
+  (`Évêque`, `Archevêque`, `Évêque auxiliaire`, `Cardinal`, `Nonce
+  apostolique`) and the see as « Territoire assigné ». `émérite` in a title
+  sets `in_office = 0`.
+
+```bash
+python3 utils/insert_medias_journalistes.py            # dry run
+python3 utils/insert_medias_journalistes.py --commit
+python3 utils/insert_cultes.py --commit
+python3 utils/extract_eveques.py && python3 utils/insert_eveques.py --commit
+```
+
+> **Why there is no equivalent for the other cultes.** There is no open dataset
+> worth importing. SIRENE's NAF `94.91Z` (renumbered `94.91Y` under NAF 2025)
+> lists ~18 000 religious organisations through
+> `recherche-entreprises.api.gouv.fr`, but with no religion label and no
+> people — useful to *look one up*, not to import. The FPF, AEOF, Consistoire
+> and UBF directories stop at the level of organisations. For Islam nothing at
+> all is published: the CFCM lapsed and the Ministère de l'Intérieur has
+> declined to release FORIF's membership. Everyone else is entered by hand as
+> contact is made.
+
 ## 4. Sync élu·e emails from the sending tool (`sync_emails_from_elus.py`)
 
 The CRM seeds `persons.email` **statically** at import time, and only deputies

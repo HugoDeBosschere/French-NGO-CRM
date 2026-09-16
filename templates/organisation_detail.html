@@ -17,8 +17,12 @@
 <div class="card">
   <div class="grid-2">
     <div class="field">
-      <label>{% if o['org_type'] == 'Média' %}Type de média{% else %}Chambre{% endif %}</label>
-      <p>{{ o['media_type'] or o['chambre'] or '—' }}</p>
+      {# The one column that differs by org_type: a type de média, a chambre
+         or a religion. #}
+      <label>{% if o['org_type'] == 'Média' %}Type de média
+             {%- elif o['org_type'] == 'Culte' %}Religion
+             {%- else %}Chambre{% endif %}</label>
+      <p>{{ o['media_type'] or o['chambre'] or o['religion'] or '—' }}</p>
     </div>
     <div class="field">
       <label>Position sur PauseIA</label>

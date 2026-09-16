@@ -111,6 +111,19 @@
   </div>
   {% endif %}
 
+  {% if p['religion'] or p['territoire'] %}
+  <div class="grid-2">
+    <div class="field">
+      <label>Religion</label>
+      <p>{{ p['religion'] or '—' }}</p>
+    </div>
+    <div class="field">
+      <label>Territoire assigné</label>
+      <p>{{ p['territoire'] or '—' }}</p>
+    </div>
+  </div>
+  {% endif %}
+
   {% if p['social_links'] %}
   <div class="field">
     <label>Réseaux sociaux</label>

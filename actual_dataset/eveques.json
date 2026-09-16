@@ -1,0 +1,605 @@
+{
+  "source": "https://eglise.catholique.fr/guide-eglise-catholique-france/eveques-dioceses-france/liste-eveques-de-france/",
+  "eveques": [
+    {
+      "nom": "Mgr Marc Aillet",
+      "titre": "Évêque de Bayonne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-marc-aillet/"
+    },
+    {
+      "nom": "Mgr Benoît Aubert",
+      "titre": "Évêque de Limoges",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-benoit-aubert/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Jean-Marc Aveline",
+      "titre": "Archevêque de Marseille",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-jean-marc-aveline/"
+    },
+    {
+      "nom": "Mgr Philippe Ballot",
+      "titre": "Archevêque-Évêque de Metz",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-philippe-ballot/"
+    },
+    {
+      "nom": "Mgr Jean-Louis Balsa",
+      "titre": "Archevêque d'Albi",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-louis-balsa/"
+    },
+    {
+      "nom": "Mgr Sylvain Bataille",
+      "titre": "Archevêque de Bourges",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-sylvain-bataille/"
+    },
+    {
+      "nom": "Mgr Jean-Pierre Batut",
+      "titre": "Évêque auxiliaire de Toulouse",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-pierre-batut/"
+    },
+    {
+      "nom": "Mgr Yves Baumgarten",
+      "titre": "Évêque du Puy-en-Velay",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-yves-baumgarten/"
+    },
+    {
+      "nom": "Mgr Jérôme Beau",
+      "titre": "Archevêque de Poitiers",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jerome-beau/"
+    },
+    {
+      "nom": "Mgr Marc Beaumont",
+      "titre": "Évêque de Moulins",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-marc-beaumont/"
+    },
+    {
+      "nom": "Mgr Jacques Benoit-Gonnin",
+      "titre": "Évêque de Beauvais",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jacques-benoit-gonnin/"
+    },
+    {
+      "nom": "Mgr Benoît Bertrand",
+      "titre": "Évêque de Pontoise",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-benoit-bertrand/"
+    },
+    {
+      "nom": "Mgr Francis Bestion",
+      "titre": "Évêque de Blois",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-francis-bestion/"
+    },
+    {
+      "nom": "Mgr Éric Bidot, o.f.m.cap.",
+      "titre": "Évêque de Tulle",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-eric-bidot-o-f-m-cap/"
+    },
+    {
+      "nom": "Mgr Dominique Blanchet",
+      "titre": "Évêque de Créteil et Prélat de la Mission de France",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-dominique-blanchet/"
+    },
+    {
+      "nom": "Mgr Jacques Blaquart",
+      "titre": "Évêque d'Orléans",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jacques-blaquart/"
+    },
+    {
+      "nom": "Mgr Jean Bondu",
+      "titre": "Évêque auxiliaire de Rennes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-bondu/"
+    },
+    {
+      "nom": "Mgr Jean-Luc Bouilleret",
+      "titre": "Archevêque de Besançon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-luc-bouilleret/"
+    },
+    {
+      "nom": "Mgr Pierre-Antoine Bozo",
+      "titre": "Évêque coadjuteur de La Rochelle",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pierre-antoine-bozo/"
+    },
+    {
+      "nom": "Mgr Thierry Brac de la Perrière",
+      "titre": "Évêque auxiliaire de Lyon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-thierry-brac-de-la-perriere/"
+    },
+    {
+      "nom": "Mgr Nicolas Brouwet",
+      "titre": "Évêque de Nîmes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-nicolas-brouwet/"
+    },
+    {
+      "nom": "Mgr Jean-Luc Brunin",
+      "titre": "Évêque du Havre",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-luc-brunin/"
+    },
+    {
+      "nom": "Mgr Alexandre de Bucy",
+      "titre": "Évêque d'Agen",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-alexandre-de-bucy/"
+    },
+    {
+      "nom": "Mgr Grégoire Cador",
+      "titre": "Évêque de Coutances",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-gregoire-cador/"
+    },
+    {
+      "nom": "Mgr Olivier de Cagny",
+      "titre": "Évêque d'Évreux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-olivier-de-cagny/"
+    },
+    {
+      "nom": "Mgr Laurent Camiade",
+      "titre": "Évêque de Cahors",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-laurent-camiade/"
+    },
+    {
+      "nom": "Mgr Raymond Centène",
+      "titre": "Évêque de Vannes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-raymond-centene/"
+    },
+    {
+      "nom": "Mgr Philippe Christory",
+      "titre": "Évêque de Chartres",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-philippe-christory/"
+    },
+    {
+      "nom": "Mgr Georges Colomb, m.e.p.",
+      "titre": "Évêque de La Rochelle",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-georges-colomb-m-e-p/"
+    },
+    {
+      "nom": "Mgr Luc Crepy, c.j.m.",
+      "titre": "Évêque de Versailles",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-luc-crepy-c-j-m/"
+    },
+    {
+      "nom": "Mgr Pascal Delannoy",
+      "titre": "Archevêque de Strasbourg",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pascal-delannoy/"
+    },
+    {
+      "nom": "Mgr Christian Delarbre",
+      "titre": "Archevêque d'Aix",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-christian-delarbre/"
+    },
+    {
+      "nom": "Mgr Emmanuel Delmas",
+      "titre": "Évêque d'Angers",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-emmanuel-delmas/"
+    },
+    {
+      "nom": "Mgr Renauld de Dinechin",
+      "titre": "Évêque de Luçon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-renauld-de-dinechin/"
+    },
+    {
+      "nom": "Mgr Laurent Dognin",
+      "titre": "Évêque de Quimper",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-laurent-dognin/"
+    },
+    {
+      "nom": "Mgr Vincent Dollmann",
+      "titre": "Archevêque de Cambrai",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-vincent-dollmann/"
+    },
+    {
+      "nom": "Mgr Grégoire Drouot",
+      "titre": "Évêque de Nevers",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-gregoire-drouot/"
+    },
+    {
+      "nom": "Mgr Matthieu Dupont",
+      "titre": "Évêque de Laval",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-matthieu-dupont/"
+    },
+    {
+      "nom": "Mgr François Durand",
+      "titre": "Évêque de Valence",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-francois-durand/"
+    },
+    {
+      "nom": "Mgr Jean-Marc Eychenne",
+      "titre": "Évêque de Grenoble-Vienne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-marc-eychenne/"
+    },
+    {
+      "nom": "Mgr Bruno Feillet",
+      "titre": "Évêque de Séez",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-bruno-feillet/"
+    },
+    {
+      "nom": "Mgr François Fonlupt",
+      "titre": "Archevêque d'Avignon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-francois-fonlupt/"
+    },
+    {
+      "nom": "Mgr Jean-Luc Garin",
+      "titre": "Évêque de Saint-Claude",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-luc-garin/"
+    },
+    {
+      "nom": "Mgr Olivier de Germay",
+      "titre": "Archevêque de Lyon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-olivier-de-germay/"
+    },
+    {
+      "nom": "Mgr Hervé Giraud",
+      "titre": "Archevêque-évêque de Viviers",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-herve-giraud/"
+    },
+    {
+      "nom": "Mgr Emmanuel Gobilliard",
+      "titre": "Évêque de Digne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-emmanuel-gobilliard/"
+    },
+    {
+      "nom": "Mgr Hervé Gosselin",
+      "titre": "Évêque d'Angoulême",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-herve-gosselin/"
+    },
+    {
+      "nom": "Mgr François Gourdon",
+      "titre": "Évêque de Saint-Dié",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-francois-gourdon/"
+    },
+    {
+      "nom": "Mgr Benoît Gschwind, a.a.",
+      "titre": "Évêque de Pamiers",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-benoit-gschwind-a-a/"
+    },
+    {
+      "nom": "Mgr Alain Guellec",
+      "titre": "Évêque de Montauban",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-alain-guellec/"
+    },
+    {
+      "nom": "Mgr Étienne Guillet",
+      "titre": "Évêque de Saint-Denis",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-etienne-guillet/"
+    },
+    {
+      "nom": "Mgr Jacques Habert",
+      "titre": "Évêque de Bayeux-Lisieux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jacques-habert/"
+    },
+    {
+      "nom": "Mgr Antoine Hérouard",
+      "titre": "Archevêque de Dijon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-antoine-herouard/"
+    },
+    {
+      "nom": "Mgr Denis Jachiet",
+      "titre": "Évêque de Belfort-Montbéliard",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-denis-jachiet/"
+    },
+    {
+      "nom": "Mgr Jean-Paul James",
+      "titre": "Archevêque de Bordeaux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-paul-james/"
+    },
+    {
+      "nom": "Mgr Franck Javary",
+      "titre": "Évêque de Châlons",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-franck-javary/"
+    },
+    {
+      "nom": "Mgr Alexandre Joly",
+      "titre": "Évêque de Troyes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-alexandre-joly/"
+    },
+    {
+      "nom": "Mgr Vincent Jordy",
+      "titre": "Archevêque de Tours",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-vincent-jordy/"
+    },
+    {
+      "nom": "Mgr François Kalist",
+      "titre": "Archevêque de Clermont",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-francois-kalist/"
+    },
+    {
+      "nom": "Mgr Guy de Kerimel",
+      "titre": "Archevêque de Toulouse",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-guy-de-kerimel/"
+    },
+    {
+      "nom": "Mgr Christian Kratz",
+      "titre": "Évêque auxiliaire de Strasbourg",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-christian-kratz/"
+    },
+    {
+      "nom": "Mgr Bertrand Lacombe",
+      "titre": "Archevêque d'Auch",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-bertrand-lacombe/"
+    },
+    {
+      "nom": "Mgr Loïc Lagadec",
+      "titre": "Évêque auxiliaire de Lyon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-loic-lagadec/"
+    },
+    {
+      "nom": "Mgr Laurent Le Boulc’h",
+      "titre": "Archevêque de Lille",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-laurent-le-boulc-h/"
+    },
+    {
+      "nom": "Mgr Patrick Le Gal",
+      "titre": "Évêque auxiliaire de Lyon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-patrick-le-gal/"
+    },
+    {
+      "nom": "Mgr Yves Le Saux",
+      "titre": "Évêque d'Annecy",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-yves-le-saux/"
+    },
+    {
+      "nom": "Mgr Gérard Le Stang",
+      "titre": "Évêque d'Amiens",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-gerard-le-stang/"
+    },
+    {
+      "nom": "Mgr Jean-Marie Le Vert",
+      "titre": "Évêque auxiliaire de Bordeaux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-marie-le-vert/"
+    },
+    {
+      "nom": "Mgr Olivier Leborgne",
+      "titre": "Évêque d'Arras",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-olivier-leborgne/"
+    },
+    {
+      "nom": "Mgr Dominique Lebrun",
+      "titre": "Archevêque de Rouen",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-dominique-lebrun/"
+    },
+    {
+      "nom": "Mgr Guillaume Leschallier de Lisle",
+      "titre": "Évêque auxiliaire de Meaux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-guillaume-leschallier-de-lisle/"
+    },
+    {
+      "nom": "Mgr Xavier Malle",
+      "titre": "Évêque de Gap-Embrun",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-xavier-malle/"
+    },
+    {
+      "nom": "Mgr Philippe Marsset",
+      "titre": "Évêque auxiliaire de Paris",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-philippe-marsset/"
+    },
+    {
+      "nom": "Mgr Joseph de Metz-Noblat",
+      "titre": "Évêque de Verdun",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-joseph-de-metz-noblat/"
+    },
+    {
+      "nom": "Mgr Luc Meyer",
+      "titre": "Évêque de Rodez",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-luc-meyer/"
+    },
+    {
+      "nom": "Mgr Jean-Marc Micas, p.s.s.",
+      "titre": "Évêque de Tarbes et Lourdes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-marc-micas-p-s-s/"
+    },
+    {
+      "nom": "Mgr Pierre-Yves Michel",
+      "titre": "Évêque de Nancy",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pierre-yves-michel/"
+    },
+    {
+      "nom": "Mgr Éric de Moulins-Beaufort",
+      "titre": "Archevêque de Reims",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-eric-de-moulins-beaufort/"
+    },
+    {
+      "nom": "Mgr Philippe Mousset",
+      "titre": "Évêque de Périgueux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-philippe-mousset/"
+    },
+    {
+      "nom": "Mgr Denis Moutel",
+      "titre": "Évêque de Saint-Brieuc",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-denis-moutel/"
+    },
+    {
+      "nom": "Mgr Jean-Yves Nahmias",
+      "titre": "Évêque de Meaux",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-yves-nahmias/"
+    },
+    {
+      "nom": "Mgr Jean-Philippe Nault",
+      "titre": "Évêque de Nice",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-philippe-nault/"
+    },
+    {
+      "nom": "Mgr Didier Noblot",
+      "titre": "Évêque de Saint-Flour",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-didier-noblot/"
+    },
+    {
+      "nom": "Mgr Pierre d’ Ornellas",
+      "titre": "Archevêque de Rennes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pierre-d-ornellas/"
+    },
+    {
+      "nom": "Mgr Michel Pansard",
+      "titre": "Évêque d'Évry-Corbeil-Essonnes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-michel-pansard/"
+    },
+    {
+      "nom": "Mgr Jean Pelletier",
+      "titre": "Évêque de Mende",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-pelletier/"
+    },
+    {
+      "nom": "Mgr Laurent Percerou",
+      "titre": "Évêque de Nantes",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-laurent-percerou/"
+    },
+    {
+      "nom": "Mgr Benoît Rivière",
+      "titre": "Évêque d'Autun",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-benoit-riviere/"
+    },
+    {
+      "nom": "Mgr Pascal Roland",
+      "titre": "Évêque de Belley-Ars",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pascal-roland/"
+    },
+    {
+      "nom": "Mgr Antoine de Romanet",
+      "titre": "Évêque aux Armées françaises",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-antoine-de-romanet-de-beaune/"
+    },
+    {
+      "nom": "Mgr Matthieu Rougé",
+      "titre": "Évêque de Nanterre",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-matthieu-rouge/"
+    },
+    {
+      "nom": "Mgr Thierry Scherrer",
+      "titre": "Évêque de Perpignan-Elne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-thierry-scherrer/"
+    },
+    {
+      "nom": "Mgr Nicolas Souchu",
+      "titre": "Évêque d'Aire et Dax",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-nicolas-souchu/"
+    },
+    {
+      "nom": "Mgr Emmanuel Tois",
+      "titre": "Évêque auxiliaire de Paris",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-emmanuel-tois/"
+    },
+    {
+      "nom": "Mgr François Touvet",
+      "titre": "Évêque de Fréjus-Toulon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-francois-touvet/"
+    },
+    {
+      "nom": "Mgr Norbert Turini",
+      "titre": "Archevêque de Montpellier",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-norbert-turini/"
+    },
+    {
+      "nom": "Mgr Laurent Ulrich",
+      "titre": "Archevêque de Paris",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-laurent-ulrich/"
+    },
+    {
+      "nom": "Mgr Bruno Valentin",
+      "titre": "Évêque de Carcassonne et Narbonne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-bruno-valentin/"
+    },
+    {
+      "nom": "Mgr Thibault Verny",
+      "titre": "Archevêque de Chambéry, évêque de Saint-Jean de Maurienne et de Tarentaise",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-thibault-verny/"
+    },
+    {
+      "nom": "Mgr Étienne Vetö, ccn",
+      "titre": "Évêque auxiliaire de Reims",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-etienne-veto-ccn/"
+    },
+    {
+      "nom": "Mgr Jean-Pierre Vuillemin",
+      "titre": "Évêque du Mans",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-pierre-vuillemin/"
+    },
+    {
+      "nom": "Mgr Pascal Wintzer",
+      "titre": "Archevêque de Sens",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pascal-wintzer/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Jean-Marc Aveline",
+      "titre": "Archevêque de Marseille",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-jean-marc-aveline/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Philippe Barbarin",
+      "titre": "Archevêque émérite de Lyon",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-philippe-barbarin/"
+    },
+    {
+      "nom": "S. Ém. le cardinal François Bustillo, o.f.m. conv.",
+      "titre": "Évêque d'Ajaccio",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-francois-bustillo-ofm-conv/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Jean-Pierre Ricard",
+      "titre": "Archevêque émérite de Bordeaux et évêque émérite de Bazas",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-jean-pierre-ricard/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Dominique Mamberti",
+      "titre": "Préfet du Tribunal suprême de la Signature apostolique, depuis 2014",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-exc-mgr-dominique-mamberti/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Paul Poupard",
+      "titre": "Président émérite du Conseil pontifical pour la culture et du Conseil pontifical pour le dialogue inter-religieux, depuis 2007",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-paul-poupard/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Christophe Pierre",
+      "titre": "Nonce apostolique",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-christophe-pierre/"
+    },
+    {
+      "nom": "S. Ém. le cardinal Jean-Paul Vesco, o.p.",
+      "titre": "Archevêque d'Alger (Algérie)",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/s-em-le-cardinal-jean-paul-vesco-o-p/"
+    },
+    {
+      "nom": "Mgr Pascal Chane-Teng",
+      "titre": "Évêque de Saint-Denis-de-La Réunion",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pascal-chane-teng/"
+    },
+    {
+      "nom": "Mgr Pascal Chang-Soi, ss.cc.",
+      "titre": "Évêque de Taiohae ou Tefenuaenata",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-pascal-chang-soi-s-c-j-m/"
+    },
+    {
+      "nom": "Mgr Jean-Pierre Cottanceau, ss.cc.",
+      "titre": "Archevêque de Papeete à Tahiti",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-jean-pierre-cottanceau-ss-cc/"
+    },
+    {
+      "nom": "Mgr Philippe Guiougou",
+      "titre": "Évêque de Basse-Terre",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-philippe-guiougou/"
+    },
+    {
+      "nom": "Mgr David Macaire, o.p.",
+      "titre": "Archevêque de Fort-de-France",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-david-macaire-o-p/"
+    },
+    {
+      "nom": "Mgr Alain Ransay",
+      "titre": "Évêque de Cayenne",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-alain-ransay/"
+    },
+    {
+      "nom": "Mgr Susitino Sionepoe, s.m.",
+      "titre": "Archevêque de Nouméa",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-susitino-sionepoe-s-m/"
+    },
+    {
+      "nom": "Mgr Peter Karam",
+      "titre": "Administrateur apostolique sede vacante et ad nutum Sanctae Sedis de l’éparchie Notre-Dame du Liban de Paris des Maronites de France",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-peter-karam/"
+    },
+    {
+      "nom": "Mgr Ihor Rantsya",
+      "titre": "Évêque de l'Éparchie de Saint Vladimir-le-Grand de Paris des Ukrainiens byzantins",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/p-ihor-rantsya/"
+    },
+    {
+      "nom": "Mgr Elie Yéghiayan",
+      "titre": "Évêque de l'éparchie de Sainte-Croix de Paris des Arméniens",
+      "profil": "https://eglise.catholique.fr/guide-eglise-catholique-france/personne/mgr-elie-yeghiayan/"
+    }
+  ]
+}

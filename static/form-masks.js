@@ -232,7 +232,8 @@
 
   // The « Type de contact » select drives the rest of the person form: which
   // Fonction checklist is shown, which organisations can be ticked, and whether
-  // the mandate-only fields appear. Every block is in the page and all but one
+  // the mandate-only fields appear. For a religieux·se a « Religion » select
+  // inside that block narrows the fonctions one level further. Every block is in the page and all but one
   // hidden, so switching type costs no round trip. This is comfort only —
   // _save_person drops the other type's values server-side regardless.
   //
@@ -254,6 +255,28 @@
       });
     }
 
+    // One level further in, for a religieux·se only: « Religion » picks which
+    // culte's fonctions are offered. Same contract as the block above — the
+    // other cultes' boxes are cleared as well as hidden, so switching someone
+    // from Catholicisme to Judaïsme cannot leave « Cardinal » ticked and
+    // posting. _roles_from_form drops it server-side too.
+    var religionSelect = form.querySelector("[data-religion]");
+
+    function syncReligion() {
+      if (!religionSelect) return;
+      var religion = religionSelect.value;
+      form.querySelectorAll("[data-religion-block]").forEach(function (block) {
+        var on = block.getAttribute("data-religion-block") === religion;
+        if (!on) clear(block);
+        block.hidden = !on;
+      });
+      // Sixty-odd fonctions across seven cultes would be unreadable all at
+      // once, so nothing is listed until a religion is chosen; the prompt says
+      // so in the meantime.
+      var prompt = form.querySelector("[data-religion-prompt]");
+      if (prompt) prompt.hidden = !!religion;
+    }
+
     function sync() {
       var type = select.value;
       form.querySelectorAll("[data-role-block]").forEach(function (block) {
@@ -267,9 +290,15 @@
       form.querySelectorAll("[data-politique-only]").forEach(function (el) {
         el.hidden = type !== "Politique";
       });
+      // « Territoire assigné » is its religious counterpart.
+      form.querySelectorAll("[data-religieux-only]").forEach(function (el) {
+        el.hidden = type !== "Religieux\u00b7se";
+      });
+      syncReligion();
       syncOrganisations(form, type);
     }
 
+    if (religionSelect) religionSelect.addEventListener("change", syncReligion);
     select.addEventListener("change", sync);
     sync();
   }
@@ -278,7 +307,11 @@
   // groupes politiques for a politique. Ticked boxes of the wrong type are
   // cleared, so changing someone's type cannot leave them in a média and a
   // groupe at once.
-  var ORG_TYPE_OF_CONTACT = { "Journaliste": "Média", "Politique": "Groupe politique" };
+  var ORG_TYPE_OF_CONTACT = {
+    "Journaliste": "M\u00e9dia",
+    "Politique": "Groupe politique",
+    "Religieux\u00b7se": "Culte"
+  };
 
   function syncOrganisations(form, contactType) {
     var wanted = ORG_TYPE_OF_CONTACT[contactType] || "";
@@ -303,7 +336,8 @@
     if (field) field.hidden = !wanted;
     var hints = {
       "Journaliste": form.querySelector("[data-org-hint-journaliste]"),
-      "Politique": form.querySelector("[data-org-hint-politique]")
+      "Politique": form.querySelector("[data-org-hint-politique]"),
+      "Religieux\u00b7se": form.querySelector("[data-org-hint-religieux]")
     };
     Object.keys(hints).forEach(function (key) {
       if (hints[key]) hints[key].hidden = key !== contactType;
@@ -311,8 +345,8 @@
   }
 
   // The same idea on the organisation form: « Type d'organisation » shows the
-  // média block (type de média, orientation) or the groupe politique one
-  // (chambre). Selects inside a hidden block are disabled rather than cleared,
+  // média block (type de média, orientation), the groupe politique one
+  // (chambre) or the culte one (religion). Selects inside a hidden block are disabled rather than cleared,
   // since a disabled control posts nothing and a required one would otherwise
   // block submission while invisible.
   function attachOrgTypeToggle(form) {

@@ -19,14 +19,116 @@
 {% if url | safe_link %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">{{ url | truncate(60, True, '…') }}</a>{% else %}{{ url or '—' }}{% endif %}
 {% endmacro %}
 
-{# What an organisation is, in one tag: « Média » or « Groupe politique ». #}
+{# What an organisation is, in one tag: « Média », « Groupe politique » or
+   « Culte ». A lookup rather than a ternary, so a fourth org_type gets its own
+   colour instead of quietly borrowing another one's. #}
+{% set ORG_TAG_CLASS = {
+     'Média': 'tag-media',
+     'Groupe politique': 'tag-groupe',
+     'Culte': 'tag-culte',
+   } %}
 {% macro org_tag(org_type) %}
-<span class="tag {{ 'tag-media' if org_type == 'Média' else 'tag-groupe' }}">{{ org_type }}</span>
+<span class="tag {{ ORG_TAG_CLASS.get(org_type, 'tag-inactive') }}">{{ org_type }}</span>
 {% endmacro %}
 
-{# What a person is, in one tag: « Journaliste » or « Politique ». #}
+{# What a person is, in one tag: « Journaliste », « Politique » or
+   « Religieux·se ». Same lookup, same reason. #}
+{% set CONTACT_TAG_CLASS = {
+     'Journaliste': 'tag-journaliste',
+     'Politique': 'tag-politique',
+     'Religieux·se': 'tag-religieux',
+   } %}
 {% macro contact_tag(contact_type) %}
-<span class="tag {{ 'tag-journaliste' if contact_type == 'Journaliste' else 'tag-politique' }}">{{ contact_type }}</span>
+<span class="tag {{ CONTACT_TAG_CLASS.get(contact_type, 'tag-inactive') }}">{{ contact_type }}</span>
+{% endmacro %}
+
+{# The « Fonction » checklists, one per type de contact, shared by the member
+   form and the public declaration form.
+
+   Every block is rendered and all but one hidden, so changing the type de
+   contact costs no round trip; static/form-masks.js empties the hidden ones
+   because a hidden checked box still posts, and _roles_from_form drops
+   anything outside the submitted type's list anyway.
+
+   Religieux·se has one level more: some sixty functions across seven cultes is
+   far too many for a single checklist, so the block carries a « Religion »
+   select of its own and shows only that culte's functions. Nothing is shown
+   until a religion is chosen — that is what the prompt is for. #}
+{% macro role_checklists(form, chosen, hints=False) %}
+  {% for type in contact_types %}
+  <div class="field" data-role-block="{{ type }}"
+       {% if form.get('contact_type') != type %}hidden{% endif %}>
+
+    {% if type == 'Religieux·se' %}
+      {% set religion = form.get('religion', '') %}
+      <label for="religion">Religion <span class="muted">(facultatif)</span></label>
+      <select id="religion" name="religion" data-religion>
+        <option value="" {% if not religion %}selected{% endif %}>
+          — Choisir une religion —
+        </option>
+        {% for r in religions %}
+          <option value="{{ r }}" {% if religion == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint" data-religion-prompt {% if religion %}hidden{% endif %}>
+        Choisissez une religion pour voir les fonctions correspondantes.
+      </p>
+      {% for rel, roles in roles_by_religion.items() %}
+      <div data-religion-block="{{ rel }}" {% if religion != rel %}hidden{% endif %}>
+        <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
+        <div class="checklist">
+          {% for r in roles %}
+            <label class="check">
+              <input type="checkbox" name="role" value="{{ r }}"
+                     {% if r in chosen %}checked{% endif %}>
+              {{ r }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      {% if hints %}
+      <p class="hint">Une même personne peut cumuler plusieurs fonctions
+        (un·e évêque est souvent aussi théologien·ne).</p>
+      {% endif %}
+
+    {% else %}
+      <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
+      <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
+        {% for r in roles_by_contact_type[type] %}
+          <label class="check">
+            <input type="checkbox" name="role" value="{{ r }}"
+                   {% if r in chosen %}checked{% endif %}>
+            {{ r }}
+          </label>
+        {% endfor %}
+      </div>
+      {% if hints %}
+      <p class="hint">
+        {% if type == 'Politique' %}
+          Une même personne peut cumuler plusieurs fonctions
+          (un·e ministre est souvent aussi député·e).
+        {% else %}
+          Une même personne peut cumuler plusieurs fonctions
+          (un·e éditorialiste est souvent aussi chroniqueur·euse).
+        {% endif %}
+      </p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{# « Territoire assigné »: the diocèse, paroisse or circonscription rabbinique
+   a religieux·se answers for. The religious counterpart of a politique's
+   circonscription, and shown on the same terms — only for its own type. #}
+{% macro territoire_field(form) %}
+<div class="field" data-religieux-only
+     {% if form.get('contact_type') != 'Religieux·se' %}hidden{% endif %}>
+  <label for="territoire">Territoire assigné <span class="muted">(facultatif)</span></label>
+  <input type="text" id="territoire" name="territoire"
+         placeholder="ex. Diocèse de Lyon" value="{{ form.get('territoire', '') }}">
+</div>
 {% endmacro %}
 
 {# Checkbox list of people, with a dropdown to tick one quickly. #}
@@ -81,7 +183,7 @@
         <input type="checkbox" name="organisation_ids" value="{{ o['id'] }}"
                {% if (o['id']|string) in selected_ids %}checked{% endif %}>
         {{ o['name'] }}
-        <span class="muted">— {{ o['media_type'] or o['chambre'] or o['org_type'] }}</span>
+        <span class="muted">— {{ o['media_type'] or o['chambre'] or o['religion'] or o['org_type'] }}</span>
       </label>
     {% else %}
       <p class="muted">Aucune organisation enregistrée.</p>
@@ -96,6 +198,11 @@
     Le groupe politique de cette personne — obligatoire.
     Un groupe manque ?
     <a href="{{ url_for('new_organisation', org_type='Groupe politique') }}">Ajouter un groupe politique</a>.
+  </p>
+  <p class="hint" data-org-hint-religieux hidden>
+    Le culte, le diocèse, le consistoire ou la fédération dont cette personne
+    relève. Il manque ?
+    <a href="{{ url_for('new_organisation', org_type='Culte') }}">Ajouter un culte</a>.
   </p>
 </div>
 {% endmacro %}

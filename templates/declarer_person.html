@@ -25,7 +25,7 @@
       <label for="contact_type">Type de contact <span class="muted">(facultatif)</span></label>
       <select id="contact_type" name="contact_type" data-contact-type>
         <option value="" {% if not form.get('contact_type') %}selected{% endif %}>
-          Journaliste ou politique ?
+          Journaliste, politique ou religieux·se ?
         </option>
         {% for t in contact_types %}
           <option value="{{ t }}"
@@ -49,23 +49,11 @@
   </div>
 
   {% set chosen = selected_roles(form) %}
-  {# Both lists are rendered; the type chosen above shows one. Until a type is
-     chosen neither is shown, so nobody picks « Sénateur·ice » for a pigiste. #}
-  {% for type, roles in roles_by_contact_type.items() %}
-  <div class="field" data-role-block="{{ type }}"
-       {% if form.get('contact_type') != type %}hidden{% endif %}>
-    <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
-    <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
-      {% for r in roles %}
-        <label class="check">
-          <input type="checkbox" name="role" value="{{ r }}"
-                 {% if r in chosen %}checked{% endif %}>
-          {{ r }}
-        </label>
-      {% endfor %}
-    </div>
-  </div>
-  {% endfor %}
+  {# Every list is rendered; the type chosen above shows one. Until a type is
+     chosen none is shown, so nobody picks « Sénateur·ice » for a pigiste — nor
+     « Cardinal » for an imam, which is what the religion select inside the
+     religieux·se block is for. #}
+  {{ ui.role_checklists(form, chosen) }}
 
   <div class="field" id="portefeuille-field"
        {% if not chosen|select('in', portfolio_roles)|list %}hidden{% endif %}>
@@ -74,6 +62,8 @@
            value="{{ form.get('portefeuille', '') }}"
            placeholder="ex. chargé·e de l'intelligence artificielle et du numérique">
   </div>
+
+  {{ ui.territoire_field(form) }}
 
   {{ ui.proposed_organisation_field(form, organisation_names, multiple=True) }}
 

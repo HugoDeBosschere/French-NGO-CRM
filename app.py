@@ -121,17 +121,19 @@ POLITICAL_GROUPS = {
 # Every person in the CRM is one of these. The value drives three things: which
 # functions the form offers (ROLES_BY_CONTACT_TYPE), which kind of organisation
 # they can belong to (ORG_TYPE_BY_CONTACT_TYPE), and which extra mandate fields
-# are shown. Adding a third type later — religious figures are the next one
-# planned — means one entry here plus its role list and its organisation type.
-CONTACT_TYPES = ["Journaliste", "Politique"]
+# are shown. Adding a fourth type means one entry here plus its role list and
+# its organisation type — that is exactly how « Religieux·se » was added.
+CONTACT_TYPES = ["Journaliste", "Politique", "Religieux·se"]
 
 # Organisations come in the same flavours, one per contact type: a journalist
-# works for a média, a politician sits in a groupe politique.
-ORG_TYPES = ["Média", "Groupe politique"]
+# works for a média, a politician sits in a groupe politique, a religious figure
+# belongs to a culte (a church, a diocèse, a consistoire, a mosque…).
+ORG_TYPES = ["Média", "Groupe politique", "Culte"]
 
 ORG_TYPE_BY_CONTACT_TYPE = {
     "Journaliste": "Média",
     "Politique": "Groupe politique",
+    "Religieux·se": "Culte",
 }
 CONTACT_TYPE_BY_ORG_TYPE = {v: k for k, v in ORG_TYPE_BY_CONTACT_TYPE.items()}
 
@@ -190,15 +192,177 @@ JOURNALIST_ROLES = [
     "Youtubeur·euse",
 ]
 
+# --------------------------------------------------------------------------- #
+# Religions and their functions
+# --------------------------------------------------------------------------- #
+# A religieux·se needs a second level of conditioning that the other two types
+# do not: « Cardinal » makes no sense for an imam and « Rabbin » none for a
+# pasteur·e, and the seven lists together run to some sixty labels — far too
+# many for the single checklist Journaliste and Politique each get. So the
+# person carries a `religion` (see RELIGIONS) and the form offers only that
+# religion's functions, exactly the way the type de contact narrows the lists
+# one level up. The mechanism is the same too: every block is rendered and all
+# but one hidden, and the hidden ones are emptied so a stale box cannot post.
+#
+# Recognised cultes, in the order the select offers them. « Autre culte /
+# Interreligieux » is the bucket for cross-culte bodies (the Conférence des
+# responsables de culte en France, say) and for anything the list misses, so
+# that nobody has to be filed under a religion that is not theirs.
+RELIGIONS = [
+    "Catholicisme",
+    "Protestantisme",
+    "Christianisme orthodoxe",
+    "Judaïsme",
+    "Islam",
+    "Bouddhisme",
+    "Autre culte / Interreligieux",
+]
+
+# Functions that exist in every culte, appended to each religion's own list.
+# Aumônier·ère lives here rather than under Catholicisme: hospital, prison and
+# army chaplains are appointed by all of them.
+RELIGIOUS_COMMON_ROLES = [
+    "Aumônier·ère",
+    "Théologien·ne",
+    "Porte-parole",
+    "Responsable d'instance représentative",
+    "Personnalité religieuse",
+]
+
+# Each culte's own functions, roughly in order of seniority. Kept a plain
+# literal on purpose: utils/insert_*.py reads app.py's constants with
+# ast.literal_eval (see app_constant there), so a comprehension or a `+` here
+# would break the religious importers the way it once broke the élu·e ones.
+#
+# Labels are deliberately shared between religions — Archevêque, Évêque,
+# Diacre, Prêtre and Moine are catholic *and* orthodox titles. That is safe
+# because the religion disambiguates them; it only means ROLES has to be
+# de-duplicated before it is used as a whitelist.
+RELIGIOUS_ROLES_BY_RELIGION = {
+    "Catholicisme": [
+        "Pape",
+        "Cardinal",
+        "Nonce apostolique",
+        "Archevêque",
+        "Évêque",
+        "Évêque auxiliaire",
+        "Vicaire général / épiscopal",
+        "Curé",
+        "Prêtre",
+        "Diacre",
+        "Abbé·esse",
+        "Supérieur·e",
+        "Provincial·e",
+        "Recteur·ice",
+        "Moine",
+        "Sœur / Religieuse",
+        "Séminariste",
+        "Président·e de la Conférence des évêques de France",
+        "Secrétaire général·e de la Conférence des évêques de France",
+    ],
+    "Protestantisme": [
+        "Pasteur·e",
+        "Président·e de la Fédération protestante de France",
+        "Secrétaire général·e de la Fédération protestante de France",
+        "Président·e d'union d'Églises",
+        "Ancien·ne / Presbytre",
+        "Diacre",
+        "Évangéliste",
+        "Président·e du CNEF",
+    ],
+    "Christianisme orthodoxe": [
+        "Patriarche",
+        "Métropolite",
+        "Archevêque",
+        "Évêque",
+        "Archimandrite",
+        "Prêtre / Pope",
+        "Diacre",
+        "Higoumène",
+        "Moine / Moniale",
+        "Président·e de l'Assemblée des évêques orthodoxes de France",
+    ],
+    "Judaïsme": [
+        "Grand Rabbin de France",
+        "Grand Rabbin",
+        "Rabbin",
+        "Hazzan / Chantre",
+        "Dayan",
+        "Sofer",
+        "Mohel",
+        "Shohet",
+        "Président·e du Consistoire",
+        "Président·e du CRIF",
+    ],
+    "Islam": [
+        "Grand Imam / Recteur·ice",
+        "Imam",
+        "Mufti",
+        "Cheikh",
+        "Cadi",
+        "Ouléma",
+        "Muezzin",
+        "Président·e de fédération musulmane",
+        "Membre du FORIF",
+    ],
+    "Bouddhisme": [
+        "Moine / Bhikkhu",
+        "Nonne / Bhikkhuni",
+        "Lama",
+        "Rinpoché",
+        "Vénérable",
+        "Président·e de l'Union bouddhiste de France",
+    ],
+    "Autre culte / Interreligieux": [
+        "Responsable de culte",
+        "Membre de la Conférence des responsables de culte en France (CRCF)",
+        "Responsable interreligieux·se",
+        "Autre fonction religieuse",
+    ],
+}
+
+
+def _dedup(labels):
+    """The labels, first occurrence kept, order preserved.
+
+    Needed because a role label may belong to several religions (an Évêque is
+    catholic or orthodox) while ROLES has to list each label exactly once: it
+    is a whitelist, and `_roles_from_form` writes the column in its order.
+    """
+    seen, out = set(), []
+    for label in labels:
+        if label not in seen:
+            seen.add(label)
+            out.append(label)
+    return out
+
+
+# What the form offers for a given religion: that culte's functions, then the
+# ones every culte shares.
+ROLES_BY_RELIGION = {
+    religion: roles + RELIGIOUS_COMMON_ROLES
+    for religion, roles in RELIGIOUS_ROLES_BY_RELIGION.items()
+}
+
+# Every religious function, whatever the culte. Used when the religion is not
+# known — a row imported before the field existed, or a fiche where nobody has
+# filled it in yet — so that such a person's functions are still accepted.
+RELIGIOUS_ROLES = _dedup(
+    role for religion in RELIGIONS for role in ROLES_BY_RELIGION[religion]
+)
+
 ROLES_BY_CONTACT_TYPE = {
     "Journaliste": JOURNALIST_ROLES,
     "Politique": POLITICAL_ROLES,
+    "Religieux·se": RELIGIOUS_ROLES,
 }
 
-# Every known function, in a stable order: politiques first, then journalistes.
-# This is the whitelist `_roles_from_form` validates against and the order the
-# stored column is written in. No label appears in both lists.
-ROLES = POLITICAL_ROLES + JOURNALIST_ROLES
+# Every known function, in a stable order: politiques, then journalistes, then
+# religieux·ses. This is the whitelist `_roles_from_form` validates against and
+# the order the stored column is written in. No label appears in both the
+# political and the journalistic list; the religious lists share a few labels
+# with each other, which is what _dedup is for.
+ROLES = _dedup(POLITICAL_ROLES + JOURNALIST_ROLES + RELIGIOUS_ROLES)
 
 # How several roles are joined inside the single `role` TEXT column. No label in
 # ROLES contains a comma, so this round-trips safely.
@@ -245,7 +409,7 @@ def split_roles(value):
     return [r.strip() for r in (value or "").split(",") if r.strip()]
 
 
-def _roles_from_form(contact_type=None):
+def _roles_from_form(contact_type=None, religion=None):
     """Checked roles, whitelisted against the known labels, in ROLES order.
 
     Whitelisting keeps the separator meaningful: a value that isn't a known
@@ -255,9 +419,19 @@ def _roles_from_form(contact_type=None):
     what makes changing someone's type clean: the form hides the other type's
     boxes but a hidden checked box still posts, so a journaliste corrected from
     « Politique » would otherwise keep « Député·e ». Omit it (the public
-    declaration form, which asks for no type) to accept either list.
+    declaration form, which asks for no type) to accept any list.
+
+    `religion` narrows it once more, for a religieux·se only: the religion
+    select hides the other cultes' checklists, so the same reasoning applies a
+    level down — a rabbin corrected from « Catholicisme » must not keep
+    « Cardinal ». An unknown or missing religion falls back to every religious
+    function rather than to none, so a fiche whose religion nobody has filled
+    in yet (or a row imported before the field existed) keeps its functions.
     """
-    allowed = ROLES_BY_CONTACT_TYPE.get(contact_type, ROLES)
+    if contact_type == "Religieux·se":
+        allowed = ROLES_BY_RELIGION.get(religion, RELIGIOUS_ROLES)
+    else:
+        allowed = ROLES_BY_CONTACT_TYPE.get(contact_type, ROLES)
     checked = set(request.form.getlist("role"))
     return ROLE_SEP.join(r for r in allowed if r in checked)
 
@@ -294,10 +468,11 @@ STANCES = [
 # Organisations
 # --------------------------------------------------------------------------- #
 # Fields below are per org_type: a média has a type de média and an orientation
-# politique, a groupe politique has a chambre. Name, position sur PauseIA, lien
-# and notes are shared, and are the only fields a groupe politique carries
-# beyond its chambre — an orientation politique on a group was judged too fuzzy
-# to be worth recording.
+# politique, a groupe politique has a chambre, a culte has a religion (see
+# RELIGIONS above — the same list the person form offers). Name, position sur
+# PauseIA, lien and notes are shared, and are the only fields a groupe
+# politique or a culte carries beyond that one column — an orientation
+# politique on a group was judged too fuzzy to be worth recording.
 
 MEDIA_TYPES = [
     "Presse écrite",
@@ -470,6 +645,8 @@ def inject_role_helpers():
         # that from the same single source of truth the server validates on.
         "contact_types": CONTACT_TYPES,
         "roles_by_contact_type": ROLES_BY_CONTACT_TYPE,
+        "religions": RELIGIONS,
+        "roles_by_religion": ROLES_BY_RELIGION,
         "org_type_by_contact_type": ORG_TYPE_BY_CONTACT_TYPE,
         "org_types": ORG_TYPES,
         "political_only_roles": POLITICAL_ROLES,
@@ -512,10 +689,11 @@ def init_db():
         );
 
         -- Every organisation a contact can belong to: a média for a
-        -- journaliste, a groupe politique for a politique. One table because
-        -- the two answer the same question — who does this person speak for —
-        -- and the columns that differ are simply NULL for the other type
-        -- (`media_type`/`orientation` for a groupe, `chambre` for a média).
+        -- journaliste, a groupe politique for a politique, a culte for a
+        -- religieux·se. One table because they all answer the same question —
+        -- who does this person speak for — and the columns that differ are
+        -- simply NULL for the other types (`media_type`/`orientation` for a
+        -- groupe or a culte, `chambre` for a média, `religion` for both).
         CREATE TABLE IF NOT EXISTS organisations (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             name         TEXT NOT NULL,
@@ -523,6 +701,7 @@ def init_db():
             media_type   TEXT,            -- Média only, see MEDIA_TYPES
             orientation  TEXT,            -- Média only, see ORIENTATIONS
             chambre      TEXT,            -- Groupe politique only, see CHAMBERS
+            religion     TEXT,            -- Culte only, see RELIGIONS
             stance       TEXT NOT NULL,
             link         TEXT,
             notes        TEXT,
@@ -555,6 +734,8 @@ def init_db():
             circonscription TEXT,
             email           TEXT,
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
+            religion        TEXT,   -- Religieux·se only, see RELIGIONS
+            territoire      TEXT,   -- Religieux·se only: diocèse, paroisse…
             in_office       INTEGER NOT NULL DEFAULT 1,  -- 0 = mandate ended, kept for history
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
@@ -721,6 +902,8 @@ def init_db():
             phone           TEXT,
             proposed_organisation TEXT,  -- free-text média / groupe, matched at approval
             portefeuille    TEXT,
+            religion        TEXT,
+            territoire      TEXT,
             political_group TEXT,   -- nullable: an anonymous draft may omit it
             stance          TEXT,
             first_contacted TEXT,
@@ -737,6 +920,7 @@ def init_db():
             media_type   TEXT,
             orientation  TEXT,
             chambre      TEXT,
+            religion     TEXT,
             stance       TEXT,
             link         TEXT,
             notes        TEXT,
@@ -950,6 +1134,34 @@ def init_db():
     for col in ("contact_type", "email", "phone", "proposed_organisation"):
         if col not in pperson_cols:
             db.execute(f"ALTER TABLE pending_persons ADD COLUMN {col} TEXT")
+    # --- « Religieux·se », the third type de contact ------------------------ #
+    # Purely additive, unlike the merge above: a third CONTACT_TYPES entry, a
+    # third ORG_TYPES entry and three nullable columns. No existing row changes
+    # type, so every politique stays a politique and every média a média.
+    #
+    #   persons.religion    which culte, see RELIGIONS — also what narrows the
+    #                       fonctions offered (see _roles_from_form)
+    #   persons.territoire  « Territoire assigné »: the diocèse, paroisse or
+    #                       circonscription rabbinique someone is responsible
+    #                       for. The religious counterpart of circonscription,
+    #                       and a separate column rather than a reuse of it so
+    #                       that neither field's meaning has to stretch.
+    #   organisations.religion  which culte a Culte organisation belongs to,
+    #                       exactly as media_type qualifies a Média and chambre
+    #                       a Groupe politique.
+    #
+    # The pending_* tables get the same columns so a public declaration keeps
+    # them all the way to approval (_form_from_row copies whatever is there).
+    for table, cols in (
+        ("persons", ("religion", "territoire")),
+        ("pending_persons", ("religion", "territoire")),
+        ("organisations", ("religion",)),
+        ("pending_organisations", ("religion",)),
+    ):
+        existing = [r[1] for r in db.execute(f"PRAGMA table_info({table})")]
+        for col in cols:
+            if col not in existing:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     db.commit()
     _relax_political_group(db)
     _seed_organisations_from_groups(db)
@@ -1018,6 +1230,8 @@ PERSONS_REBUILD_SQL = """
         circonscription TEXT,
         email           TEXT,
         portefeuille    TEXT,
+        religion        TEXT,
+        territoire      TEXT,
         in_office       INTEGER NOT NULL DEFAULT 1,
         added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
         validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
@@ -2739,9 +2953,15 @@ def _save_person(db, person):
     name = (request.form.get("name") or "").strip()
     contact_type = (request.form.get("contact_type") or "").strip()
     # Everything below is read for whichever type was submitted, then the other
-    # type's fields are discarded — the form renders both blocks and hides one,
-    # so a browser that did not run the script can still post a stray value.
-    role = _roles_from_form(contact_type)
+    # types' fields are discarded — the form renders every block and hides all
+    # but one, so a browser that did not run the script can still post a stray
+    # value.
+    religion = (request.form.get("religion") or "").strip()
+    if religion not in RELIGIONS:
+        religion = ""
+    # The religion is read before the roles because it narrows them: only the
+    # functions of that culte are accepted for a religieux·se.
+    role = _roles_from_form(contact_type, religion or None)
     # Only kept when at least one role justifies it, so clearing the roles can't
     # leave a stale portfolio behind on the record.
     portefeuille = (request.form.get("portefeuille") or "").strip()
@@ -2752,6 +2972,14 @@ def _save_person(db, person):
     if contact_type != "Politique":
         portefeuille = ""
         circonscription = ""
+    # « Territoire assigné » — the diocèse, paroisse or circonscription
+    # rabbinique someone answers for. The religious counterpart of
+    # circonscription, and cleared for everyone else for the same reason: a
+    # person retyped away from Religieux·se must not keep a stale territory.
+    territoire = (request.form.get("territoire") or "").strip()
+    if contact_type != "Religieux·se":
+        religion = ""
+        territoire = ""
     stance = (request.form.get("stance") or "").strip()
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
     notes = (request.form.get("notes") or "").strip()
@@ -2794,6 +3022,7 @@ def _save_person(db, person):
     values = (name, contact_type, role or None, portefeuille or None, stance,
               first_contacted or None, notes or None, circonscription or None,
               email or None, phone or None, social_links or None,
+              religion or None, territoire or None,
               added_by, validated_by)
     if person is None:
         cur = db.execute(
@@ -2801,8 +3030,9 @@ def _save_person(db, person):
             INSERT INTO persons (
                 name, contact_type, role, portefeuille, stance, first_contacted,
                 notes, circonscription, email, phone, social_links,
+                religion, territoire,
                 added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (*values, _now()),
         )
@@ -2814,6 +3044,7 @@ def _save_person(db, person):
             UPDATE persons SET name = ?, contact_type = ?, role = ?,
                 portefeuille = ?, stance = ?, first_contacted = ?, notes = ?,
                 circonscription = ?, email = ?, phone = ?, social_links = ?,
+                religion = ?, territoire = ?,
                 added_by = ?, validated_by = ? WHERE id = ?
             """,
             (*values, person_id),
@@ -3030,8 +3261,9 @@ def organisations():
     if q:
         like = f"%{q}%"
         where.append("""(o.name LIKE ? OR o.media_type LIKE ? OR o.chambre LIKE ?
-                         OR o.orientation LIKE ? OR o.stance LIKE ?)""")
-        params += [like] * 5
+                         OR o.religion LIKE ? OR o.orientation LIKE ?
+                         OR o.stance LIKE ?)""")
+        params += [like] * 6
     if org_type:
         where.append("o.org_type = ?")
         params.append(org_type)
@@ -3056,15 +3288,18 @@ def _save_organisation(db, organisation):
     notes = (request.form.get("notes") or "").strip()
     added_by = _valid_moderator(db, request.form.get("added_by"))
     validated_by = _valid_moderator(db, request.form.get("validated_by"))
-    # Type-specific fields. The form renders both blocks and hides one, so the
-    # other type's values are dropped here rather than trusted.
+    # Type-specific fields. The form renders every block and hides all but one,
+    # so the other types' values are dropped here rather than trusted.
     media_type = (request.form.get("media_type") or "").strip()
     orientation = (request.form.get("orientation") or "").strip()
     chambre = (request.form.get("chambre") or "").strip()
+    religion = (request.form.get("religion") or "").strip()
     if org_type == "Média":
-        chambre = ""
+        chambre = religion = ""
+    elif org_type == "Culte":
+        media_type = orientation = chambre = ""
     else:
-        media_type = orientation = ""
+        media_type = orientation = religion = ""
 
     errors = []
     if not name:
@@ -3076,6 +3311,11 @@ def _save_organisation(db, organisation):
             errors.append("Le type de média est obligatoire.")
         if orientation not in ORIENTATIONS:
             errors.append("L'orientation politique est obligatoire (« Inconnue » si besoin).")
+    elif org_type == "Culte":
+        # Optional, like a groupe politique's chambre: a culte can be recorded
+        # before anyone decides which of the seven it is filed under.
+        if religion and religion not in RELIGIONS:
+            errors.append("La religion indiquée est inconnue.")
     elif chambre and chambre not in CHAMBERS:
         errors.append("La chambre indiquée est inconnue.")
     if stance not in STANCES:
@@ -3091,14 +3331,15 @@ def _save_organisation(db, organisation):
         return None, errors
 
     values = (name, org_type, media_type or None, orientation or None,
-              chambre or None, stance, link or None, notes or None,
-              added_by, validated_by)
+              chambre or None, religion or None, stance, link or None,
+              notes or None, added_by, validated_by)
     if organisation is None:
         cur = db.execute(
             """
             INSERT INTO organisations (name, org_type, media_type, orientation,
-                chambre, stance, link, notes, added_by, validated_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                chambre, religion, stance, link, notes, added_by, validated_by,
+                created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (*values, _now()),
         )
@@ -3108,7 +3349,8 @@ def _save_organisation(db, organisation):
         db.execute(
             """
             UPDATE organisations SET name = ?, org_type = ?, media_type = ?,
-                orientation = ?, chambre = ?, stance = ?, link = ?, notes = ?,
+                orientation = ?, chambre = ?, religion = ?, stance = ?,
+                link = ?, notes = ?,
                 added_by = ?, validated_by = ? WHERE id = ?
             """,
             (*values, organisation_id),
@@ -4124,11 +4366,17 @@ def declarer_person():
         contact_type = (request.form.get("contact_type") or "").strip()
         if contact_type not in CONTACT_TYPES:
             contact_type = ""
+        religion = (request.form.get("religion") or "").strip()
+        if religion not in RELIGIONS:
+            religion = ""
+        territoire = (request.form.get("territoire") or "").strip()
         # No type narrows the whitelist here: the form asks for the type but, as
         # everywhere on these pages, does not insist. A draft that skipped it
         # keeps whatever functions were ticked, and the moderator sets the type
-        # at approval — where the real form does require it.
-        role = _roles_from_form(contact_type or None)
+        # at approval — where the real form does require it. Same for the
+        # religion: given, it narrows the functions; omitted, every religious
+        # one is accepted.
+        role = _roles_from_form(contact_type or None, religion or None)
         portefeuille = (request.form.get("portefeuille") or "").strip()
         if not has_portfolio(role):
             portefeuille = ""
@@ -4152,12 +4400,14 @@ def declarer_person():
                 """
                 INSERT INTO pending_persons (
                     name, contact_type, role, portefeuille, proposed_organisation,
+                    religion, territoire,
                     stance, first_contacted, email, phone, notes, submitted_by,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (name, contact_type or None, role or None, portefeuille or None,
-                 proposed_organisation or None, stance or None,
+                 proposed_organisation or None,
+                 religion or None, territoire or None, stance or None,
                  first_contacted or None,
                  (request.form.get("email") or "").strip() or None,
                  (request.form.get("phone") or "").strip() or None,
@@ -4256,20 +4506,22 @@ def declarer_organisation():
             errors.append("Le lien doit être une adresse web (https://…).")
         org_type, media_type = _field("org_type"), _field("media_type")
         orientation, chambre = _field("orientation"), _field("chambre")
-        stance = _field("stance")
+        religion, stance = _field("religion"), _field("stance")
         values = (name,
                   org_type if org_type in ORG_TYPES else None,
                   media_type if media_type in MEDIA_TYPES else None,
                   orientation if orientation in ORIENTATIONS else None,
                   chambre if chambre in CHAMBERS else None,
+                  religion if religion in RELIGIONS else None,
                   stance if stance in STANCES else None,
                   link or None, _field("notes") or None,
                   _field("submitted_by") or None, _now())
         return lambda: db.execute(
             """
             INSERT INTO pending_organisations (name, org_type, media_type,
-                orientation, chambre, stance, link, notes, submitted_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                orientation, chambre, religion, stance, link, notes,
+                submitted_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             values,
         )

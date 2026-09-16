@@ -31,6 +31,14 @@
   --relance:      #7e22ce;   /* violet — « Relance », everywhere it appears */
   --relance-ink:  #6b21a8;
   --relance-soft: #f3e8ff;
+  /* Gold — « Culte » / « Religieux·se ». The only hue family the palette had
+     not spent: blue is the press, violet the politics, red the TODO, green the
+     Répartition, and the app's orange belongs to the record tabs and buttons.
+     A pale wash with dark gold text keeps it clear of that orange, which is
+     only ever used filled. */
+  --culte:        #fdf0d5;
+  --culte-ink:    #7a4f01;
+  --culte-line:   #e8cf94;
   --ok:        #027a48;
   --ok-bg:     #ecfdf3;
   --radius:    12px;
@@ -817,11 +825,18 @@ a.cal-ev:hover {
 .cal-intervention { background: var(--intervention-soft); color: var(--intervention-ink);
                     border-left: 3px solid var(--intervention); }
 .tag-content      { background: var(--contenu-soft); color: var(--contenu); }
-/* What a record is: a média or a groupe politique, a journaliste or a
-   politique. Both pairs use the press blue, filled for the press half. */
+/* What a record is: a média or a groupe politique, a culte; a journaliste, a
+   politique or a religieux·se. Each pair shares a hue, so the organisation and
+   the person it belongs to read as the same family. Border longhands, never
+   the shorthand: `border` would reset border-color and leave the line
+   invisible — the bug that hid the TODO and Répartition nav chip borders. */
 .tag-media, .tag-journaliste { background: var(--press); color: var(--press-ink);
-                               border: 1px solid var(--press-line); }
+                               border-width: 1px; border-style: solid;
+                               border-color: var(--press-line); }
 .tag-groupe, .tag-politique  { background: var(--relance-soft); color: var(--relance-ink); }
+.tag-culte, .tag-religieux   { background: var(--culte); color: var(--culte-ink);
+                               border-width: 1px; border-style: solid;
+                               border-color: var(--culte-line); }
 a.tag:hover { text-decoration: none; filter: brightness(.96); }
 
 /* ---------- Filter chips (type de contact, type d'organisation) ---------- */

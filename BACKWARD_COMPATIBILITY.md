@@ -286,3 +286,100 @@ meetings.db.bak-preimport-20260914-233908                after the schema migrat
 Restoring the first three returns the app to its exact pre-merge state. The
 schema migration is not reversible in place — roll back by restoring the
 database file, not by editing it.
+
+---
+
+# Appendix — adding « Religieux·se », the third type de contact
+
+Added 2026-09-16, after the merge above. Verified against a copy of the
+production database the same day.
+
+**Short version: this one is additive, and materially safer than the merge.**
+Three nullable `ALTER TABLE … ADD COLUMN`, one new value in each of two
+existing lists, and no row of any kind changes type. There is no table rebuild,
+no `BEGIN EXCLUSIVE`, no orphan-table recovery — none of the machinery §6
+describes is involved.
+
+## What changed
+
+| | before | after |
+|---|---|---|
+| `CONTACT_TYPES` | Journaliste, Politique | + **Religieux·se** |
+| `ORG_TYPES` | Média, Groupe politique | + **Culte** |
+| `persons` | — | + `religion`, + `territoire` (both nullable TEXT) |
+| `organisations` | — | + `religion` (nullable TEXT) |
+| `pending_persons` | — | + `religion`, + `territoire` |
+| `pending_organisations` | — | + `religion` |
+
+`religion` takes one of seven values (`RELIGIONS` in `app.py`): Catholicisme,
+Protestantisme, Christianisme orthodoxe, Judaïsme, Islam, Bouddhisme, Autre
+culte / Interreligieux. `territoire` is « Territoire assigné » — the diocèse,
+paroisse or circonscription rabbinique someone answers for, the religious
+counterpart of a politique's `circonscription`. Both are **only ever set for a
+`contact_type = 'Religieux·se'`**; `_save_person` clears them for anyone else,
+exactly as it clears `circonscription` and `portefeuille` for a non-politique.
+
+## Fonctions are now conditioned twice
+
+`ROLES_BY_CONTACT_TYPE` gained a `Religieux·se` entry, and for that type alone a
+second level applies: `ROLES_BY_RELIGION` narrows the ~60 religious fonctions to
+the chosen culte's. `_roles_from_form` takes an optional `religion` argument to
+match. **When no religion is given it falls back to every religious fonction,
+never to none** — a fiche whose religion nobody has filled in keeps its roles.
+
+`ROLES` is now `_dedup(POLITICAL_ROLES + JOURNALIST_ROLES + RELIGIOUS_ROLES)`.
+The de-duplication is needed because a label can belong to several cultes
+(`Archevêque`, `Évêque`, `Diacre`, `Prêtre` and `Moine` are catholic *and*
+orthodox titles); the religion is what disambiguates them.
+
+## What is *not* affected
+
+- **No existing row changes.** Verified on a copy of production: 1177 persons,
+  196 organisations, 1189 links, identical `contact_type` and `org_type`
+  distributions and an identical sum of person ids before and after. `init_db()`
+  run twice is a no-op.
+- **`persons.political_group`** keeps its meaning exactly. `_sync_group_mirror`
+  already filters on `contact_type = 'Politique'`, so a religieux·se's mirror
+  stays NULL with no change — confirmed by the guard the bishops importer
+  prints (`religieux·ses avec un groupe politique résiduel : 0`).
+- **`_link_persons_to_organisation`** needed no change either: it keys off
+  `CONTACT_TYPE_BY_ORG_TYPE`, so an intervention on a culte links only
+  religieux·ses, and one on a groupe politique still refuses to link them.
+- **The four élu·e importers** read `POLITICAL_ROLES` and `POLITICAL_GROUPS`,
+  neither of which this touches. `ROLES` remains a call rather than a literal,
+  as it has been since the merge, so nothing regressed there.
+- **`export_contacts_xlsx.py`** selects named columns and does not see the new
+  ones. If « Territoire assigné » should appear in the export, that is a
+  separate, deliberate change.
+- **URLs and endpoint names** are unchanged. `/people?contact_type=…` and
+  `/organisations?org_type=…` simply accept one more value each; the filter
+  chips are generated from the lists, so they picked it up with no edit.
+
+## Deploying it
+
+No special procedure and **no need to stop the service**: the migration is three
+`ADD COLUMN`s inside `init_db()`, which runs at import time as always. Deploy the
+code, restart, done. Then, optionally and in this order:
+
+```bash
+python3 utils/insert_cultes.py                    # dry run, read it
+python3 utils/insert_cultes.py --commit           # 15 organisations
+python3 utils/extract_eveques.py
+python3 utils/insert_eveques.py                   # dry run, read it
+python3 utils/insert_eveques.py --commit          # ~119 bishops, ~100 diocèses
+```
+
+Both refuse to run before the migration has been applied, and both are
+idempotent — a rerun reports « déjà présents » and writes nothing.
+
+### Rollback
+
+Nothing in the app reads the new columns for a person who is not a
+religieux·se, so rolling the *code* back to the previous version leaves a
+working app on the migrated database: the three columns simply sit unread. Only
+the rows the seed scripts added would be visible, as people and organisations
+of a type the older code does not know — delete them with
+`DELETE FROM persons WHERE contact_type = 'Religieux·se'` and the matching
+`DELETE FROM organisations WHERE org_type = 'Culte'` if that matters. Take the
+usual copy of `meetings.db` before deploying regardless.
+

@@ -57,6 +57,15 @@
                         placeholder="Assemblée nationale, Sénat…") }}
   </div>
 
+  {# Culte only: which religion, from the same list the person form offers.
+     Optional, exactly like a groupe politique's chambre — a culte can be
+     recorded before anyone settles which of the seven it is filed under. #}
+  <div data-org-block="Culte"
+       {% if form.get('org_type') != 'Culte' %}hidden{% endif %}>
+    {{ ui.label_select('religion', 'Religion', religions, form, required=False,
+                        placeholder="Catholicisme, Islam, Judaïsme…") }}
+  </div>
+
   <div class="field">
     <label for="link">Lien <span class="muted">(facultatif)</span></label>
     <input type="text" id="link" name="link" value="{{ form.get('link', '') }}"

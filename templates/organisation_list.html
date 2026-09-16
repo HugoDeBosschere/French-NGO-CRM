@@ -7,12 +7,13 @@
   <span class="head-actions">
     <a class="btn btn-primary" href="{{ url_for('new_organisation', org_type='Média') }}">+ Média</a>
     <a class="btn btn-primary" href="{{ url_for('new_organisation', org_type='Groupe politique') }}">+ Groupe politique</a>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation', org_type='Culte') }}">+ Culte</a>
   </span>
 </div>
 
 <form class="search" method="get" action="{{ url_for('organisations') }}">
   <input type="search" name="q" value="{{ q }}"
-         placeholder="Rechercher par nom, type, chambre ou position…">
+         placeholder="Rechercher par nom, type, chambre, religion ou position…">
   {% if org_type %}<input type="hidden" name="org_type" value="{{ org_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
   {% if q %}<a class="btn btn-ghost" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
@@ -43,7 +44,7 @@
       <tr onclick="window.location='{{ url_for('organisation_detail', organisation_id=o['id']) }}'">
         <td><strong>{{ o['name'] }}</strong></td>
         <td class="nowrap">{{ ui.org_tag(o['org_type']) }}</td>
-        <td>{{ o['media_type'] or o['chambre'] or '—' }}</td>
+        <td>{{ o['media_type'] or o['chambre'] or o['religion'] or '—' }}</td>
         <td>{{ o['orientation'] or '—' }}</td>
         <td>{{ o['stance'] }}</td>
         <td class="nowrap">{{ o['person_count'] }}</td>

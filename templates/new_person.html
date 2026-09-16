@@ -30,7 +30,7 @@
       <label for="contact_type">Type de contact <span class="req">*</span></label>
       <select id="contact_type" name="contact_type" required data-contact-type>
         <option value="" disabled {% if not form.get('contact_type') %}selected{% endif %}>
-          Journaliste ou politique ?
+          Journaliste, politique ou religieux·se ?
         </option>
         {% for t in contact_types %}
           <option value="{{ t }}"
@@ -38,7 +38,8 @@
         {% endfor %}
       </select>
       <p class="hint">Ce choix détermine les fonctions proposées et le type
-        d'organisation à laquelle cette personne est rattachée.</p>
+        d'organisation à laquelle cette personne est rattachée. Pour un·e
+        religieux·se, la religion choisie les affine encore.</p>
     </div>
 
     <div class="field">
@@ -54,33 +55,12 @@
     </div>
   </div>
 
-  {# One checklist per type de contact. Only the visible one's boxes can be
-     ticked in practice, and _roles_from_form drops anything belonging to the
-     other type, so changing someone's type does not leave a stale fonction. #}
-  {% for type, roles in roles_by_contact_type.items() %}
-  <div class="field" data-role-block="{{ type }}"
-       {% if form.get('contact_type') != type %}hidden{% endif %}>
-    <label>Fonction <span class="muted">(facultatif — plusieurs choix possibles)</span></label>
-    <div class="checklist" data-portfolio-roles="{{ portfolio_roles|join('|') }}">
-      {% for r in roles %}
-        <label class="check">
-          <input type="checkbox" name="role" value="{{ r }}"
-                 {% if r in chosen %}checked{% endif %}>
-          {{ r }}
-        </label>
-      {% endfor %}
-    </div>
-    <p class="hint">
-      {% if type == 'Politique' %}
-        Une même personne peut cumuler plusieurs fonctions
-        (un·e ministre est souvent aussi député·e).
-      {% else %}
-        Une même personne peut cumuler plusieurs fonctions
-        (un·e éditorialiste est souvent aussi chroniqueur·euse).
-      {% endif %}
-    </p>
-  </div>
-  {% endfor %}
+  {# One checklist per type de contact — and, for a religieux·se, one per
+     religion inside it. Only the visible one's boxes can be ticked in
+     practice, and _roles_from_form drops anything belonging to another type or
+     another culte, so changing someone's type does not leave a stale
+     fonction. #}
+  {{ ui.role_checklists(form, chosen, hints=True) }}
 
   {{ ui.organisation_checklist(organisations, selected_orgs) }}
 
@@ -136,6 +116,8 @@
     <input type="text" id="circonscription" name="circonscription"
            placeholder="ex. Ariège (09-2)" value="{{ form.get('circonscription', '') }}">
   </div>
+
+  {{ ui.territoire_field(form) }}
 
   <div class="field">
     <label for="social_links">Réseaux sociaux <span class="muted">(facultatif)</span></label>
