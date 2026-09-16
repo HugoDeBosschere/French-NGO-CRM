@@ -419,12 +419,23 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
     member_email, member_display = member
     member_name = (member_display or "").strip() or member_email
     elu_names = ", ".join(n for _p, n in matches)
-    if direction == "sent":
+    body = extract_body(msg)
+    # "Corps du texte" (the `summary` column) holds the real mail body. Fall back
+    # to a generated one-liner only when the body couldn't be extracted, so the
+    # field is never empty. The sender/recipients are conveyed by the direction
+    # and the linked member/élu·e, not by stuffing them into the body.
+    if body:
+        summary = body
+    elif direction == "sent":
         summary = f"Mail de {member_name} à {elu_names} — « {subject} »"
     else:
         summary = f"Mail de {elu_names} à {member_name} — « {subject} »"
+
+    # A low-confidence (name-pattern) match is flagged in "personnes concernées"
+    # for the moderator, never mixed into the body.
+    proposed = elu_names
     if low_confidence:
-        summary += " [à confirmer : élu·e identifié·e par nom]"
+        proposed += " — à confirmer : élu·e identifié·e par nom"
 
     # Low-confidence (name-pattern) matches always go to moderation, even in
     # auto-publish mode, so a human confirms the élu·e before it is published.
@@ -457,7 +468,6 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
         db.execute("INSERT OR IGNORE INTO mail_members (mail_id, member_id) "
                    "VALUES (?, ?)", (mail_id, member_id))
         remember_thread(db, message_id, [pid for pid, _n in matches])
-        body = extract_body(msg)
         if body:
             db.execute("INSERT OR REPLACE INTO mail_bodies (mail_id, body) "
                        "VALUES (?, ?)", (mail_id, body))
@@ -473,7 +483,7 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
                 document_stored_name, document_orig_name, created_at)
             VALUES (?, ?, 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, direction, subject, summary, elu_names, IMPORT_SOURCE, now),
+            (mail_date, direction, subject, summary, proposed, IMPORT_SOURCE, now),
         )
         remember_thread(db, message_id, [pid for pid, _n in matches])
 
