@@ -57,7 +57,7 @@
   <input type="search" name="q" value="{{ q }}"
          placeholder="Rechercher par personne, groupe politique ou résumé…">
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('index') }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('index') }}">Effacer</a>{% endif %}
 </form>
 
 {% if not upcoming and not past %}

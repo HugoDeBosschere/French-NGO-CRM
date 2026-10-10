@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import import_banner, pager %}
-{% block title %}Courriels
-{{ pager('mails', page, has_next, {"q": q}) }}
-{% endblock %}
+{% block title %}Courriels{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Suivi des échanges</h1>
@@ -23,7 +21,7 @@
   <input type="search" name="q" value="{{ q }}"
          placeholder="Rechercher par personne ou résumé…">
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('mails') }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('mails') }}">Effacer</a>{% endif %}
 </form>
 
 {% if mails %}
@@ -72,7 +70,15 @@
     </tbody>
   </table>
 </div>
-<p class="muted count">{{ mails|length }} courriel{{ '' if mails|length == 1 else 's' }}</p>
+{# Le compteur dit le rang réel, pas « 100 courriels » à chaque page. #}
+<p class="muted count">
+  Courriel{{ '' if mails|length == 1 else 's' }}
+  {{ first_index }}{% if mails|length > 1 %} à {{ first_index + mails|length - 1 }}{% endif %}
+</p>
+{# Ce pagineur était appelé dans le bloc « title » : il partait dans la balise
+   <title> de la page, donc les 800 courriels suivants n'étaient atteignables
+   qu'en écrivant ?page=2 à la main. #}
+{{ pager('mails', page, has_next, {"q": q}) }}
 {% else %}
 <div class="empty">
   {% if q %}

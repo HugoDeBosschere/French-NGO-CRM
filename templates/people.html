@@ -16,7 +16,7 @@
      reason. #}
   {% if contact_type %}<input type="hidden" name="contact_type" value="{{ contact_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('people', contact_type=contact_type or none) }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('people', contact_type=contact_type or none) }}">Effacer</a>{% endif %}
 </form>
 
 {# The type de contact is a filter, never a requirement: « Tous » is the default
@@ -24,10 +24,13 @@
 <div class="filter-chips">
   <a class="chip {{ 'chip-on' if not contact_type }}"
      href="{{ url_for('people', q=q or none) }}">Tous <span class="muted">{{ total }}</span></a>
+  {# « Membre d'une ONG » + « s » donnait « Membre d'une ONGs ». #}
+  {% set CHIP_LABEL = {"Membre d'une ONG": "Membres d'une ONG",
+                       "Membre d'une entreprise": "Membres d'une entreprise"} %}
   {% for t in contact_types %}
     <a class="chip {{ 'chip-on' if contact_type == t }}"
        href="{{ url_for('people', q=q or none, contact_type=t) }}">
-      {{ t }}s <span class="muted">{{ counts.get(t, 0) }}</span></a>
+      {{ CHIP_LABEL.get(t, t ~ 's') }} <span class="muted">{{ counts.get(t, 0) }}</span></a>
   {% endfor %}
 </div>
 

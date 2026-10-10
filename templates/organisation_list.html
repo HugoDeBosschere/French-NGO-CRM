@@ -17,7 +17,7 @@
          placeholder="Rechercher par nom, type, chambre, religion ou position…">
   {% if org_type %}<input type="hidden" name="org_type" value="{{ org_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
 </form>
 
 <div class="filter-chips">
@@ -54,7 +54,7 @@
         <td class="nowrap">{{ o['person_count'] }}</td>
         <td class="nowrap">{{ o['intervention_count'] }}</td>
         <td class="nowrap">{{ o['content_count'] }}</td>
-        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
+        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

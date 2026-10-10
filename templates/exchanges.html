@@ -22,7 +22,7 @@
            placeholder="Rechercher un objet, un interlocuteur, un membre…">
     <button class="btn" type="submit">Filtrer</button>
     {% if q or typ or kind or me %}
-    <a class="btn btn-ghost" href="{{ url_for('exchanges', me='') }}">Effacer</a>{% endif %}
+    <a class="btn btn-ghost" title="Effacer la recherche et les filtres" href="{{ url_for('exchanges', me='') }}">Effacer</a>{% endif %}
   </div>
   {# Trois filtres sur une seconde ligne, avec leur étiquette : côte à côte
      avec la recherche, ils écrasaient le champ au point d'en tronquer le texte

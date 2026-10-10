@@ -59,9 +59,17 @@ def main():
         out = f"{base}.bak{suffix}-{date.today().isoformat()}"
     # Un passage planifié ne doit jamais échouer parce qu'il a déjà tourné
     # aujourd'hui : on ajoute l'heure plutôt que d'abandonner, et surtout
-    # plutôt que d'écraser la sauvegarde du matin.
+    # plutôt que d'écraser la sauvegarde du matin. Et si deux passages tombent
+    # dans la même seconde — une relance à la main juste après le timer, ou un
+    # test — l'heure ne suffit plus : on numérote, sinon la deuxième copie
+    # écrase silencieusement la première, dans le seul filet de l'outil.
     if os.path.exists(out):
-        out = f"{out}-{datetime.now().strftime('%H%M%S')}"
+        horodate = f"{out}-{datetime.now().strftime('%H%M%S')}"
+        out = horodate
+        n = 2
+        while os.path.exists(out):
+            out = f"{horodate}-{n}"
+            n += 1
     if args.dir:
         os.makedirs(args.dir, exist_ok=True)
 

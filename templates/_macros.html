@@ -174,18 +174,24 @@
 {% macro person_picker(people, selected_ids, label, required=True, genre_field=None) %}
 <div class="field" {% if genre_field %}data-genre-filter="{{ genre_field }}"{% endif %}>
   <label>{{ label }} {% if required %}<span class="req">*</span>{% else %}<span class="muted">(facultatif)</span>{% endif %}</label>
+  {# Un champ de recherche, et non plus un <select> reprenant TOUTE la liste.
+     Le menu déroulant ne faisait que cocher la case correspondante : il ne
+     servait à rien sans JavaScript, et il doublait la liste dans la page —
+     mesuré à 1 801 fiches : 6 090 éléments et 525 Ko sur /interventions/new.
+     La recherche filtre les cases déjà présentes, donc aucune donnée n'est
+     envoyée deux fois, et sans JavaScript la liste complète reste là,
+     exactement comme avant. #}
   <div class="person-picker">
-    <label for="person_picker" class="muted">Cocher une personne depuis la liste</label>
-    <select id="person_picker" data-check-group="person_ids">
-      <option value="">Choisir une personne</option>
-      {% for p in people %}
-      <option value="{{ p['id'] }}" data-genres="{{ p['genres'] or '' }}">{{ p['name'] }}{% if p['organisation_names'] %} · {{ p['organisation_names'] }}{% endif %}</option>
-      {% endfor %}
-    </select>
+    <label class="muted" for="filtre-{{ label | replace(' ', '-') | lower }}">Rechercher une personne</label>
+    <input type="search" class="checklist-filter" autocomplete="off"
+           id="filtre-{{ label | replace(' ', '-') | lower }}"
+           placeholder="Taper un nom pour filtrer la liste…"
+           aria-controls="liste-{{ label | replace(' ', '-') | lower }}">
   </div>
-  <div class="checklist">
+  <div class="checklist" id="liste-{{ label | replace(' ', '-') | lower }}">
     {% for p in people %}
-      <label class="check" data-genres="{{ p['genres'] or '' }}">
+      <label class="check" data-genres="{{ p['genres'] or '' }}"
+             data-nom="{{ p['name'] }}{% if p['organisation_names'] %} {{ p['organisation_names'] }}{% endif %}">
         <input type="checkbox" name="person_ids" value="{{ p['id'] }}"
                {% if (p['id']|string) in selected_ids %}checked{% endif %}>
         {{ p['name'] }}{% if p['organisation_names'] %} <span class="muted">· {{ p['organisation_names'] }}</span>{% endif %}
@@ -350,7 +356,7 @@
         <td>{{ i['person_names'] or '' }}</td>
         <td class="nowrap"><span class="tag tag-intervention">{{ i['intervention_type'] }}</span></td>
         <td class="summary-cell"><span class="subject">{{ i['summary'] or '' }}</span></td>
-        <td class="nowrap">{% if i['link'] | safe_link %}<a href="{{ i['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
+        <td class="nowrap">{% if i['link'] | safe_link %}<a href="{{ i['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -377,7 +383,7 @@
         <td>{{ c['person_names'] or '' }}</td>
         <td class="nowrap"><span class="tag tag-content">{{ c['content_type'] }}</span></td>
         <td class="summary-cell"><span class="subject">{{ c['summary'] or '' }}</span></td>
-        <td class="nowrap">{% if c['link'] | safe_link %}<a href="{{ c['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
+        <td class="nowrap">{% if c['link'] | safe_link %}<a href="{{ c['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

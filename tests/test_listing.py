@@ -83,6 +83,17 @@ class ListingTests(unittest.TestCase):
         self.assertEqual(html.count("<tr onclick"),
                          self.MAILS % self.app.MAILS_PER_PAGE)
 
+    def test_the_pager_is_in_the_page_and_not_in_the_title(self):
+        # Il était appelé depuis le bloc « title » : les liens partaient dans
+        # la balise <title>, donc invisibles, et les 550 courriels suivants
+        # n'étaient atteignables qu'en écrivant ?page=2 à la main. Les tests
+        # ci-dessus cherchaient « Suivants » dans tout le HTML et passaient.
+        html = self._html("/mails")
+        titre = html.split("<title>")[1].split("</title>")[0]
+        self.assertNotIn("Suivants", titre)
+        corps = html.split("</head>")[1]
+        self.assertIn("Suivants", corps)
+
     def test_a_search_keeps_its_terms_across_pages(self):
         html = self._html("/mails?q=Sujet&page=2")
         self.assertIn("q=Sujet", html)
