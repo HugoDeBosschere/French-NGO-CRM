@@ -8,7 +8,7 @@
   <span class="head-actions">
     {# One button, not one per type: the form asks for the type anyway, and
        six of them would not fit on the line. #}
-    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Organisation</a>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Nouvelle organisation</a>
   </span>
 </div>
 
@@ -25,7 +25,9 @@
      href="{{ url_for('organisations', q=q or none) }}">Toutes <span class="muted">{{ total }}</span></a>
   {# « ONG » is invariable and « Autre » reads as a label rather than a noun,
      so the plural is a lookup and not a bare « s ». #}
-  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres'} %}
+  {# « Groupe politique » + « s » donnait « Groupe politiques ». #}
+  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres',
+                           'Groupe politique': 'Groupes politiques'} %}
   {% for t in org_types %}
     <a class="chip {{ 'chip-on' if org_type == t }}"
        href="{{ url_for('organisations', q=q or none, org_type=t) }}">

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ p['name'] }}{% endblock %}
 {% block content %}
@@ -56,29 +57,29 @@
     </div>
     <div class="field">
       <label>Position sur PauseIA</label>
-      <p>{{ p['stance'] }}</p>
+      <p>{{ valeur(p['stance']) }}</p>
     </div>
     <div class="field">
       <label>A signé la déclaration de PauseIA</label>
-      <p>{{ 'Oui' if p['signed_declaration'] else 'Non' }}</p>
+      <p>{{ valeur('Oui' if p['signed_declaration'] else 'Non') }}</p>
     </div>
   </div>
 
   <div class="grid-2">
     <div class="field">
       <label>Fonction{% if split_roles(p['role'])|length > 1 %}s{% endif %}</label>
-      <p>{{ p['role'] or '' }}</p>
+      <p>{{ valeur(p['role']) }}</p>
     </div>
     {% if p['portefeuille'] %}
     <div class="field">
       <label>Portefeuille</label>
-      <p>{{ p['portefeuille'] }}</p>
+      <p>{{ valeur(p['portefeuille']) }}</p>
     </div>
     {% endif %}
     {% if p['role_detail'] %}
     <div class="field">
       <label>Préciser</label>
-      <p>{{ p['role_detail'] }}</p>
+      <p>{{ valeur(p['role_detail']) }}</p>
     </div>
     {% endif %}
   </div>
@@ -86,14 +87,14 @@
   <div class="grid-2">
     <div class="field">
       <label>Premier contact</label>
-      <p>{{ p['first_contacted'] | fr_date or '' }}</p>
+      <p>{{ valeur(p['first_contacted'] | fr_date) }}</p>
     </div>
     <div class="field">
       <label>Relance prévue</label>
       {% if p['follow_up_date'] %}
         <p>{{ p['follow_up_date'] | fr_date }} {{ ui.due_badge(p['follow_up_date']) }}</p>
       {% else %}
-        
+        <p class="muted">Non renseigné</p>
       {% endif %}
       {% if follow_up_source %}
         <p class="hint">Reprise
@@ -124,7 +125,7 @@
     </div>
     <div class="field">
       <label>Rencontres</label>
-      <p>{{ meetings|length }}</p>
+      <p>{{ valeur(meetings|length) }}</p>
     </div>
   </div>
 
@@ -142,7 +143,7 @@
   {% if p['circonscription'] %}
   <div class="field">
     <label>Circonscription</label>
-    <p>{{ p['circonscription'] }}</p>
+    <p>{{ valeur(p['circonscription']) }}</p>
   </div>
   {% endif %}
 
@@ -150,11 +151,11 @@
   <div class="grid-2">
     <div class="field">
       <label>Religion</label>
-      <p>{{ p['religion'] or '' }}</p>
+      <p>{{ valeur(p['religion']) }}</p>
     </div>
     <div class="field">
       <label>Territoire assigné</label>
-      <p>{{ p['territoire'] or '' }}</p>
+      <p>{{ valeur(p['territoire']) }}</p>
     </div>
   </div>
   {% endif %}
@@ -173,18 +174,18 @@
   {% if p['notes'] %}
   <div class="field">
     <label>Notes</label>
-    <p class="prose">{{ p['notes'] }}</p>
+    <p class="prose">{{ valeur(p['notes']) }}</p>
   </div>
   {% endif %}
 
   <div class="grid-2">
     <div class="field">
       <label>Qui a ajouté la personne</label>
-      <p>{{ added_by or '' }}</p>
+      <p>{{ valeur(added_by) }}</p>
     </div>
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
   </div>
 </div>

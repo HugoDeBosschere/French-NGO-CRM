@@ -36,6 +36,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import magic
 from flask import (
@@ -713,6 +714,30 @@ def fr_date(value):
         return datetime.strptime(value, "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         return value
+
+
+@app.template_filter("fr_datetime")
+def fr_datetime(value):
+    """Un horodatage ISO stocké (UTC) rendu en « JJ/MM/AAAA à HH:MM ».
+
+    Les fiches affichaient `created_at` tel quel :
+    « Enregistrée le 2026-10-10T20:10:32+00:00 ». C'est un détail de stockage,
+    pas une date lisible. L'heure est convertie à Paris, comme partout
+    ailleurs dans l'outil.
+    """
+    if not value:
+        return ""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    try:
+        moment = moment.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:                                   # noqa: BLE001
+        pass
+    return moment.strftime("%d/%m/%Y à %H:%M")
 
 
 @app.template_filter("days_until")

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ o['name'] }}{% endblock %}
 {% block content %}
@@ -22,41 +23,41 @@
       <label>{% if o['org_type'] == 'Média' %}Type de média
              {%- elif o['org_type'] == 'Culte' %}Religion
              {%- else %}Chambre{% endif %}</label>
-      <p>{{ o['media_type'] or o['chambre'] or o['religion'] or '' }}</p>
+      <p>{{ valeur(o['media_type'] or o['chambre'] or o['religion']) }}</p>
     </div>
     <div class="field">
       <label>Position sur PauseIA</label>
-      <p>{{ o['stance'] }}</p>
+      <p>{{ valeur(o['stance']) }}</p>
     </div>
   </div>
 
   {% if o['org_type'] == 'Média' %}
   <div class="field">
     <label>Orientation politique</label>
-    <p>{{ o['orientation'] or '' }}</p>
+    <p>{{ valeur(o['orientation']) }}</p>
   </div>
   {% endif %}
 
   <div class="field">
     <label>Lien</label>
-    <p>{{ ui.ext_link(o['link']) }}</p>
+    <p>{{ valeur(ui.ext_link(o['link'])) }}</p>
   </div>
 
   {% if o['notes'] %}
   <div class="field">
     <label>Notes</label>
-    <p class="prose">{{ o['notes'] }}</p>
+    <p class="prose">{{ valeur(o['notes']) }}</p>
   </div>
   {% endif %}
 
   <div class="grid-2">
     <div class="field">
       <label>Qui a ajouté l'organisation</label>
-      <p>{{ added_by or '' }}</p>
+      <p>{{ valeur(added_by) }}</p>
     </div>
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
   </div>
 </div>

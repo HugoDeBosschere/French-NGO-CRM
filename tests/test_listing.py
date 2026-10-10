@@ -114,6 +114,14 @@ class ListingTests(unittest.TestCase):
         for onglet in ("Échanges", "Membres", "À rattacher", "Déposer"):
             self.assertIn(onglet, html)
 
+    def test_a_stored_timestamp_is_shown_as_a_readable_date(self):
+        # Les fiches affichaient « Enregistrée le 2026-10-10T20:10:32+00:00 ».
+        self.assertEqual(
+            self.app.fr_datetime("2026-10-10T20:10:32+00:00"),
+            "10/10/2026 à 22:10")          # UTC -> Paris, heure d'été
+        self.assertEqual(self.app.fr_datetime(""), "")
+        self.assertEqual(self.app.fr_datetime("pas une date"), "pas une date")
+
     def test_a_search_keeps_its_terms_across_pages(self):
         html = self._html("/mails?q=Sujet&page=2")
         self.assertIn("q=Sujet", html)

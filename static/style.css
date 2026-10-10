@@ -410,10 +410,19 @@ a.cal-ev:hover {
 @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
 
 .field > label { display: block; font-weight: 600; margin-bottom: .35rem; font-size: .92rem; }
+/* La liste était incomplète : `email`, `tel`, `url` et `time` n'y figuraient
+   pas et gardaient la largeur par défaut du navigateur. Sur « Proposer une
+   personne », « Courriel » faisait la moitié de « Téléphone » juste à côté,
+   dans la même grille ; « Heure » était un timbre-poste à côté de « Date ».
+   `number` reste dehors : plusieurs blocs le veulent étroit exprès. */
 .field input[type="text"],
 .field input[type="date"],
+.field input[type="email"],
 .field input[type="password"],
 .field input[type="search"],
+.field input[type="tel"],
+.field input[type="time"],
+.field input[type="url"],
 .field select,
 .field textarea {
   width: 100%;
@@ -1302,3 +1311,14 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   color: var(--ink);
   font-weight: 600;
 }
+
+/* Le rythme vertical d'une fiche. Les valeurs sont tantôt un <p>, tantôt une
+   <ul>, tantôt une étiquette colorée : chacune portait la marge que le
+   navigateur lui donne, si bien que « Résumé » collait à « Saisi par » pendant
+   que « Lien » flottait. Une seule marge pour toutes. Les indications sous un
+   champ de formulaire (.hint) gardent la leur : elles appartiennent au champ
+   au-dessus, pas au suivant. */
+.card .field > p:not(.hint),
+.card .field > ul { margin: 0 0 1rem; }
+.card .field:last-child > p:not(.hint),
+.card .field:last-child > ul { margin-bottom: 0; }

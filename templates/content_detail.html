@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Contenu du {{ c['published_on'] | fr_date }}{% endblock %}
 {% block content %}
@@ -25,14 +26,14 @@
     </div>
     <div class="field">
       <label>Publication</label>
-      <p>{{ c['published_on'] | fr_date }}</p>
+      <p>{{ valeur(c['published_on'] | fr_date) }}</p>
     </div>
   </div>
 
   <div class="field">
     <label>Genre du contenu</label>
-    <p>{% if c['genre'] %}<span class="tag">{{ c['genre'] }}</span>{% else %}
-      {% endif %}</p>
+    <p>{% if c['genre'] %}<span class="tag">{{ c['genre'] }}</span>
+       {% else %}<span class="muted">Non renseigné</span>{% endif %}</p>
   </div>
 
   <div class="field">
@@ -47,24 +48,24 @@
 
   <div class="field">
     <label>Lien</label>
-    <p>{{ ui.ext_link(c['link']) }}</p>
+    <p>{{ valeur(ui.ext_link(c['link'])) }}</p>
   </div>
 
   {% if c['summary'] %}
   <div class="field">
     <label>Résumé</label>
-    <p class="prose">{{ c['summary'] }}</p>
+    <p class="prose">{{ valeur(c['summary']) }}</p>
   </div>
   {% endif %}
 
   <div class="grid-2">
     <div class="field">
       <label>Saisi par</label>
-      <p>{{ recorded_by or '' }}</p>
+      <p>{{ valeur(recorded_by) }}</p>
     </div>
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
   </div>
 </div>

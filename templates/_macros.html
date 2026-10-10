@@ -15,9 +15,12 @@
 {% endmacro %}
 
 {# Link shown truncated, opened in a new tab. #}
-{% macro ext_link(url) %}
+{# `{%-` : sans ça le macro rend « \n…\n », donc une valeur « non vide » pour
+   qui la teste — et `valeur()` affichait deux blancs au lieu de
+   « Non renseigné » sur une fiche sans lien. #}
+{% macro ext_link(url) -%}
 {% if url | safe_link %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">{{ url | truncate(60, True, '…') }}</a>{% else %}{{ url or '' }}{% endif %}
-{% endmacro %}
+{%- endmacro %}
 
 {# What an organisation is, in one tag. A lookup rather than a ternary, so a
    new org_type gets its own colour instead of quietly borrowing another one's.
@@ -544,3 +547,12 @@
      {% if active == 'liste' %}aria-current="page"{% endif %}>Un par un</a>
 </nav>
 {% endmacro %}
+
+{# La valeur d'un champ de fiche, ou « Non renseigné ».
+
+   Les gabarits de détail écrivaient `{{ x or '' }}` : une étiquette suivie de
+   rien du tout. À l'écran, « Validé par » puis le vide se lit comme un bug,
+   pas comme une absence — et « Lieu » vide était indiscernable d'un « Lieu »
+   qui n'avait pas fini de charger. Même gabarit, `Format` disait déjà
+   « Non renseigné » : c'est cette version-là qui est juste. #}
+{% macro valeur(v) %}{% if v is not none and v != '' %}{{ v }}{% else %}<span class="muted">Non renseigné</span>{% endif %}{% endmacro %}
