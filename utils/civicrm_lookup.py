@@ -215,6 +215,38 @@ def enqueue(db, address, display, now):
     address = clean_email(address)
     if not address or is_generic(address):
         return False
+    # Une adresse qui a déjà sa fiche n'a rien à faire dans la file : la file
+    # sert à dire « de qui s'agit-il ? », et la réponse existe déjà. Le cas
+    # vient de l'élargissement aux corps de courriels : un citoyen qui écrit à
+    # un·e élu·e emploie forcément les mots « député » ou « sénateur », donc le
+    # même échange arrivait une seconde fois dans « à rattacher » alors qu'il
+    # était déjà enregistré sous son nom. Le courriel, lui, est déjà protégé :
+    # la mise en file n'a lieu que lorsque le classement a échoué. Ici c'est
+    # l'ADRESSE qu'on dédoublonne — `persons.email` et les alias appris dans
+    # `person_emails`.
+    try:
+        if db.execute(
+            "SELECT 1 FROM person_emails WHERE LOWER(TRIM(email)) = ? "
+            "UNION ALL "
+            "SELECT 1 FROM persons WHERE LOWER(TRIM(email)) = ? LIMIT 1",
+            (address, address),
+        ).fetchone():
+            return False
+    except sqlite3.Error:
+        # person_emails n'existe pas encore sur une base jamais ouverte par
+        # l'application : rien à dédoublonner, on continue.
+        pass
+    # « Ne jamais enregistrer » : l'adresse ne revient plus en file et ses
+    # courriels n'entrent plus tout seuls. Un dépôt manuel reste possible,
+    # c'est un geste délibéré — voir handle_one_message(rattacher_a=…).
+    try:
+        if db.execute(
+            "SELECT 1 FROM civicrm_pending WHERE email = ? AND status = 'refused'",
+            (address,),
+        ).fetchone():
+            return False
+    except sqlite3.Error:
+        pass
     display = (display or "").strip() or None
     try:
         # `rowcount` can't tell an insert from an ON CONFLICT update — both report

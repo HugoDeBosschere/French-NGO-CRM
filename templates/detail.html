@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Rencontre · {{ m['meeting_date'] | fr_date }}{% endblock %}
 {% block content %}
@@ -54,9 +55,9 @@
     <div class="field">
       <label>{{ place_label(m['meeting_format']) }}</label>
       {% if m['meeting_place'] %}
-        <p class="prose">{{ m['meeting_place'] }}</p>
+        <p class="prose">{{ valeur(m['meeting_place']) }}</p>
       {% else %}
-        
+        <p class="muted">Non renseigné</p>
       {% endif %}
     </div>
   </div>
@@ -83,17 +84,17 @@
 
   <div class="field">
     <label>Points clés de la rencontre</label>
-    <p class="prose">{{ m['summary'] }}</p>
+    <p class="prose">{{ valeur(m['summary']) }}</p>
   </div>
 
   <div class="grid-2">
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
     <div class="field">
       <label>Saisi par</label>
-      <p>{{ recorded_by or '' }}</p>
+      <p>{{ valeur(recorded_by) }}</p>
     </div>
     <div class="field">
       <label>Document joint</label>
@@ -105,6 +106,6 @@
     </div>
   </div>
 
-  <p class="muted count">Enregistrée le {{ m['created_at'] }} · rencontre n°{{ m['id'] }}</p>
+  <p class="muted count">Enregistrée le {{ m['created_at'] | fr_datetime }} · rencontre n°{{ m['id'] }}</p>
 </div>
 {% endblock %}

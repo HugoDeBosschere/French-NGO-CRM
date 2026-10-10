@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import import_banner %}
+{% from "_macros.html" import import_banner, exchange_subtabs  %}
 {% block title %}Échanges à rattacher{% endblock %}
 {% block container_class %}container-wide{% endblock %}
 {% block content %}
@@ -7,13 +7,7 @@
   <h1>Suivi des échanges</h1>
 </div>
 
-<nav class="subtabs">
-  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
-  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
-  <a class="subtab{{ ' active' if not ignored }}" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %} <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
-  <a class="subtab" href="{{ url_for('deposit') }}">Déposer</a>
-  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
-</nav>
+{{ exchange_subtabs('rattacher' if not ignored else '') }}
 
 {{ import_banner(import_state) }}
 
@@ -51,6 +45,8 @@
             <span class="muted" title="CiviCRM ne connaît pas cette adresse non plus">Inconnue de CiviCRM</span>
           {% elif r['status'] == 'ignored' %}
             <span class="muted">Ignorée</span>
+          {% elif r['status'] == 'refused' %}
+            <span class="muted" title="Plus jamais enregistrée automatiquement">Refusée</span>
           {% else %}
             <span class="muted">En attente</span>
           {% endif %}
@@ -63,20 +59,28 @@
             <button class="btn btn-ghost" type="submit">Réexaminer</button>
           </form>
           {% else %}
-          <form method="post" action="{{ url_for('unlinked_link') }}" class="inline-form">
+          {# Un champ relié au <datalist> commun, et non un <select> par ligne :
+             avec 1 792 fiches et vingt adresses en attente, la page portait
+             35 860 <option> pour 3,4 Mo. Le navigateur fournit déjà une
+             recherche à la frappe sur un datalist, donc ça marche sans
+             JavaScript ; person-picker.js la remplace par une liste plus
+             lisible, qui montre aussi le type de contact. #}
+          <form method="post" action="{{ url_for('unlinked_link') }}" class="inline-form"
+                data-person-picker>
             <input type="hidden" name="email" value="{{ r['email'] }}">
-            <select name="person_id" required>
-              <option value="">Choisir une personne…</option>
-              {% for p in people %}
-              <option value="{{ p['id'] }}">{{ p['name'] }} · {{ p['contact_type'] }}</option>
-              {% endfor %}
-            </select>
+            <input type="hidden" name="person_id" value="">
+            <input type="text" name="person_nom" class="picker-input" required
+                   list="people-list" autocomplete="off"
+                   placeholder="Nom de la personne…"
+                   aria-label="Rattacher {{ r['email'] }} à">
             <button class="btn" type="submit">Rattacher</button>
           </form>
           <form method="post" action="{{ url_for('unlinked_ignore') }}" class="inline-form">
             <input type="hidden" name="email" value="{{ r['email'] }}">
             <button class="btn btn-ghost" type="submit"
                     title="Ni un élu, ni un journaliste : un robot, un prestataire, un courriel personnel">Ignorer</button>
+            <button class="btn btn-ghost" type="submit" name="refuser" value="1"
+                    title="Ne plus jamais enregistrer les courriels de cette adresse. Un dépôt manuel reste possible.">Ne jamais enregistrer</button>
           </form>
           {% endif %}
         </td>
@@ -96,5 +100,19 @@
   <p>{% if ignored %}Aucune adresse ignorée.{% else %}Aucune adresse en attente :
      tous les courriels importés ont trouvé leur destinataire.{% endif %}</p>
 </div>
+{% endif %}
+
+{# Les fiches, une seule fois pour toute la page. Le datalist sert de repli
+   natif sans JavaScript ; le JSON alimente le sélecteur enrichi. Clés courtes
+   (i, n, t) : sur deux mille entrées, « id/name/contact_type » pèseraient des
+   dizaines de kilo-octets de noms de champs répétés. #}
+{% if rows and not ignored %}
+<datalist id="people-list">
+  {% for p in people %}<option value="{{ p['name'] }}"></option>{% endfor %}
+</datalist>
+<script type="application/json" id="people-data">
+  [{% for p in people %}{"i":{{ p['id'] }},"n":{{ p['name'] | tojson }},"t":{{ p['contact_type'] | tojson }}}{{ "," if not loop.last }}{% endfor %}]
+</script>
+<script src="{{ url_for('static', filename='person-picker.js') }}" defer></script>
 {% endif %}
 {% endblock %}

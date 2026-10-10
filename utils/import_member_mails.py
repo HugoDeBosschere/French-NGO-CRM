@@ -58,7 +58,12 @@ import maildomains  # noqa: E402
 import importruns  # noqa: E402
 # CiviCRM holds ~12 900 journalists this CRM does not. An address we cannot match
 # is queued here rather than dropped, and civicrm_lookup.py turns it into a fiche.
-from civicrm_lookup import enqueue, ensure_civicrm_tables, is_bulk  # noqa: E402
+from civicrm_lookup import (  # noqa: E402
+    enqueue,
+    ensure_civicrm_tables,
+    is_bulk,
+    is_generic,
+)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.environ.get("IMAP_DB_PATH", os.path.join(ROOT, "meetings.db"))
@@ -435,6 +440,41 @@ def classify(msg, db, email_index, name_patterns=None):
     return None, [], None, None, False
 
 
+# Mots qui donnent à un courriel une raison POSITIVE d'entrer en file, même
+# venu d'un domaine hors périmètre. Le filtre de périmètre existe parce que la
+# règle Workspace copie aussi les mails personnels des membres, et que « rien ne
+# distingue le journaliste qui écrit de son gmail du médecin d'un membre »
+# (maildomains.in_scope). Ces mots-là font la distinction : le médecin d'un
+# membre ne parle pas de députés.
+#
+# Le cas visé : un citoyen écrit à son élu par notre outil, puis nous répond
+# qu'il a obtenu un rendez-vous. Sa réponse part d'une adresse personnelle,
+# donc hors périmètre, et passait entre les mailles.
+#
+# Bornes posées à dessein : frontières de mots (« sénat » ne doit pas attraper
+# « sénatorial » d'une revue de presse), sans accents (les gens écrivent
+# « depute »), et seulement sur le début du corps — assez pour une réponse de
+# citoyen, pas assez pour qu'un long fil cité fasse entrer n'importe quoi.
+MOTS_ELUS = re.compile(
+    r"\b(deputee?s?|senateurs?|senatrices?|parlementaires?|"
+    r"assemblee nationale|senat)\b"
+)
+CORPS_EXAMINE = 4000
+
+
+def parle_delus(msg):
+    """Le corps de ce courriel parle-t-il d'élu·es ?"""
+    try:
+        corps = extract_body(msg) or ""
+    except Exception:                                # noqa: BLE001
+        return False
+    corps = "".join(
+        c for c in unicodedata.normalize("NFKD", corps[:CORPS_EXAMINE])
+        if not unicodedata.combining(c)
+    ).lower()
+    return bool(MOTS_ELUS.search(corps))
+
+
 def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
     """Queue the outside address of a member mail we failed to match.
 
@@ -447,7 +487,7 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
     # to a list, so there is no person behind the address to look up. Cheapest
     # and broadest test, hence first.
     if is_bulk(msg):
-        return 0, 0
+        return 0, 0, 0
 
     from_pairs = addr_pairs(msg, "From")
     to_pairs = addr_pairs(msg, "To", "Cc")
@@ -459,9 +499,9 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
     elif to_member and not from_member:
         candidates = from_pairs    # someone unknown wrote to a member
     else:
-        return 0, 0
+        return 0, 0, 0
 
-    queued = out_of_scope = 0
+    queued = out_of_scope = hors_perimetre_mais_elus = 0
     for display, address in candidates:
         # Only the member's own side is skipped. NOT is_official(): that tests
         # the *domain*, and an unknown address on a known média domain — a
@@ -487,11 +527,18 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
         # protège des mails qu'on reçoit sans les avoir demandés ; elle n'a pas
         # de sens sur un dépôt volontaire.
         if enforce_scope and not maildomains.in_scope(address):
-            out_of_scope += 1
-            continue
+            # Sauf si le courriel parle d'élu·es : c'est la raison positive qui
+            # manquait, et elle vaut pour une association dont c'est le métier.
+            # On ne met en file que l'ADRESSE, pas le contenu : un humain
+            # tranche ensuite, et un faux positif ne coûte qu'une ligne à
+            # écarter d'un clic.
+            if not parle_delus(msg):
+                out_of_scope += 1
+                continue
+            hors_perimetre_mais_elus += 1
         if enqueue(db, address, display, now):
             queued += 1
-    return queued, out_of_scope
+    return queued, out_of_scope, hors_perimetre_mais_elus
 
 
 def record(db, msg, direction, matches, member, learn, low_confidence,
@@ -592,7 +639,47 @@ def connect_imap():
     return conn
 
 
-def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
+def contrepartie_refusee(db, msg):
+    """Vrai si une adresse externe de ce courriel est marquée « ne jamais
+    enregistrer ». Le réglage vaut pour la capture automatique seule : un dépôt
+    manuel est un geste délibéré, il passe outre."""
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+        addr = (address or "").strip().lower()
+        if not addr or is_member(addr):
+            continue
+        try:
+            if db.execute(
+                "SELECT 1 FROM civicrm_pending WHERE email = ? AND status = 'refused'",
+                (addr,),
+            ).fetchone():
+                return addr
+        except sqlite3.Error:
+            return None
+    return None
+
+
+def apprendre_contrepartie(db, msg, person_id):
+    """Rattache à `person_id` la ou les adresses externes de ce courriel.
+
+    « Externe » = tout ce qui n'est pas une adresse de membre : c'est la
+    contrepartie, celle dont on veut se souvenir. Les adresses génériques
+    (contact@, no-reply@) sont écartées, elles ne désignent personne.
+    """
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    vues = set()
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+        addr = (address or "").strip().lower()
+        if not addr or addr in vues or is_member(addr) or is_generic(addr):
+            continue
+        vues.add(addr)
+        db.execute(
+            "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at)"
+            " VALUES (?, ?, 'depot', ?)", (addr, person_id, now))
+    return len(vues)
+
+
+def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
+                       rattacher_a=None):
     """Traiter un courriel isolé, exactement comme l'import le ferait.
 
     Écrit pour le dépôt manuel (`/echanges/deposer`), qui doit passer par le
@@ -603,6 +690,15 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
         'duplicate'   ce Message-ID est déjà en base
         'queued'      personne reconnue, adresse mise en file « à rattacher »
         'unmatched'   ni l'un ni l'autre (aucun membre PauseIA dans le courriel)
+
+    `rattacher_a` (identifiant de fiche) répond au cas le plus courant du dépôt
+    manuel : le journaliste qui écrit depuis son gmail. Sans lui, un dépôt dont
+    l'adresse est inconnue repartait en file d'attente et LE COURRIEL N'ÉTAIT PAS
+    ENREGISTRÉ — alors que la personne qui dépose sait très bien de qui il
+    s'agit. Avec lui, l'adresse est apprise AVANT le classement, donc le
+    classifieur la reconnaît, le courriel entre, et tous les suivants de cette
+    adresse entreront seuls. Une validation humaine ne devrait jamais avoir à
+    être refaite.
 
     L'appelant est responsable du commit : un dépôt de dix fichiers est une
     seule transaction, ou rien.
@@ -623,6 +719,8 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
         return "duplicate", decoded(msg.get("Subject")) or "(sans objet)"
 
     subject = decoded(msg.get("Subject")) or "(sans objet)"
+    if rattacher_a:
+        apprendre_contrepartie(db, msg, int(rattacher_a))
     email_index = load_email_index_with_aliases(db)
     name_patterns = build_name_pattern_index(db)
     direction, matches, member, learn, low_conf = classify(
@@ -633,7 +731,7 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
         return "imported", subject
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    queued, _ignored = queue_unknown_counterparts(
+    queued, _ignored, _elus = queue_unknown_counterparts(
         db, msg, now, enforce_scope=enforce_scope)
     return ("queued" if queued else "unmatched"), subject
 
@@ -686,7 +784,8 @@ def main():
         last_uid = get_last_uid(db, "members")
         uids = fetch_uids(conn, mailbox, last_uid, args.backfill)
         log(f"Audit mailbox {mailbox!r}: {len(uids)} message(s) to inspect.")
-        imported = dup = skipped = queued = out_of_scope = max_uid = 0
+        imported = dup = skipped = queued = out_of_scope = refuses = 0
+        via_elus = max_uid = 0
         max_uid = last_uid
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for index, uid in enumerate(uids):
@@ -699,17 +798,33 @@ def main():
                 else:
                     direction, matches, member, learn, low_conf = classify(
                         msg, db, email_index, name_patterns)
-                    if direction:
+                    refusee = contrepartie_refusee(db, msg)
+                    if direction and refusee:
+                        # « Ne jamais enregistrer » : on s'arrête ici, mais on
+                        # note le Message-ID, sinon chaque balayage réexaminerait
+                        # le même courriel jusqu'à la fin des temps.
+                        if not args.dry_run and mid:
+                            db.execute(
+                                "INSERT OR IGNORE INTO imported_mails "
+                                "(message_id, uid, mailbox, imported_at) "
+                                "VALUES (?, ?, ?, ?)",
+                                (mid, None, mailbox, now))
+                        refuses += 1
+                        if args.verbose:
+                            log(f"  [refusé] {refusee} — "
+                                f"{decoded(msg.get('Subject'))!r}")
+                    elif direction:
                         record(db, msg, direction, matches, member, learn,
                                low_conf, args.dry_run, auto_publish)
                         imported += 1
                     else:
                         skipped += 1
                         if not args.dry_run:
-                            new_queued, ignored = queue_unknown_counterparts(
-                                db, msg, now)
+                            new_queued, ignored, par_elus = \
+                                queue_unknown_counterparts(db, msg, now)
                             queued += new_queued
                             out_of_scope += ignored
+                            via_elus += par_elus
                         if args.verbose:
                             log(f"  [skip] {decoded(msg.get('Subject'))!r}")
             max_uid = max(max_uid, uid)
@@ -729,6 +844,8 @@ def main():
         log(f"Done. Mails {verb}: {imported} | already-imported skipped: {dup} | "
             f"not member↔élu: {skipped} | queued for CiviCRM: {queued} | "
             f"outside the queue's scope (personal mail, suppliers): {out_of_scope} | "
+            f"refused addresses: {refuses} | "
+            f"queued because the body mentions élu·es: {via_elus} | "
             f"last UID now: {max_uid if not args.dry_run else last_uid}.")
     except BaseException as exc:             # noqa: BLE001 — recorded, re-raised
         # Including KeyboardInterrupt: a run cut short did not finish its sweep,

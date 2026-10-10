@@ -553,6 +553,50 @@
     sync();
   }
 
+  // Une entrée de liste n'est visible que si TOUS les filtres l'acceptent :
+  // celui par genre et la recherche par nom. Chacun écrit son verdict dans un
+  // data-attribut, cette fonction les combine.
+  function appliquerVisibilite(el) {
+    var box = el.querySelector('input[type="checkbox"]');
+    if (box && box.checked) { el.hidden = false; return; }  // jamais cacher un choix fait
+    el.hidden = el.dataset.genreOk === "" || el.dataset.nomOk === "";
+  }
+
+  // Recherche dans une liste de cases à cocher. Remplace un <select> qui
+  // reprenait toute la liste une seconde fois : ici, rien n'est ajouté à la
+  // page, on filtre ce qui s'y trouve déjà. Sans JavaScript, le champ ne fait
+  // rien et la liste complète reste utilisable.
+  function attachChecklistFilter(champ) {
+    var bloc = document.getElementById(champ.getAttribute("aria-controls"));
+    if (!bloc) return;
+    var entries = bloc.querySelectorAll("[data-nom]");
+
+    function sansAccents(s) {
+      return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    function filtrer() {
+      // Mots dans n'importe quel ordre : « bost christine » trouve
+      // « Christine Bost », comme dans la file « à rattacher ».
+      var mots = sansAccents(champ.value).split(/\s+/).filter(Boolean);
+      entries.forEach(function (el) {
+        var cible = sansAccents(el.getAttribute("data-nom"));
+        var ok = mots.every(function (m) { return cible.indexOf(m) !== -1; });
+        el.dataset.nomOk = ok ? "1" : "";
+        appliquerVisibilite(el);
+      });
+    }
+
+    entries.forEach(function (el) {
+      if (el.dataset.nomOk === undefined) el.dataset.nomOk = "1";
+      if (el.dataset.genreOk === undefined) el.dataset.genreOk = "1";
+    });
+    champ.addEventListener("input", filtrer);
+    // Une case qu'on décoche pendant une recherche doit disparaître si elle ne
+    // correspond pas : sinon la liste ment sur ce qu'elle montre.
+    bloc.addEventListener("change", filtrer);
+  }
+
   // A [data-genre-filter] block narrows a list of people to those the chosen
   // genre concerns. Each entry carries data-genres (its person's genres,
   // « | »-separated — see person_genres in app.py). A box already ticked stays
@@ -575,12 +619,12 @@
     function sync() {
       entries.forEach(function (el) {
         var box = el.querySelector('input[type="checkbox"]');
-        el.hidden = !matches(el) && !(box && box.checked);
-      });
-      // The quick-pick dropdown lists the same people: an <option> cannot be
-      // hidden reliably across browsers, so it is disabled instead.
-      block.querySelectorAll("option[data-genres]").forEach(function (opt) {
-        opt.disabled = !matches(opt);
+        // `genreOk` plutôt que `hidden` directement : la recherche par nom
+        // pose son propre verdict sur les mêmes entrées, et c'est appliquer
+        // les deux ensemble qui décide. Sans ça, le dernier des deux filtres
+        // à s'exécuter effaçait la décision de l'autre.
+        el.dataset.genreOk = (matches(el) || (box && box.checked)) ? "1" : "";
+        appliquerVisibilite(el);
       });
     }
     genre.addEventListener("change", sync);
@@ -807,6 +851,9 @@
     document
       .querySelectorAll("select[data-target]")
       .forEach(attachPicker);
+    document
+      .querySelectorAll("input.checklist-filter")
+      .forEach(attachChecklistFilter);
     document
       .querySelectorAll("select[data-check-group]")
       .forEach(attachChecker);

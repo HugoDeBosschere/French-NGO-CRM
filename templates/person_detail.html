@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ p['name'] }}{% endblock %}
 {% block content %}
@@ -19,6 +20,29 @@
   </span>
 </div>
 
+{# Portrait officiel et fiche parlementaire, repris de l'elus.json de l'outil
+   « Écrire à mes élus » du site : même source, donc le CRM montre exactement
+   ce que montre pauseia.fr. Le bloc n'apparaît que s'il y a quelque chose à
+   montrer, et la photo disparaît toute seule si l'URL casse (onerror), sans
+   laisser d'icône d'image brisée. #}
+{% if p['photo_url'] or p['fiche_url'] %}
+<div class="card fiche-officielle">
+  {% if p['photo_url'] %}
+  <img class="portrait" src="{{ p['photo_url'] }}" alt="Portrait de {{ p['name'] }}"
+       loading="lazy" referrerpolicy="no-referrer"
+       onerror="this.closest('.fiche-officielle').classList.add('sans-portrait'); this.remove();">
+  {% endif %}
+  <div>
+    <p class="muted">Source officielle</p>
+    {% if p['fiche_url'] %}
+    <a class="btn" href="{{ p['fiche_url'] }}" target="_blank" rel="noopener noreferrer"
+       title="Ouvre la fiche officielle sur le site de l'assemblée concernée">
+      Voir la fiche parlementaire ↗</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="grid-2">
     <div class="field">
@@ -33,29 +57,29 @@
     </div>
     <div class="field">
       <label>Position sur PauseIA</label>
-      <p>{{ p['stance'] }}</p>
+      <p>{{ valeur(p['stance']) }}</p>
     </div>
     <div class="field">
       <label>A signé la déclaration de PauseIA</label>
-      <p>{{ 'Oui' if p['signed_declaration'] else 'Non' }}</p>
+      <p>{{ valeur('Oui' if p['signed_declaration'] else 'Non') }}</p>
     </div>
   </div>
 
   <div class="grid-2">
     <div class="field">
       <label>Fonction{% if split_roles(p['role'])|length > 1 %}s{% endif %}</label>
-      <p>{{ p['role'] or '' }}</p>
+      <p>{{ valeur(p['role']) }}</p>
     </div>
     {% if p['portefeuille'] %}
     <div class="field">
       <label>Portefeuille</label>
-      <p>{{ p['portefeuille'] }}</p>
+      <p>{{ valeur(p['portefeuille']) }}</p>
     </div>
     {% endif %}
     {% if p['role_detail'] %}
     <div class="field">
       <label>Préciser</label>
-      <p>{{ p['role_detail'] }}</p>
+      <p>{{ valeur(p['role_detail']) }}</p>
     </div>
     {% endif %}
   </div>
@@ -63,14 +87,14 @@
   <div class="grid-2">
     <div class="field">
       <label>Premier contact</label>
-      <p>{{ p['first_contacted'] | fr_date or '' }}</p>
+      <p>{{ valeur(p['first_contacted'] | fr_date) }}</p>
     </div>
     <div class="field">
       <label>Relance prévue</label>
       {% if p['follow_up_date'] %}
         <p>{{ p['follow_up_date'] | fr_date }} {{ ui.due_badge(p['follow_up_date']) }}</p>
       {% else %}
-        
+        <p class="muted">Non renseigné</p>
       {% endif %}
       {% if follow_up_source %}
         <p class="hint">Reprise
@@ -101,7 +125,7 @@
     </div>
     <div class="field">
       <label>Rencontres</label>
-      <p>{{ meetings|length }}</p>
+      <p>{{ valeur(meetings|length) }}</p>
     </div>
   </div>
 
@@ -119,7 +143,7 @@
   {% if p['circonscription'] %}
   <div class="field">
     <label>Circonscription</label>
-    <p>{{ p['circonscription'] }}</p>
+    <p>{{ valeur(p['circonscription']) }}</p>
   </div>
   {% endif %}
 
@@ -127,11 +151,11 @@
   <div class="grid-2">
     <div class="field">
       <label>Religion</label>
-      <p>{{ p['religion'] or '' }}</p>
+      <p>{{ valeur(p['religion']) }}</p>
     </div>
     <div class="field">
       <label>Territoire assigné</label>
-      <p>{{ p['territoire'] or '' }}</p>
+      <p>{{ valeur(p['territoire']) }}</p>
     </div>
   </div>
   {% endif %}
@@ -150,18 +174,18 @@
   {% if p['notes'] %}
   <div class="field">
     <label>Notes</label>
-    <p class="prose">{{ p['notes'] }}</p>
+    <p class="prose">{{ valeur(p['notes']) }}</p>
   </div>
   {% endif %}
 
   <div class="grid-2">
     <div class="field">
       <label>Qui a ajouté la personne</label>
-      <p>{{ added_by or '' }}</p>
+      <p>{{ valeur(added_by) }}</p>
     </div>
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
   </div>
 </div>

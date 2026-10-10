@@ -1,19 +1,12 @@
 {% extends "base.html" %}
-{% from "_macros.html" import import_banner %}
+{% from "_macros.html" import import_banner, exchange_subtabs  %}
 {% block title %}Déposer un courriel{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Suivi des échanges</h1>
 </div>
 
-<nav class="subtabs">
-  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
-  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
-  <a class="subtab" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %}
-    <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
-  <a class="subtab active" href="{{ url_for('deposit') }}">Déposer</a>
-  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
-</nav>
+{{ exchange_subtabs('deposer') }}
 
 {{ import_banner(import_state) }}
 
@@ -32,7 +25,7 @@
   que c'est le cas.</p>
 {% endif %}
 
-<form method="post" action="{{ url_for('deposit') }}"
+<form method="post" data-person-picker action="{{ url_for('deposit') }}"
       enctype="multipart/form-data" id="deposit-form">
   {# La zone de dépôt est un <label> : sans JavaScript, elle reste un bouton de
      sélection de fichiers parfaitement fonctionnel. #}
@@ -45,9 +38,37 @@
            multiple {{ 'disabled' if not importer }}>
     <span class="dropzone-files" id="dropzone-files"></span>
   </label>
+  {# Facultatif, mais c'est ce qui fait la différence entre un courriel
+     enregistré et une simple adresse mise en file. Quand la contrepartie n'a
+     pas de fiche — le journaliste qui écrit depuis son adresse personnelle —
+     son adresse est apprise ici, donc ce courriel ENTRE, et tous les suivants
+     de cette adresse entreront seuls. #}
+  <div class="deposit-person">
+    <label for="person_nom">Ces courriels concernent
+      <span class="muted">(facultatif)</span></label>
+    <input type="hidden" name="person_id" value="">
+    <input type="text" id="person_nom" name="person_nom" class="picker-input"
+           list="people-list" autocomplete="off"
+           placeholder="Nom de la personne…"
+           {{ 'disabled' if not importer }}>
+    <p class="hint">À renseigner si l'adresse de votre correspondant n'a pas
+      encore de fiche : sans ça, le courriel n'est pas enregistré, seule
+      l'adresse part en file « à rattacher ».</p>
+  </div>
+
   <button class="btn btn-primary" type="submit" {{ 'disabled' if not importer }}>
     Déposer</button>
 </form>
+
+{% if people %}
+<datalist id="people-list">
+  {% for p in people %}<option value="{{ p['name'] }}"></option>{% endfor %}
+</datalist>
+<script type="application/json" id="people-data">
+  [{% for p in people %}{"i":{{ p['id'] }},"n":{{ p['name'] | tojson }},"t":{{ p['contact_type'] | tojson }}}{{ "," if not loop.last }}{% endfor %}]
+</script>
+<script src="{{ url_for('static', filename='person-picker.js') }}" defer></script>
+{% endif %}
 
 <details class="deposit-help">
   <summary>Comment récupérer un fichier .eml ?</summary>

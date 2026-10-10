@@ -8,7 +8,7 @@
   <span class="head-actions">
     {# One button, not one per type: the form asks for the type anyway, and
        six of them would not fit on the line. #}
-    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Organisation</a>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Nouvelle organisation</a>
   </span>
 </div>
 
@@ -17,7 +17,7 @@
          placeholder="Rechercher par nom, type, chambre, religion ou position…">
   {% if org_type %}<input type="hidden" name="org_type" value="{{ org_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
 </form>
 
 <div class="filter-chips">
@@ -25,7 +25,9 @@
      href="{{ url_for('organisations', q=q or none) }}">Toutes <span class="muted">{{ total }}</span></a>
   {# « ONG » is invariable and « Autre » reads as a label rather than a noun,
      so the plural is a lookup and not a bare « s ». #}
-  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres'} %}
+  {# « Groupe politique » + « s » donnait « Groupe politiques ». #}
+  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres',
+                           'Groupe politique': 'Groupes politiques'} %}
   {% for t in org_types %}
     <a class="chip {{ 'chip-on' if org_type == t }}"
        href="{{ url_for('organisations', q=q or none, org_type=t) }}">
@@ -54,7 +56,7 @@
         <td class="nowrap">{{ o['person_count'] }}</td>
         <td class="nowrap">{{ o['intervention_count'] }}</td>
         <td class="nowrap">{{ o['content_count'] }}</td>
-        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
+        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

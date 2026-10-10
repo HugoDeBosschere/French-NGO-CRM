@@ -1,0 +1,15 @@
+[Unit]
+Description=Alerte quand %i a échoué
+# Unité modèle : chaque travail planifié y renvoie par OnFailure=alerte@%n.service.
+# systemd remplace %i par le nom de l'unité en échec, qui est donc tout ce dont
+# le script a besoin pour aller chercher le journal correspondant.
+#
+# Pourquoi ici plutôt que dans chaque script : une panne ne se signale pas
+# seulement quand le code prévoit de la signaler. Le conteneur absent, le disque
+# plein, le processus tué par l'OOM killer, le travail qui n'a jamais démarré —
+# aucun de ces cas ne passe par un `except` Python. systemd, lui, les voit tous.
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/pauseia-crm-alerte.env
+ExecStart=/opt/volunteer-apps/apps/website-meeting/utils/deploy/alerte.sh %i

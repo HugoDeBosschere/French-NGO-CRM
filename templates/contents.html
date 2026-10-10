@@ -14,7 +14,7 @@
   <input type="search" name="q" value="{{ q }}"
          placeholder="Rechercher par organisation, personne, type ou résumé…">
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('contents') }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('contents') }}">Effacer</a>{% endif %}
 </form>
 
 {{ ui.contents_table(contents) }}

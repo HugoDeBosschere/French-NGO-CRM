@@ -36,6 +36,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import magic
 from flask import (
@@ -102,6 +103,7 @@ POLITICAL_GROUPS = {
         "Libertés, Indépendants, Outre-mer et Territoires (LIOT)",
         "Union des droites pour la République (UDR)",
         "Non-inscrit",
+        "Sans groupe déclaré (Assemblée nationale)",
     ],
     "Sénat": [
         "Les Républicains (Sénat)",
@@ -113,6 +115,7 @@ POLITICAL_GROUPS = {
         "Écologiste – Solidarité et Territoires (Sénat)",
         "Rassemblement Démocratique et Social Européen (RDSE)",
         "Non-inscrit (Sénat)",
+        "Sans groupe déclaré (Sénat)",
     ],
     "Parlement européen": [
         "Parti populaire européen (PPE)",
@@ -124,6 +127,7 @@ POLITICAL_GROUPS = {
         "Patriotes pour l'Europe",
         "Europe des Nations Souveraines (ESN)",
         "Non-inscrit (Parlement européen)",
+        "Sans groupe déclaré (Parlement européen)",
     ],
     "Autre": [
         "Gouvernement / Administration",
@@ -712,6 +716,30 @@ def fr_date(value):
         return value
 
 
+@app.template_filter("fr_datetime")
+def fr_datetime(value):
+    """Un horodatage ISO stocké (UTC) rendu en « JJ/MM/AAAA à HH:MM ».
+
+    Les fiches affichaient `created_at` tel quel :
+    « Enregistrée le 2026-10-10T20:10:32+00:00 ». C'est un détail de stockage,
+    pas une date lisible. L'heure est convertie à Paris, comme partout
+    ailleurs dans l'outil.
+    """
+    if not value:
+        return ""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    try:
+        moment = moment.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:                                   # noqa: BLE001
+        pass
+    return moment.strftime("%d/%m/%Y à %H:%M")
+
+
 @app.template_filter("days_until")
 def days_until(value):
     """Whole days from today to an ISO date. Negative if already past."""
@@ -1032,6 +1060,8 @@ def _init_db_locked():
             notes           TEXT,
             circonscription TEXT,
             email           TEXT,
+            photo_url       TEXT,            -- portrait officiel (Sénat / AN)
+            fiche_url       TEXT,            -- fiche parlementaire officielle
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
             role_detail     TEXT,   -- free text behind a ROLE_DETAIL_ROLES role
             religion        TEXT,   -- Religieux·se only, see RELIGIONS
@@ -1375,6 +1405,14 @@ def _init_db_locked():
         db.execute(
             "ALTER TABLE persons ADD COLUMN in_office INTEGER NOT NULL DEFAULT 1"
         )
+    # Portrait et fiche officielle. Les deux existent déjà dans l'elus.json de
+    # l'outil « Écrire à mes élus » du site, d'où ils sont repris tels quels
+    # par utils/sync_emails_from_elus.py : pas de nouvelle source à maintenir,
+    # et le CRM montre exactement ce que le site montre.
+    if "photo_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN photo_url TEXT")
+    if "fiche_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN fiche_url TEXT")
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")
@@ -5147,11 +5185,16 @@ def _conversation_groups(db, mails):
                  # anything imported before the column existed have none, so
                  # they keep falling back to the body.
                  "subject": m["subject"] or m["summary"],
+                 # Le corps, conservé à part : c'est lui qui porte la marque
+                 # « Mail d'un citoyen à … » posée par le pipeline citoyen, et
+                 # non l'objet. Voir le calcul de `type` plus bas.
+                 "resumes": [],
                  "elus": set(), "members": set(),
                  "has_doc": False, "directions": set()}
             groups[key] = g
             order.append(key)
         g["count"] += 1
+        g["resumes"].append(m["summary"] or "")
         if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
             g["last_date"] = m["mail_date"]
             g["subject"] = m["subject"] or m["summary"]
@@ -5166,8 +5209,17 @@ def _conversation_groups(db, mails):
         # Two independent questions, and the list used to answer only the first:
         # who wrote (a member, an anonymous citizen) and who was written to (an
         # élu·e, a journalist). A press exchange showed up as plain "Membre".
-        g["type"] = ("membre" if g["members"]
-                     else "citoyen" if g["subject"].startswith("Mail d'un citoyen")
+        # Le test portait sur `subject`, qui est l'OBJET du courriel. Or la
+        # marque « Mail d'un citoyen à … » est écrite par le pipeline citoyen
+        # dans le CORPS (`summary`, voir import_campaign_mails.py), et
+        # `g["subject"]` ne retombe sur le corps que si l'objet est vide.
+        # Conséquence : tout mail citoyen ayant un objet — c'est-à-dire la
+        # quasi-totalité — tombait dans « autre », et la colonne « Origine »
+        # restait vide. C'est ce que montre le gabarit : rien n'est affiché
+        # pour « autre ».
+        citoyen = any(r.startswith("Mail d'un citoyen") for r in g["resumes"])
+        g["type"] = ("citoyen" if citoyen
+                     else "membre" if g["members"]
                      else "autre")
         # "" quand on ne sait pas, "plusieurs" quand le fil mêle des types :
         # une valeur vide plutôt qu'un caractère d'affichage stocké comme donnée.
@@ -5308,8 +5360,12 @@ def deposit():
     son propre échange sait ce qu'elle dépose.
     """
     importer = _member_importer()
+    db_people = get_db().execute(
+        "SELECT id, name, contact_type FROM persons ORDER BY name COLLATE NOCASE"
+    ).fetchall()
     if request.method == "GET":
-        return render_template("deposit.html", importer=bool(importer))
+        return render_template("deposit.html", importer=bool(importer),
+                               people=db_people)
 
     if importer is None:
         flash("Le module d'import n'est pas présent dans le conteneur "
@@ -5322,6 +5378,27 @@ def deposit():
         return redirect(url_for("deposit"))
 
     db = get_db()
+    # Qui est en face, quand l'adresse n'a pas de fiche. Sans cette indication,
+    # un dépôt dont la contrepartie est inconnue mettait l'adresse en file et
+    # N'ENREGISTRAIT PAS le courriel — c'est pourtant le cas le plus courant du
+    # dépôt, le journaliste qui écrit depuis son adresse personnelle.
+    rattacher_a = (request.form.get("person_id") or "").strip()
+    nom_saisi = (request.form.get("person_nom") or "").strip()
+    if not rattacher_a.isdigit() and nom_saisi:
+        trouvees = db.execute(
+            "SELECT id FROM persons WHERE name = ? COLLATE NOCASE", (nom_saisi,)
+        ).fetchall()
+        if len(trouvees) == 1:
+            rattacher_a = str(trouvees[0]["id"])
+        else:
+            flash(f"« {nom_saisi} » : "
+                  + ("plusieurs fiches portent ce nom."
+                     if trouvees else "aucune fiche à ce nom.")
+                  + " Choisissez un nom proposé par la liste, ou laissez vide.",
+                  "error")
+            return redirect(url_for("deposit"))
+    rattacher_a = int(rattacher_a) if rattacher_a.isdigit() else None
+
     results, counts = [], {"imported": 0, "queued": 0,
                            "duplicate": 0, "unmatched": 0, "rejected": 0}
     for storage in files:
@@ -5337,7 +5414,8 @@ def deposit():
             continue
         try:
             msg = email.message_from_bytes(raw)
-            state, subject = importer.handle_one_message(db, msg)
+            state, subject = importer.handle_one_message(
+                db, msg, rattacher_a=rattacher_a)
         except Exception as exc:                     # noqa: BLE001
             # Un .eml mal formé ne doit pas emporter les autres fichiers du même
             # dépôt, ni rendre une erreur 500 à quelqu'un qui a juste glissé le
@@ -5411,8 +5489,32 @@ def unlinked_link():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    person_id = request.form.get("person_id") or ""
-    if not address or not person_id.isdigit():
+    person_id = (request.form.get("person_id") or "").strip()
+    nom = (request.form.get("person_nom") or "").strip()
+    if not address:
+        flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
+        return redirect(url_for("unlinked"))
+
+    # Sans JavaScript, le formulaire n'envoie qu'un nom, tapé avec l'aide du
+    # datalist : on le résout ici. Un nom porté par deux fiches n'est jamais
+    # tranché au hasard — rattacher un échange à la mauvaise personne est pire
+    # que de redemander.
+    if not person_id.isdigit() and nom:
+        homonymes = db.execute(
+            "SELECT id, name FROM persons WHERE name = ? COLLATE NOCASE", (nom,)
+        ).fetchall()
+        if len(homonymes) == 1:
+            person_id = str(homonymes[0]["id"])
+        elif len(homonymes) > 1:
+            flash(f"Plusieurs fiches portent le nom « {nom} » : ouvrez la fiche "
+                  f"voulue et rattachez l'adresse depuis celle-ci.", "error")
+            return redirect(url_for("unlinked"))
+        else:
+            flash(f"Aucune fiche au nom de « {nom} ». Choisissez un nom proposé "
+                  f"par la liste, ou créez la fiche d'abord.", "error")
+            return redirect(url_for("unlinked"))
+
+    if not person_id.isdigit():
         flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
         return redirect(url_for("unlinked"))
     person = db.execute(
@@ -5443,13 +5545,29 @@ def unlinked_ignore():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    target = "pending" if request.form.get("undo") else "ignored"
+    # Trois états possibles depuis l'interface :
+    #   pending  : remise en file (« Réexaminer »)
+    #   ignored  : plus proposée au rattachement, mais rien n'est bloqué
+    #   refused  : « ne jamais enregistrer » — plus de file ET plus d'import
+    #              automatique. Un dépôt manuel reste possible : c'est un geste
+    #              délibéré, et c'est la porte de sortie voulue.
+    if request.form.get("undo"):
+        target = "pending"
+    elif request.form.get("refuser"):
+        target = "refused"
+    else:
+        target = "ignored"
     db.execute("UPDATE civicrm_pending SET status = ? WHERE email = ?",
                (target, address))
     db.commit()
-    flash(f"{address} : {'remise en file' if target == 'pending' else 'ignorée'}.",
-          "success")
-    return redirect(url_for("unlinked", ignorees=1 if target == "ignored" else None))
+    libelle = {
+        "pending": "remise en file",
+        "ignored": "ignorée",
+        "refused": "ne sera plus jamais enregistrée automatiquement",
+    }[target]
+    flash(f"{address} : {libelle}.", "success")
+    return redirect(url_for("unlinked",
+                            ignorees=1 if target != "pending" else None))
 
 
 @app.route("/echanges/a-rattacher/ignorees")
@@ -5459,7 +5577,7 @@ def unlinked_ignored():
     try:
         rows = db.execute(
             "SELECT email, display, first_seen, last_seen, seen_count, status "
-            "FROM civicrm_pending WHERE status = 'ignored' "
+            "FROM civicrm_pending WHERE status IN ('ignored', 'refused') "
             "ORDER BY seen_count DESC, last_seen DESC").fetchall()
     except sqlite3.Error:
         rows = []
