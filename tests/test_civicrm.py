@@ -418,6 +418,34 @@ class QueueAndApplyTests(unittest.TestCase):
             ("tvey@lefigaro.fr",)).fetchone()
         self.assertEqual(count, 2)
 
+    def test_an_address_that_already_has_a_fiche_never_enters_the_queue(self):
+        # Le doublon que l'élargissement aux corps de courriels provoquait :
+        # un citoyen qui écrit à un·e élu·e emploie forcément « député » ou
+        # « sénateur », donc son adresse repartait en file alors qu'elle a
+        # déjà sa fiche. La file sert à demander « de qui s'agit-il ? ».
+        self.db.execute(
+            "INSERT INTO persons (name, contact_type, stance, created_at) "
+            "VALUES ('Claire Dupont', 'Autre', 'Inconnue', ?)", (NOW,))
+        self.db.execute(
+            "UPDATE persons SET email = 'Claire.Dupont@exemple.fr' "
+            "WHERE name = 'Claire Dupont'")
+        self.assertFalse(cl.enqueue(self.db, "claire.dupont@exemple.fr", "", NOW))
+        self.assertIsNone(self._pending("claire.dupont@exemple.fr"))
+
+    def test_a_learned_alias_never_enters_the_queue_either(self):
+        # Deuxième adresse apprise sur un fil : la fiche est connue, donc la
+        # question est déjà tranchée.
+        pid = self.db.execute(
+            "INSERT INTO persons (name, contact_type, stance, created_at) "
+            "VALUES ('Marc Olivier', 'Politique', 'Inconnue', ?)", (NOW,)).lastrowid
+        self.db.execute(
+            "INSERT INTO person_emails (email, person_id, source, created_at) "
+            "VALUES ('marc.olivier@assemblee-nationale.fr', ?, 'fil', ?)",
+            (pid, NOW))
+        self.assertFalse(cl.enqueue(
+            self.db, "Marc.Olivier@assemblee-nationale.fr", "", NOW))
+        self.assertIsNone(self._pending("marc.olivier@assemblee-nationale.fr"))
+
     def test_generic_addresses_never_enter_the_queue(self):
         self.assertFalse(cl.enqueue(self.db, "redaction@lemonde.fr", "", NOW))
         self.assertIsNone(self._pending("redaction@lemonde.fr"))
