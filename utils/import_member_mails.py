@@ -647,7 +647,6 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
         'imported'    rattaché à une personne et à un membre
         'duplicate'   ce Message-ID est déjà en base
         'queued'      personne reconnue, adresse mise en file « à rattacher »
-        'refused'     adresse marquée « ne jamais enregistrer »
         'unmatched'   ni l'un ni l'autre (aucun membre PauseIA dans le courriel)
 
     `rattacher_a` (identifiant de fiche) répond au cas le plus courant du dépôt
@@ -684,10 +683,6 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
     name_patterns = build_name_pattern_index(db)
     direction, matches, member, learn, low_conf = classify(
         msg, db, email_index, name_patterns)
-    # Un dépôt manuel passe outre le refus : quelqu'un a choisi de confier cet
-    # échange au CRM, ce qui est exactement l'exception prévue.
-    if direction and not rattacher_a and contrepartie_refusee(db, msg):
-        return "refused", subject
     if direction:
         record(db, msg, direction, matches, member, learn, low_conf,
                dry_run=False, auto_publish=auto_publish)
@@ -747,7 +742,7 @@ def main():
         last_uid = get_last_uid(db, "members")
         uids = fetch_uids(conn, mailbox, last_uid, args.backfill)
         log(f"Audit mailbox {mailbox!r}: {len(uids)} message(s) to inspect.")
-        imported = dup = skipped = queued = out_of_scope = max_uid = 0
+        imported = dup = skipped = queued = out_of_scope = refuses = max_uid = 0
         max_uid = last_uid
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for index, uid in enumerate(uids):
@@ -760,7 +755,22 @@ def main():
                 else:
                     direction, matches, member, learn, low_conf = classify(
                         msg, db, email_index, name_patterns)
-                    if direction:
+                    refusee = contrepartie_refusee(db, msg)
+                    if direction and refusee:
+                        # « Ne jamais enregistrer » : on s'arrête ici, mais on
+                        # note le Message-ID, sinon chaque balayage réexaminerait
+                        # le même courriel jusqu'à la fin des temps.
+                        if not args.dry_run and mid:
+                            db.execute(
+                                "INSERT OR IGNORE INTO imported_mails "
+                                "(message_id, uid, mailbox, imported_at) "
+                                "VALUES (?, ?, ?, ?)",
+                                (mid, None, mailbox, now))
+                        refuses += 1
+                        if args.verbose:
+                            log(f"  [refusé] {refusee} — "
+                                f"{decoded(msg.get('Subject'))!r}")
+                    elif direction:
                         record(db, msg, direction, matches, member, learn,
                                low_conf, args.dry_run, auto_publish)
                         imported += 1
@@ -790,6 +800,7 @@ def main():
         log(f"Done. Mails {verb}: {imported} | already-imported skipped: {dup} | "
             f"not member↔élu: {skipped} | queued for CiviCRM: {queued} | "
             f"outside the queue's scope (personal mail, suppliers): {out_of_scope} | "
+            f"refused addresses: {refuses} | "
             f"last UID now: {max_uid if not args.dry_run else last_uid}.")
     except BaseException as exc:             # noqa: BLE001 — recorded, re-raised
         # Including KeyboardInterrupt: a run cut short did not finish its sweep,

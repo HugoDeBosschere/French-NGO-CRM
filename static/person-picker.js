@@ -166,16 +166,11 @@
 
     champ.addEventListener("blur", function () { window.setTimeout(fermer, 120); });
 
-    form.addEventListener("submit", function (ev) {
-      if (!cache.value) {
-        ev.preventDefault();
-        champ.focus();
-        champ.classList.add("picker-erreur");
-        window.setTimeout(function () {
-          champ.classList.remove("picker-erreur");
-        }, 1200);
-      }
-    });
+    // Pas de garde sur l'envoi : le champ peut être facultatif (page de dépôt),
+    // et quand il ne l'est pas, `required` suffit. Un nom tapé sans avoir
+    // cliqué dans la liste est résolu côté serveur, qui sait aussi dire
+    // « plusieurs fiches portent ce nom » — ce qu'un blocage muet ne saurait
+    // pas faire.
   }
 
   var formulaires = document.querySelectorAll("form[data-person-picker]");

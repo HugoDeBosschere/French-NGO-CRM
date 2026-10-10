@@ -1214,3 +1214,9 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+/* Champ « ces courriels concernent » de la page de dépôt. */
+.deposit-person { margin: 1rem 0; }
+.deposit-person label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.deposit-person .picker-input { max-width: 22rem; }
+.deposit-person .hint { margin-top: .35rem; }

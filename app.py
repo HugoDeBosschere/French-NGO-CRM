@@ -5311,8 +5311,12 @@ def deposit():
     son propre échange sait ce qu'elle dépose.
     """
     importer = _member_importer()
+    db_people = get_db().execute(
+        "SELECT id, name, contact_type FROM persons ORDER BY name COLLATE NOCASE"
+    ).fetchall()
     if request.method == "GET":
-        return render_template("deposit.html", importer=bool(importer))
+        return render_template("deposit.html", importer=bool(importer),
+                               people=db_people)
 
     if importer is None:
         flash("Le module d'import n'est pas présent dans le conteneur "
@@ -5325,6 +5329,27 @@ def deposit():
         return redirect(url_for("deposit"))
 
     db = get_db()
+    # Qui est en face, quand l'adresse n'a pas de fiche. Sans cette indication,
+    # un dépôt dont la contrepartie est inconnue mettait l'adresse en file et
+    # N'ENREGISTRAIT PAS le courriel — c'est pourtant le cas le plus courant du
+    # dépôt, le journaliste qui écrit depuis son adresse personnelle.
+    rattacher_a = (request.form.get("person_id") or "").strip()
+    nom_saisi = (request.form.get("person_nom") or "").strip()
+    if not rattacher_a.isdigit() and nom_saisi:
+        trouvees = db.execute(
+            "SELECT id FROM persons WHERE name = ? COLLATE NOCASE", (nom_saisi,)
+        ).fetchall()
+        if len(trouvees) == 1:
+            rattacher_a = str(trouvees[0]["id"])
+        else:
+            flash(f"« {nom_saisi} » : "
+                  + ("plusieurs fiches portent ce nom."
+                     if trouvees else "aucune fiche à ce nom.")
+                  + " Choisissez un nom proposé par la liste, ou laissez vide.",
+                  "error")
+            return redirect(url_for("deposit"))
+    rattacher_a = int(rattacher_a) if rattacher_a.isdigit() else None
+
     results, counts = [], {"imported": 0, "queued": 0,
                            "duplicate": 0, "unmatched": 0, "rejected": 0}
     for storage in files:
@@ -5340,7 +5365,8 @@ def deposit():
             continue
         try:
             msg = email.message_from_bytes(raw)
-            state, subject = importer.handle_one_message(db, msg)
+            state, subject = importer.handle_one_message(
+                db, msg, rattacher_a=rattacher_a)
         except Exception as exc:                     # noqa: BLE001
             # Un .eml mal formé ne doit pas emporter les autres fichiers du même
             # dépôt, ni rendre une erreur 500 à quelqu'un qui a juste glissé le
