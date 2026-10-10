@@ -5414,8 +5414,32 @@ def unlinked_link():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    person_id = request.form.get("person_id") or ""
-    if not address or not person_id.isdigit():
+    person_id = (request.form.get("person_id") or "").strip()
+    nom = (request.form.get("person_nom") or "").strip()
+    if not address:
+        flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
+        return redirect(url_for("unlinked"))
+
+    # Sans JavaScript, le formulaire n'envoie qu'un nom, tapé avec l'aide du
+    # datalist : on le résout ici. Un nom porté par deux fiches n'est jamais
+    # tranché au hasard — rattacher un échange à la mauvaise personne est pire
+    # que de redemander.
+    if not person_id.isdigit() and nom:
+        homonymes = db.execute(
+            "SELECT id, name FROM persons WHERE name = ? COLLATE NOCASE", (nom,)
+        ).fetchall()
+        if len(homonymes) == 1:
+            person_id = str(homonymes[0]["id"])
+        elif len(homonymes) > 1:
+            flash(f"Plusieurs fiches portent le nom « {nom} » : ouvrez la fiche "
+                  f"voulue et rattachez l'adresse depuis celle-ci.", "error")
+            return redirect(url_for("unlinked"))
+        else:
+            flash(f"Aucune fiche au nom de « {nom} ». Choisissez un nom proposé "
+                  f"par la liste, ou créez la fiche d'abord.", "error")
+            return redirect(url_for("unlinked"))
+
+    if not person_id.isdigit():
         flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
         return redirect(url_for("unlinked"))
     person = db.execute(
@@ -5446,13 +5470,29 @@ def unlinked_ignore():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    target = "pending" if request.form.get("undo") else "ignored"
+    # Trois états possibles depuis l'interface :
+    #   pending  : remise en file (« Réexaminer »)
+    #   ignored  : plus proposée au rattachement, mais rien n'est bloqué
+    #   refused  : « ne jamais enregistrer » — plus de file ET plus d'import
+    #              automatique. Un dépôt manuel reste possible : c'est un geste
+    #              délibéré, et c'est la porte de sortie voulue.
+    if request.form.get("undo"):
+        target = "pending"
+    elif request.form.get("refuser"):
+        target = "refused"
+    else:
+        target = "ignored"
     db.execute("UPDATE civicrm_pending SET status = ? WHERE email = ?",
                (target, address))
     db.commit()
-    flash(f"{address} : {'remise en file' if target == 'pending' else 'ignorée'}.",
-          "success")
-    return redirect(url_for("unlinked", ignorees=1 if target == "ignored" else None))
+    libelle = {
+        "pending": "remise en file",
+        "ignored": "ignorée",
+        "refused": "ne sera plus jamais enregistrée automatiquement",
+    }[target]
+    flash(f"{address} : {libelle}.", "success")
+    return redirect(url_for("unlinked",
+                            ignorees=1 if target != "pending" else None))
 
 
 @app.route("/echanges/a-rattacher/ignorees")
@@ -5462,7 +5502,7 @@ def unlinked_ignored():
     try:
         rows = db.execute(
             "SELECT email, display, first_seen, last_seen, seen_count, status "
-            "FROM civicrm_pending WHERE status = 'ignored' "
+            "FROM civicrm_pending WHERE status IN ('ignored', 'refused') "
             "ORDER BY seen_count DESC, last_seen DESC").fetchall()
     except sqlite3.Error:
         rows = []

@@ -58,7 +58,12 @@ import maildomains  # noqa: E402
 import importruns  # noqa: E402
 # CiviCRM holds ~12 900 journalists this CRM does not. An address we cannot match
 # is queued here rather than dropped, and civicrm_lookup.py turns it into a fiche.
-from civicrm_lookup import enqueue, ensure_civicrm_tables, is_bulk  # noqa: E402
+from civicrm_lookup import (  # noqa: E402
+    enqueue,
+    ensure_civicrm_tables,
+    is_bulk,
+    is_generic,
+)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.environ.get("IMAP_DB_PATH", os.path.join(ROOT, "meetings.db"))
@@ -592,7 +597,47 @@ def connect_imap():
     return conn
 
 
-def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
+def contrepartie_refusee(db, msg):
+    """Vrai si une adresse externe de ce courriel est marquée « ne jamais
+    enregistrer ». Le réglage vaut pour la capture automatique seule : un dépôt
+    manuel est un geste délibéré, il passe outre."""
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+        addr = (address or "").strip().lower()
+        if not addr or is_member(addr):
+            continue
+        try:
+            if db.execute(
+                "SELECT 1 FROM civicrm_pending WHERE email = ? AND status = 'refused'",
+                (addr,),
+            ).fetchone():
+                return addr
+        except sqlite3.Error:
+            return None
+    return None
+
+
+def apprendre_contrepartie(db, msg, person_id):
+    """Rattache à `person_id` la ou les adresses externes de ce courriel.
+
+    « Externe » = tout ce qui n'est pas une adresse de membre : c'est la
+    contrepartie, celle dont on veut se souvenir. Les adresses génériques
+    (contact@, no-reply@) sont écartées, elles ne désignent personne.
+    """
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    vues = set()
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+        addr = (address or "").strip().lower()
+        if not addr or addr in vues or is_member(addr) or is_generic(addr):
+            continue
+        vues.add(addr)
+        db.execute(
+            "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at)"
+            " VALUES (?, ?, 'depot', ?)", (addr, person_id, now))
+    return len(vues)
+
+
+def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
+                       rattacher_a=None):
     """Traiter un courriel isolé, exactement comme l'import le ferait.
 
     Écrit pour le dépôt manuel (`/echanges/deposer`), qui doit passer par le
@@ -602,7 +647,17 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
         'imported'    rattaché à une personne et à un membre
         'duplicate'   ce Message-ID est déjà en base
         'queued'      personne reconnue, adresse mise en file « à rattacher »
+        'refused'     adresse marquée « ne jamais enregistrer »
         'unmatched'   ni l'un ni l'autre (aucun membre PauseIA dans le courriel)
+
+    `rattacher_a` (identifiant de fiche) répond au cas le plus courant du dépôt
+    manuel : le journaliste qui écrit depuis son gmail. Sans lui, un dépôt dont
+    l'adresse est inconnue repartait en file d'attente et LE COURRIEL N'ÉTAIT PAS
+    ENREGISTRÉ — alors que la personne qui dépose sait très bien de qui il
+    s'agit. Avec lui, l'adresse est apprise AVANT le classement, donc le
+    classifieur la reconnaît, le courriel entre, et tous les suivants de cette
+    adresse entreront seuls. Une validation humaine ne devrait jamais avoir à
+    être refaite.
 
     L'appelant est responsable du commit : un dépôt de dix fichiers est une
     seule transaction, ou rien.
@@ -623,10 +678,16 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False):
         return "duplicate", decoded(msg.get("Subject")) or "(sans objet)"
 
     subject = decoded(msg.get("Subject")) or "(sans objet)"
+    if rattacher_a:
+        apprendre_contrepartie(db, msg, int(rattacher_a))
     email_index = load_email_index_with_aliases(db)
     name_patterns = build_name_pattern_index(db)
     direction, matches, member, learn, low_conf = classify(
         msg, db, email_index, name_patterns)
+    # Un dépôt manuel passe outre le refus : quelqu'un a choisi de confier cet
+    # échange au CRM, ce qui est exactement l'exception prévue.
+    if direction and not rattacher_a and contrepartie_refusee(db, msg):
+        return "refused", subject
     if direction:
         record(db, msg, direction, matches, member, learn, low_conf,
                dry_run=False, auto_publish=auto_publish)

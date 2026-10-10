@@ -36,6 +36,7 @@
         <th>Personne(s)</th>
         <th>Résumé</th>
         <th>Doc</th>
+        <th><span class="sr-only">Supprimer</span></th>
       </tr>
     </thead>
     <tbody>
@@ -54,6 +55,18 @@
           </span>
         </td>
         <td class="nowrap">{% if x['document_stored_name'] %}📎{% endif %}</td>
+        {# Supprimer sans avoir à ouvrir la fiche : un courriel capté à tort se
+           repère dans la liste, pas en l'ouvrant un par un. La suppression est
+           définitive mais sans effet de bord — la déduplication s'appuie sur
+           `imported_mails`, que cette suppression ne touche pas, donc l'import
+           suivant ne le fait pas revenir. #}
+        <td class="nowrap" onclick="event.stopPropagation()">
+          <form method="post" action="{{ url_for('delete_mail', mail_id=x['id']) }}"
+                onsubmit="return confirm('Supprimer définitivement ce courriel du CRM ?\n\nIl ne reviendra pas au prochain import.')">
+            <button class="btn btn-ghost btn-sm" type="submit"
+                    title="Supprimer ce courriel du CRM">✕</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

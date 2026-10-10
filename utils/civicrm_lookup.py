@@ -215,6 +215,17 @@ def enqueue(db, address, display, now):
     address = clean_email(address)
     if not address or is_generic(address):
         return False
+    # « Ne jamais enregistrer » : l'adresse ne revient plus en file et ses
+    # courriels n'entrent plus tout seuls. Un dépôt manuel reste possible,
+    # c'est un geste délibéré — voir handle_one_message(rattacher_a=…).
+    try:
+        if db.execute(
+            "SELECT 1 FROM civicrm_pending WHERE email = ? AND status = 'refused'",
+            (address,),
+        ).fetchone():
+            return False
+    except sqlite3.Error:
+        pass
     display = (display or "").strip() or None
     try:
         # `rowcount` can't tell an insert from an ON CONFLICT update — both report
