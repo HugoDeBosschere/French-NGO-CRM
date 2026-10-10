@@ -1035,6 +1035,8 @@ def _init_db_locked():
             notes           TEXT,
             circonscription TEXT,
             email           TEXT,
+            photo_url       TEXT,            -- portrait officiel (Sénat / AN)
+            fiche_url       TEXT,            -- fiche parlementaire officielle
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
             role_detail     TEXT,   -- free text behind a ROLE_DETAIL_ROLES role
             religion        TEXT,   -- Religieux·se only, see RELIGIONS
@@ -1378,6 +1380,14 @@ def _init_db_locked():
         db.execute(
             "ALTER TABLE persons ADD COLUMN in_office INTEGER NOT NULL DEFAULT 1"
         )
+    # Portrait et fiche officielle. Les deux existent déjà dans l'elus.json de
+    # l'outil « Écrire à mes élus » du site, d'où ils sont repris tels quels
+    # par utils/sync_emails_from_elus.py : pas de nouvelle source à maintenir,
+    # et le CRM montre exactement ce que le site montre.
+    if "photo_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN photo_url TEXT")
+    if "fiche_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN fiche_url TEXT")
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")

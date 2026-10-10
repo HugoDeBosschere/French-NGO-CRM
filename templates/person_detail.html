@@ -19,6 +19,29 @@
   </span>
 </div>
 
+{# Portrait officiel et fiche parlementaire, repris de l'elus.json de l'outil
+   « Écrire à mes élus » du site : même source, donc le CRM montre exactement
+   ce que montre pauseia.fr. Le bloc n'apparaît que s'il y a quelque chose à
+   montrer, et la photo disparaît toute seule si l'URL casse (onerror), sans
+   laisser d'icône d'image brisée. #}
+{% if p['photo_url'] or p['fiche_url'] %}
+<div class="card fiche-officielle">
+  {% if p['photo_url'] %}
+  <img class="portrait" src="{{ p['photo_url'] }}" alt="Portrait de {{ p['name'] }}"
+       loading="lazy" referrerpolicy="no-referrer"
+       onerror="this.closest('.fiche-officielle').classList.add('sans-portrait'); this.remove();">
+  {% endif %}
+  <div>
+    <p class="muted">Source officielle</p>
+    {% if p['fiche_url'] %}
+    <a class="btn" href="{{ p['fiche_url'] }}" target="_blank" rel="noopener noreferrer"
+       title="Ouvre la fiche officielle sur le site de l'assemblée concernée">
+      Voir la fiche parlementaire ↗</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="grid-2">
     <div class="field">
