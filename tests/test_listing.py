@@ -94,6 +94,26 @@ class ListingTests(unittest.TestCase):
         corps = html.split("</head>")[1]
         self.assertIn("Suivants", corps)
 
+    def test_the_two_readings_live_under_one_tab(self):
+        # « Échanges » et « Tous les courriels » étaient deux sous-onglets, et
+        # « Suivi des échanges » et « Courriels » deux entrées du menu, pour
+        # les mêmes courriels. Un seul onglet désormais, deux lectures — sans
+        # rien perdre : chaque vue garde ses filtres et ses actions.
+        for url in ("/echanges", "/mails"):
+            html = self._html(url)
+            self.assertNotIn('class="subtab" href="/mails"', html, url)
+            self.assertNotIn('class="subtab active" href="/mails"', html, url)
+            self.assertIn("Par conversation", html, url)
+            self.assertIn("Un par un", html, url)
+            # L'onglet « Échanges » reste actif sur les deux.
+            self.assertIn('class="subtab active"', html, url)
+        self.assertIn('aria-current="page"', self._html("/mails"))
+
+    def test_the_other_subtabs_survive_the_merge(self):
+        html = self._html("/echanges")
+        for onglet in ("Échanges", "Membres", "À rattacher", "Déposer"):
+            self.assertIn(onglet, html)
+
     def test_a_search_keeps_its_terms_across_pages(self):
         html = self._html("/mails?q=Sujet&page=2")
         self.assertIn("q=Sujet", html)

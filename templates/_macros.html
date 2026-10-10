@@ -514,3 +514,33 @@
 </nav>
 {% endif %}
 {% endmacro %}
+
+{# La barre des sous-onglets du suivi des échanges, en un seul endroit : elle
+   était recopiée dans cinq gabarits, et une cinquième copie oubliée suffisait
+   à faire disparaître un onglet d'une page sur deux.
+
+   « Échanges » et « Tous les courriels » n'y font plus qu'un onglet : ce sont
+   deux lectures des mêmes courriels — par conversation, ou un par un — et non
+   deux sections. Le choix de la lecture se fait sous le titre, par
+   `vue_echanges()`. Rien n'est perdu : chaque vue garde ses filtres, sa
+   recherche, sa pagination et ses actions. #}
+{% macro exchange_subtabs(active) %}
+<nav class="subtabs">
+  <a class="subtab{{ ' active' if active == 'echanges' }}" href="{{ url_for('exchanges') }}">Échanges</a>
+  <a class="subtab{{ ' active' if active == 'membres' }}" href="{{ url_for('members') }}">Membres</a>
+  <a class="subtab{{ ' active' if active == 'rattacher' }}" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %} <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
+  <a class="subtab{{ ' active' if active == 'deposer' }}" href="{{ url_for('deposit') }}">Déposer</a>
+</nav>
+{% endmacro %}
+
+{# Les deux lectures de l'onglet « Échanges ». #}
+{% macro vue_echanges(active) %}
+<nav class="vue-switch" aria-label="Affichage des courriels">
+  <a class="vue{{ ' vue-on' if active == 'fils' }}" href="{{ url_for('exchanges') }}"
+     title="Les courriels regroupés par conversation, avec les filtres par type, par sujet et par membre"
+     {% if active == 'fils' %}aria-current="page"{% endif %}>Par conversation</a>
+  <a class="vue{{ ' vue-on' if active == 'liste' }}" href="{{ url_for('mails') }}"
+     title="Tous les courriels un par un, du plus récent au plus ancien, page par page"
+     {% if active == 'liste' %}aria-current="page"{% endif %}>Un par un</a>
+</nav>
+{% endmacro %}

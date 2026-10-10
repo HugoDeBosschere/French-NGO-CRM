@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import import_banner %}
+{% from "_macros.html" import import_banner, exchange_subtabs  %}
 {% block title %}Échanges à rattacher{% endblock %}
 {% block container_class %}container-wide{% endblock %}
 {% block content %}
@@ -7,13 +7,7 @@
   <h1>Suivi des échanges</h1>
 </div>
 
-<nav class="subtabs">
-  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
-  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
-  <a class="subtab{{ ' active' if not ignored }}" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %} <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
-  <a class="subtab" href="{{ url_for('deposit') }}">Déposer</a>
-  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
-</nav>
+{{ exchange_subtabs('rattacher' if not ignored else '') }}
 
 {{ import_banner(import_state) }}
 

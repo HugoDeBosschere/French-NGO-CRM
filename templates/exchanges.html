@@ -1,18 +1,14 @@
 {% extends "base.html" %}
-{% from "_macros.html" import import_banner %}
+{% from "_macros.html" import import_banner, exchange_subtabs, vue_echanges  %}
 {% block title %}Suivi des échanges{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Suivi des échanges</h1>
+  <a class="btn btn-primary" href="{{ url_for('new_mail') }}">+ Nouveau courriel</a>
 </div>
 
-<nav class="subtabs">
-  <a class="subtab active" href="{{ url_for('exchanges') }}">Échanges</a>
-  <a class="subtab" href="{{ url_for('members') }}">Membres</a>
-  <a class="subtab" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %} <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
-  <a class="subtab" href="{{ url_for('deposit') }}">Déposer</a>
-  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
-</nav>
+{{ exchange_subtabs('echanges') }}
+{{ vue_echanges('fils') }}
 
 {{ import_banner(import_state) }}
 

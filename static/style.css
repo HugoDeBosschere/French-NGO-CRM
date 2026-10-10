@@ -1275,3 +1275,30 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   font: inherit;
 }
 .checklist-filter:focus { outline: 2px solid var(--brand, #2d6cdf); outline-offset: 1px; }
+
+/* ---------- Les deux lectures de l'onglet « Échanges » ---------- */
+/* « Par conversation » et « Un par un » ne sont pas deux sections : c'est le
+   même jeu de courriels, lu de deux façons. Un interrupteur le dit mieux que
+   deux onglets, qui laissaient croire à deux contenus différents. */
+.vue-switch {
+  display: inline-flex;
+  margin: -.75rem 0 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.vue {
+  padding: .4rem .9rem;
+  font-size: .92rem;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.vue + .vue { border-left: 1px solid var(--line); }
+.vue:hover { background: var(--bg); text-decoration: none; }
+.vue-on {
+  background: var(--brand-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
