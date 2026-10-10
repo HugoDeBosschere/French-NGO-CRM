@@ -5150,11 +5150,16 @@ def _conversation_groups(db, mails):
                  # anything imported before the column existed have none, so
                  # they keep falling back to the body.
                  "subject": m["subject"] or m["summary"],
+                 # Le corps, conservé à part : c'est lui qui porte la marque
+                 # « Mail d'un citoyen à … » posée par le pipeline citoyen, et
+                 # non l'objet. Voir le calcul de `type` plus bas.
+                 "resumes": [],
                  "elus": set(), "members": set(),
                  "has_doc": False, "directions": set()}
             groups[key] = g
             order.append(key)
         g["count"] += 1
+        g["resumes"].append(m["summary"] or "")
         if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
             g["last_date"] = m["mail_date"]
             g["subject"] = m["subject"] or m["summary"]
@@ -5169,8 +5174,17 @@ def _conversation_groups(db, mails):
         # Two independent questions, and the list used to answer only the first:
         # who wrote (a member, an anonymous citizen) and who was written to (an
         # élu·e, a journalist). A press exchange showed up as plain "Membre".
-        g["type"] = ("membre" if g["members"]
-                     else "citoyen" if g["subject"].startswith("Mail d'un citoyen")
+        # Le test portait sur `subject`, qui est l'OBJET du courriel. Or la
+        # marque « Mail d'un citoyen à … » est écrite par le pipeline citoyen
+        # dans le CORPS (`summary`, voir import_campaign_mails.py), et
+        # `g["subject"]` ne retombe sur le corps que si l'objet est vide.
+        # Conséquence : tout mail citoyen ayant un objet — c'est-à-dire la
+        # quasi-totalité — tombait dans « autre », et la colonne « Origine »
+        # restait vide. C'est ce que montre le gabarit : rien n'est affiché
+        # pour « autre ».
+        citoyen = any(r.startswith("Mail d'un citoyen") for r in g["resumes"])
+        g["type"] = ("citoyen" if citoyen
+                     else "membre" if g["members"]
                      else "autre")
         # "" quand on ne sait pas, "plusieurs" quand le fil mêle des types :
         # une valeur vide plutôt qu'un caractère d'affichage stocké comme donnée.
