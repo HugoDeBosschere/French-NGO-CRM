@@ -487,7 +487,7 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
     # to a list, so there is no person behind the address to look up. Cheapest
     # and broadest test, hence first.
     if is_bulk(msg):
-        return 0, 0
+        return 0, 0, 0
 
     from_pairs = addr_pairs(msg, "From")
     to_pairs = addr_pairs(msg, "To", "Cc")
@@ -499,7 +499,7 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
     elif to_member and not from_member:
         candidates = from_pairs    # someone unknown wrote to a member
     else:
-        return 0, 0
+        return 0, 0, 0
 
     queued = out_of_scope = hors_perimetre_mais_elus = 0
     for display, address in candidates:

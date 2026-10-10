@@ -338,10 +338,25 @@ class QueueFromMailTests(unittest.TestCase):
 
     def test_the_count_of_what_was_left_out_is_returned(self):
         # Pour que le journal d'import dise ce qu'il écarte, sans le stocker.
-        queued, out_of_scope = im.queue_unknown_counterparts(
+        # Troisième valeur : les adresses hors périmètre entrées quand même
+        # parce que le corps parle d'élu·es (voir tests/test_parle_delus.py).
+        queued, out_of_scope, via_elus = im.queue_unknown_counterparts(
             self.db, self._mail("flavien@pauseia.fr", "dr.durand@orange.fr"),
             NOW)
-        self.assertEqual((queued, out_of_scope), (0, 1))
+        self.assertEqual((queued, out_of_scope, via_elus), (0, 1, 0))
+
+    def test_a_personal_address_writing_about_an_elu_is_queued(self):
+        # Le citoyen qui nous répond « j'ai obtenu un rendez-vous avec mon
+        # député » : adresse personnelle, donc hors périmètre, mais le corps
+        # donne la raison positive d'entrer. Sans ça, il passait à la trappe.
+        msg = self._mail("flavien@pauseia.fr", "citoyen@orange.fr")
+        msg.set_payload(
+            "J'ai obtenu un rendez-vous avec mon député, merci pour l'outil.",
+            charset="utf-8")
+        queued, out_of_scope, via_elus = im.queue_unknown_counterparts(
+            self.db, msg, NOW)
+        self.assertEqual((queued, out_of_scope, via_elus), (1, 0, 1))
+        self.assertIn("citoyen@orange.fr", self._queued())
 
     def test_the_member_s_own_address_is_never_queued(self):
         im.queue_unknown_counterparts(
