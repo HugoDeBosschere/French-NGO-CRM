@@ -35,6 +35,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from orglink import link_group  # noqa: E402
+from elus_roster import (  # noqa: E402
+    GROUPE_ATTENTE,
+    app_constant,
+    merge_roles,
+    resoudre_groupe,
+)
 
 SRC = os.path.join(ROOT, "actual_dataset", "eurodeputes_fr.json")
 DB = os.path.join(ROOT, "meetings.db")
@@ -115,21 +121,59 @@ def main():
     db.execute("PRAGMA busy_timeout = 30000")
     db.execute("PRAGMA foreign_keys = ON")
 
-    existing = {r[0] for r in db.execute("SELECT name FROM persons")}
+    # Même correctif que pour les deux autres chambres (utils/elus_roster.py) :
+    # on lit le rôle, pour voir qu'une fiche existante n'a pas encore le mandat.
+    existing = {
+        r[0]: (r[1], r[2]) for r in db.execute("SELECT name, id, role FROM persons")
+    }
+    roles_order = app_constant("POLITICAL_ROLES")
+    groupes_neutres = set(app_constant("POLITICAL_GROUPS")["Autre"])
     seen = set()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     inserted = skipped = backfilled = 0
+    promus, unmapped, sans_groupe_decl = [], [], []
     for m in meps:
         name = m["nom_complet"]
         seen.add(name)
+        # Un groupe inconnu ne doit plus planter l'import au milieu : la
+        # personne entre avec le groupe d'attente, et l'anomalie est signalée
+        # à la fin, une fois tout le monde enregistré.
+        group, anomalie = resoudre_groupe(
+            m["groupe"], GROUPE_TO_GROUP, "Parlement européen"
+        )
+        if anomalie:
+            unmapped.append((name, anomalie))
+        elif group == GROUPE_ATTENTE["Parlement européen"]:
+            sans_groupe_decl.append(name)
+
         if name in existing:
-            skipped += 1
+            pid, role_actuel = existing[name]
+            fusion = merge_roles(role_actuel, ROLE, roles_order)
+            if fusion != (role_actuel or ""):
+                ancien_groupe = db.execute(
+                    "SELECT political_group FROM persons WHERE id = ?", (pid,)
+                ).fetchone()[0]
+                db.execute(
+                    "UPDATE persons SET role = ?, political_group = ?,"
+                    " email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?",
+                    (
+                        fusion,
+                        group if not ancien_groupe or ancien_groupe in groupes_neutres
+                        else ancien_groupe,
+                        m["email"],
+                        pid,
+                    ),
+                )
+                link_group(db, pid, group, "Parlement européen")
+                promus.append(f"{name} : {role_actuel or '—'} -> {fusion}")
+            else:
+                skipped += 1
             if m["email"]:
                 backfilled += db.execute(
-                    "UPDATE persons SET email = ? WHERE name = ? AND role = ? "
+                    "UPDATE persons SET email = ? WHERE name = ? AND role LIKE ? "
                     "AND (email IS NULL OR email = '')",
-                    (m["email"], name, ROLE),
+                    (m["email"], name, f"%{ROLE}%"),
                 ).rowcount
             continue
         cur = db.execute(
@@ -139,12 +183,11 @@ def main():
                 added_by, validated_by, created_at
             ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)
             """,
-            (name, ROLE, GROUPE_TO_GROUP[m["groupe"]], "Inconnu", m["email"], now),
+            (name, ROLE, group, "Inconnu", m["email"], now),
         )
-        link_group(db, cur.lastrowid, GROUPE_TO_GROUP[m["groupe"]],
-                   "Parlement européen")
+        link_group(db, cur.lastrowid, group, "Parlement européen")
         inserted += 1
-        existing.add(name)
+        existing[name] = (cur.lastrowid, ROLE)
 
     db.commit()
 
@@ -165,7 +208,23 @@ def main():
             f"Plus au Parlement ({len(gone)}) — conservé·es, à vérifier à la "
             f"main: {', '.join(gone)}"
         )
+    if promus:
+        print(f"\nMandat de député·e européen·ne ajouté à {len(promus)} fiche(s) :")
+        for ligne in promus:
+            print(f"  {ligne}")
+    if sans_groupe_decl:
+        print(
+            f"\n{len(sans_groupe_decl)} eurodéputé·e(s) sans groupe déclaré, "
+            f"rangé·es dans « {GROUPE_ATTENTE['Parlement européen']} » : "
+            + ", ".join(sans_groupe_decl[:10])
+            + (" …" if len(sans_groupe_decl) > 10 else "")
+        )
     print(f"persons table now holds: {total}")
+    if unmapped:
+        raise SystemExit(
+            f"Groupes inconnus ({len(unmapped)}), "
+            f"à ajouter à GROUPE_TO_GROUP : {unmapped!r}"
+        )
 
 
 if __name__ == "__main__":

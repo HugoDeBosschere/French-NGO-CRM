@@ -102,6 +102,7 @@ POLITICAL_GROUPS = {
         "Libertés, Indépendants, Outre-mer et Territoires (LIOT)",
         "Union des droites pour la République (UDR)",
         "Non-inscrit",
+        "Sans groupe déclaré (Assemblée nationale)",
     ],
     "Sénat": [
         "Les Républicains (Sénat)",
@@ -113,6 +114,7 @@ POLITICAL_GROUPS = {
         "Écologiste – Solidarité et Territoires (Sénat)",
         "Rassemblement Démocratique et Social Européen (RDSE)",
         "Non-inscrit (Sénat)",
+        "Sans groupe déclaré (Sénat)",
     ],
     "Parlement européen": [
         "Parti populaire européen (PPE)",
@@ -124,6 +126,7 @@ POLITICAL_GROUPS = {
         "Patriotes pour l'Europe",
         "Europe des Nations Souveraines (ESN)",
         "Non-inscrit (Parlement européen)",
+        "Sans groupe déclaré (Parlement européen)",
     ],
     "Autre": [
         "Gouvernement / Administration",

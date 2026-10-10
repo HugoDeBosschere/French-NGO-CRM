@@ -4,6 +4,10 @@ After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
 
+# Prévient en cas d'échec (unité modèle alerte@.service). Sans cette ligne,
+# une panne ne se voit que dans le journal, c'est-à-dire par personne.
+OnFailure=alerte@%n.service
+
 [Service]
 Type=oneshot
 # Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
