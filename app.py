@@ -2288,7 +2288,8 @@ def _persons_of(db, join_table, key_col, key_id):
     return db.execute(
         f"""
         SELECT p.id, p.name, p.contact_type, p.role, p.stance,
-               p.photo_url, p.fiche_url,
+               p.photo_url, p.fiche_url, p.circonscription, p.territoire,
+               p.political_group,
                (SELECT GROUP_CONCAT(o.name, ', ')
                   FROM person_organisations po
                   JOIN organisations o ON o.id = po.organisation_id
@@ -5216,7 +5217,9 @@ def _people_by_mail(db, mail_ids):
     par_mail = {}
     for row in db.execute(
         f"""
-        SELECT xp.mail_id, p.id, p.name, p.contact_type, p.photo_url, p.fiche_url
+        SELECT xp.mail_id, p.id, p.name, p.contact_type, p.photo_url,
+               p.fiche_url, p.role, p.circonscription, p.territoire,
+               p.political_group
           FROM mail_persons xp
           JOIN persons p ON p.id = xp.person_id
          WHERE xp.mail_id IN ({marques})

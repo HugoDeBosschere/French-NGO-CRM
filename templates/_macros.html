@@ -573,16 +573,36 @@
      alt="" loading="lazy" referrerpolicy="no-referrer">{% endif -%}
 {% endmacro %}
 
-{% macro personne_lien(p, avec_portrait=True) %}
+{# La ligne d'identité sous le nom : « Sénatrice · Savoie · Les Républicains ».
+   Trois champs distincts dans la base, un seul coup d'œil à l'écran. Chacun
+   peut manquer — un journaliste n'a ni circonscription ni groupe — donc on
+   assemble ce qui existe plutôt que de poser des séparateurs à l'avance. #}
+{% macro identite(p) %}
+{%- set bouts = [] -%}
+{%- if p['role'] %}{% set _ = bouts.append(p['role']) %}{% endif -%}
+{%- if p['circonscription'] %}{% set _ = bouts.append(p['circonscription']) %}
+{%- elif p['territoire'] %}{% set _ = bouts.append(p['territoire']) %}{% endif -%}
+{%- if p['political_group'] %}{% set _ = bouts.append(p['political_group']) %}{% endif -%}
+{{- bouts | join(' · ') -}}
+{% endmacro %}
+
+{% macro personne_lien(p, avec_portrait=True, avec_identite=True) %}
 <span class="personne">
   {%- if avec_portrait %}{{ portrait(p) }}{% endif -%}
-  <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
-  {%- if p['fiche_url'] %}
-  <a class="fiche-off" href="{{ p['fiche_url'] }}" target="_blank" rel="noopener noreferrer"
-     onclick="event.stopPropagation()"
-     title="Fiche officielle de {{ p['name'] }} sur le site de l'assemblée concernée"
-     aria-label="Fiche parlementaire de {{ p['name'] }}">↗</a>
-  {%- endif %}
+  <span class="personne-texte">
+    <span class="personne-nom">
+      <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+      {%- if p['fiche_url'] %}
+      <a class="fiche-off" href="{{ p['fiche_url'] }}" target="_blank" rel="noopener noreferrer"
+         onclick="event.stopPropagation()"
+         title="Fiche officielle de {{ p['name'] }} sur le site de l'assemblée concernée"
+         aria-label="Fiche officielle de {{ p['name'] }}">↗</a>
+      {%- endif %}
+    </span>
+    {%- if avec_identite %}{% set ligne = identite(p) | trim %}
+    {%- if ligne %}<span class="personne-id">{{ ligne }}</span>{% endif %}
+    {%- endif %}
+  </span>
 </span>
 {% endmacro %}
 

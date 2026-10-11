@@ -1359,8 +1359,17 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
 .table-wrap { scrollbar-width: thin; }
 
 /* ---------- Une personne : portrait, nom, fiche officielle ---------- */
-.personne { display: inline-flex; align-items: center; gap: .35rem; }
-.personne + .personne { margin-left: .5rem; }
+/* `flex-start` : avec deux lignes de texte, un portrait centré flotte au
+   milieu et ne se rattache visuellement à rien. Aligné sur le nom, il le
+   désigne. Le léger décalage compense la hauteur de ligne. */
+.personne { display: inline-flex; align-items: flex-start; gap: .45rem; vertical-align: top; }
+.personne .portrait-mini { margin-top: .1rem; }
+.personne + .personne { margin-left: .75rem; }
+.personne-texte { display: inline-flex; flex-direction: column; line-height: 1.25; }
+/* « Sénatrice · Savoie · Les Républicains » : l'information qui dit de qui on
+   parle, sans ouvrir la fiche. Petite et discrète — c'est un sous-titre, pas
+   une deuxième ligne de données. */
+.personne-id { font-size: .8em; color: var(--muted); }
 .portrait-mini {
   width: 1.6rem;
   height: 1.6rem;
@@ -1381,3 +1390,7 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   margin: -.3rem;
 }
 .fiche-off:hover { color: var(--brand-ink); }
+
+/* La colonne de suppression : un en-tête, mais le plus discret possible — il
+   nomme une action rare, il ne doit pas peser autant que « Objet ». */
+.th-suppr { font-weight: 500; opacity: .75; }
