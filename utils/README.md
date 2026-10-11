@@ -528,6 +528,11 @@ python3 utils/backfill_campagne_corps.py --sens             # + corriger Envoyé
 python3 utils/backfill_campagne_corps.py --refaire          # + reprendre les corps déjà là
 ```
 
+Le pendant côté membres est `backfill_member_bodies.py --refaire`, qui relit
+la boîte d'audit et rapproche par (sens, date, objet). Les deux sont
+nécessaires : chaque pipeline a sa boîte, et `--refaire` côté citoyen ne
+touche que les courriels portant l'étiquette « Mail d'un citoyen à … ».
+
 `--refaire` sert quand l'extraction s'améliore : les premiers corps rattrapés
 l'ont été par une version qui remplaçait chaque balise HTML par une espace et
 ne décodait pas les entités. La source étant la même boîte, les repasser ne
