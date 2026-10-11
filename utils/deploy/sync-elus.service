@@ -1,0 +1,24 @@
+[Unit]
+Description=Adresses, portraits et fiches officielles des élu·es, depuis elus.json
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+# Avant l'import des courriels de campagne : celui-ci apparie les destinataires
+# aux fiches par leur adresse, donc il vaut mieux que les adresses soient à jour
+# quand il démarre.
+Before=import-campaign-mails.service
+
+# Ce travail était un ExecStartPre de import-campaign-mails.service, précédé
+# d'un « - » : son échec était donc avalé en silence. C'était le bon choix pour
+# l'import — une source injoignable ne doit pas empêcher de lire les courriels —
+# mais le mauvais pour la synchro, qui pouvait cesser pendant des mois sans que
+# personne l'apprenne. Unité séparée : l'import reste insensible à son échec, et
+# l'échec, lui, se signale.
+OnFailure=alerte@%n.service
+
+[Service]
+Type=oneshot
+# L'image ne contient pas utils/, et un redémarrage du conteneur le perd.
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/sync_emails_from_elus.py --db /app/meetings.db

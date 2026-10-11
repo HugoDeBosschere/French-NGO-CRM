@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Rencontres{% endblock %}
+{% block container_class %}container-wide{% endblock %}
 
 {% macro meeting_table(rows) %}
 <div class="table-wrap">
   <table class="meetings">
+    <colgroup>
+      <col style="width: 10%">
+      <col style="width: 22%">
+      <col style="width: 16%">
+      <col style="width: 16%">
+      <col style="width: 30%">
+      <col style="width: 6%">
+    </colgroup>
     <thead>
       <tr>
         <th>Date</th>
@@ -57,7 +66,7 @@
   <input type="search" name="q" value="{{ q }}"
          placeholder="Rechercher par personne, groupe politique ou résumé…">
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('index') }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('index') }}">Effacer</a>{% endif %}
 </form>
 
 {% if not upcoming and not past %}

@@ -34,8 +34,12 @@ import unicodedata
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from email.header import decode_header, make_header
 from functools import wraps
 from pathlib import Path
+
+from markupsafe import Markup, escape
+from zoneinfo import ZoneInfo
 
 import magic
 from flask import (
@@ -102,6 +106,7 @@ POLITICAL_GROUPS = {
         "Libertés, Indépendants, Outre-mer et Territoires (LIOT)",
         "Union des droites pour la République (UDR)",
         "Non-inscrit",
+        "Sans groupe déclaré (Assemblée nationale)",
     ],
     "Sénat": [
         "Les Républicains (Sénat)",
@@ -113,6 +118,7 @@ POLITICAL_GROUPS = {
         "Écologiste – Solidarité et Territoires (Sénat)",
         "Rassemblement Démocratique et Social Européen (RDSE)",
         "Non-inscrit (Sénat)",
+        "Sans groupe déclaré (Sénat)",
     ],
     "Parlement européen": [
         "Parti populaire européen (PPE)",
@@ -124,6 +130,7 @@ POLITICAL_GROUPS = {
         "Patriotes pour l'Europe",
         "Europe des Nations Souveraines (ESN)",
         "Non-inscrit (Parlement européen)",
+        "Sans groupe déclaré (Parlement européen)",
     ],
     "Autre": [
         "Gouvernement / Administration",
@@ -712,6 +719,156 @@ def fr_date(value):
         return value
 
 
+@app.template_filter("fr_datetime")
+def fr_datetime(value):
+    """Un horodatage ISO stocké (UTC) rendu en « JJ/MM/AAAA à HH:MM ».
+
+    Les fiches affichaient `created_at` tel quel :
+    « Enregistrée le 2026-10-10T20:10:32+00:00 ». C'est un détail de stockage,
+    pas une date lisible. L'heure est convertie à Paris, comme partout
+    ailleurs dans l'outil.
+    """
+    if not value:
+        return ""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    try:
+        moment = moment.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:                                   # noqa: BLE001
+        pass
+    return moment.strftime("%d/%m/%Y à %H:%M")
+
+
+# --------------------------------------------------------------------------- #
+# Mise en forme du corps d'un courriel
+# --------------------------------------------------------------------------- #
+
+# Une URL nue, éventuellement entre chevrons comme les clients de messagerie
+# les écrivent dans la partie texte d'un message HTML.
+URL_NUE = re.compile(r"<?(https?://[^\s<>()\[\]]+)>?")
+# Une puce ou un numéro, seuls sur leur ligne : c'est ainsi que Gmail dégrade
+# une liste HTML dans sa partie texte, le contenu arrivant deux lignes plus bas.
+PUCE_SEULE = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s*$")
+PUCE_DEBUT = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s+")
+CITATION = re.compile(r"^\s*>")
+# L'en-tête d'un message transféré. Ces lignes-là ne doivent PAS être recollées
+# entre elles : « De : … » et « Objet : … » sont deux informations, pas une
+# phrase repliée. Sans cette exception, un transfert arrivait d'un seul tenant.
+ENTETE_TRANSFERT = re.compile(
+    r"^\s*(de|à|a|date|objet|cc|cci|envoyé|from|to|subject|sent|reply-to)"
+    r"\s*:", re.I)
+# *gras* à la mode des messageries : une paire d'astérisques collée au texte.
+GRAS = re.compile(r"\*(?=\S)([^*\n]+?)(?<=\S)\*")
+
+
+def _bloc_en_html(brut):
+    """Un paragraphe BRUT -> HTML sûr, liens et gras compris.
+
+    L'échappement se fait morceau par morceau plutôt que d'un bloc : échapper
+    d'abord transformerait les chevrons que les messageries posent autour des
+    adresses en `&lt;` `&gt;`, que l'expression d'URL avalerait ensuite dans le
+    lien. Mesuré : le href finissait par `...models/&gt;`.
+    """
+    morceaux, fin = [], 0
+    for m in URL_NUE.finditer(brut):
+        morceaux.append(_texte_en_html(brut[fin:m.start()]))
+        url = m.group(1)
+        morceaux.append(f'<a href="{escape(url)}" target="_blank" '
+                        f'rel="noopener noreferrer">{escape(url)}</a>')
+        fin = m.end()
+    morceaux.append(_texte_en_html(brut[fin:]))
+    return "".join(morceaux)
+
+
+def _texte_en_html(brut):
+    """Du texte sans URL -> HTML échappé, avec le *gras* des messageries."""
+    return GRAS.sub(r"<strong>\1</strong>", str(escape(brut)))
+
+
+@app.template_filter("corps_mail")
+def corps_mail(texte):
+    """Le corps d'un courriel, lisible.
+
+    Il s'affichait dans un <pre> : les retours à la ligne durs posés par le
+    client d'envoi — autour de 75 caractères — étaient conservés tels quels, si
+    bien qu'une phrase se brisait au milieu quelle que soit la largeur de
+    l'écran. Et les listes numérotées arrivaient éclatées, le « 1. » seul sur
+    sa ligne et son contenu deux lignes plus bas, parce que c'est ainsi que
+    Gmail dégrade une liste HTML dans la partie texte du message.
+
+    Markdown ne serait pas le bon outil : ce n'est pas du Markdown, c'est la
+    version texte d'un courriel HTML. Ce qu'il faut, c'est défaire le
+    retour-chariot dur, recoller les puces à leur contenu et rendre les
+    adresses cliquables. Le reste est laissé tel quel : on ne réécrit pas le
+    message de quelqu'un.
+
+    Le texte est échappé AVANT toute mise en forme : il vient de l'extérieur,
+    et le seul HTML qui sorte d'ici est celui qu'on y met.
+    """
+    if not texte:
+        return Markup("")
+    lignes = [l.rstrip() for l in str(texte).replace("\r\n", "\n")
+              .replace("\r", "\n").split("\n")]
+
+    # 1) Recoller une puce seule au premier texte qui la suit.
+    recollees, i = [], 0
+    while i < len(lignes):
+        if PUCE_SEULE.match(lignes[i]):
+            j = i + 1
+            while j < len(lignes) and not lignes[j].strip():
+                j += 1
+            if j < len(lignes):
+                recollees.append(f"{lignes[i].strip()} {lignes[j].strip()}")
+                i = j + 1
+                continue
+        recollees.append(lignes[i])
+        i += 1
+
+    # 2) Regrouper en paragraphes, en défaisant le retour à la ligne dur. Une
+    #    puce ou une citation commence toujours une nouvelle ligne : les
+    #    recoller effacerait la structure au lieu de la restituer.
+    paras, courant = [], []
+    for ligne in recollees:
+        nu = ligne.strip()
+        if not nu:
+            if courant:
+                paras.append(courant)
+                courant = []
+            continue
+        # Une NOUVELLE puce ou citation ouvre un paragraphe ; les lignes qui
+        # suivent lui appartiennent et doivent être recollées, sinon un point
+        # de liste se coupe à l'endroit exact où le client d'envoi a replié la
+        # ligne — c'est précisément ce qu'on cherche à défaire.
+        quitte_citation = bool(CITATION.match(courant[-1])) if courant else False
+        if courant and (PUCE_DEBUT.match(ligne)
+                        or ENTETE_TRANSFERT.match(ligne)
+                        or ENTETE_TRANSFERT.match(courant[-1])
+                        or bool(CITATION.match(ligne)) != quitte_citation):
+            paras.append(courant)
+            courant = [ligne]
+        else:
+            courant.append(ligne)
+    if courant:
+        paras.append(courant)
+
+    morceaux = []
+    for para in paras:
+        classe = ""
+        if CITATION.match(para[0]):
+            classe = ' class="mail-citation"'
+            brut = " ".join(l.strip().lstrip(">").strip() for l in para)
+        else:
+            if PUCE_DEBUT.match(para[0]):
+                classe = ' class="mail-puce"'
+            brut = " ".join(l.strip() for l in para)
+        morceaux.append(f"<p{classe}>{_bloc_en_html(brut)}</p>")
+    return Markup("\n".join(morceaux))
+
+
 @app.template_filter("days_until")
 def days_until(value):
     """Whole days from today to an ISO date. Negative if already past."""
@@ -1032,6 +1189,8 @@ def _init_db_locked():
             notes           TEXT,
             circonscription TEXT,
             email           TEXT,
+            photo_url       TEXT,            -- portrait officiel (Sénat / AN)
+            fiche_url       TEXT,            -- fiche parlementaire officielle
             portefeuille    TEXT,   -- government portfolio, see PORTFOLIO_ROLES
             role_detail     TEXT,   -- free text behind a ROLE_DETAIL_ROLES role
             religion        TEXT,   -- Religieux·se only, see RELIGIONS
@@ -1258,6 +1417,13 @@ def _init_db_locked():
         );
         CREATE INDEX IF NOT EXISTS idx_civicrm_pending_status
             ON civicrm_pending(status);
+        -- De quoi décider. La file ne montrait qu'une adresse et un compteur :
+        -- on demandait à quelqu'un « qui est-ce ? » sans rien lui donner pour
+        -- répondre. L'objet du dernier courriel et le nom du membre en face
+        -- suffisent à reconnaître un journaliste d'un démarchage. Le CORPS
+        -- n'est pas conservé : la règle Workspace copie toute la
+        -- correspondance externe de l'association, et cette page est lisible
+        -- par toute l'équipe.
         CREATE TABLE IF NOT EXISTS person_emails (
             email      TEXT PRIMARY KEY,
             person_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
@@ -1375,6 +1541,41 @@ def _init_db_locked():
         db.execute(
             "ALTER TABLE persons ADD COLUMN in_office INTEGER NOT NULL DEFAULT 1"
         )
+    # Portrait et fiche officielle. Les deux existent déjà dans l'elus.json de
+    # l'outil « Écrire à mes élus » du site, d'où ils sont repris tels quels
+    # par utils/sync_emails_from_elus.py : pas de nouvelle source à maintenir,
+    # et le CRM montre exactement ce que le site montre.
+    if "photo_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN photo_url TEXT")
+    if "fiche_url" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN fiche_url TEXT")
+    # De quoi décider dans la file « à rattacher » : l'objet du dernier
+    # courriel, le membre en face, et le sens. Voir la table ci-dessus.
+    attente_cols = [r[1] for r in db.execute(
+        "PRAGMA table_info(civicrm_pending)")]
+    if attente_cols:
+        for colonne in ("last_subject", "last_member", "last_direction"):
+            if colonne not in attente_cols:
+                db.execute(
+                    f"ALTER TABLE civicrm_pending ADD COLUMN {colonne} TEXT")
+        # Les noms affichés étaient enregistrés tels qu'ils arrivent dans
+        # l'en-tête, donc encodés en RFC 2047 dès qu'ils portent un accent :
+        # la file affichait « =?UTF-8?Q?Timoth=C3=A9e_BARNAUD?= ». On les
+        # décode une fois pour celles déjà en base ; les suivantes le sont à
+        # l'insertion.
+        encodes = db.execute(
+            "SELECT email, display FROM civicrm_pending "
+            "WHERE display LIKE '=?%?='").fetchall()
+        for ligne in encodes:
+            try:
+                clair = str(make_header(decode_header(ligne["display"]))).strip()
+            except Exception:                              # noqa: BLE001
+                continue
+            if clair and clair != ligne["display"]:
+                db.execute(
+                    "UPDATE civicrm_pending SET display = ? WHERE email = ?",
+                    (clair, ligne["email"]))
+
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")
@@ -2250,6 +2451,8 @@ def _persons_of(db, join_table, key_col, key_id):
     return db.execute(
         f"""
         SELECT p.id, p.name, p.contact_type, p.role, p.stance,
+               p.photo_url, p.fiche_url, p.circonscription, p.territoire,
+               p.political_group, p.email,
                (SELECT GROUP_CONCAT(o.name, ', ')
                   FROM person_organisations po
                   JOIN organisations o ON o.id = po.organisation_id
@@ -4132,9 +4335,21 @@ def person_detail(person_id):
     validator = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (person["validated_by"],)
     ).fetchone()
+    # Les adresses apprises au fil des échanges (cabinet, attaché·e, adresse
+    # personnelle) : elles servent déjà à rattacher les courriels, mais la
+    # fiche n'en montrait aucune — on ne voyait que `persons.email`, donc on ne
+    # savait pas à quelles boîtes on avait réellement écrit.
+    autres_adresses = [
+        row["email"] for row in db.execute(
+            "SELECT email FROM person_emails WHERE person_id = ? "
+            "ORDER BY email COLLATE NOCASE", (person_id,))
+        if (row["email"] or "").strip().lower()
+        != (person["email"] or "").strip().lower()
+    ]
     return render_template(
         "person_detail.html",
         p=person,
+        autres_adresses=autres_adresses,
         organisations=organisations,
         follow_up_source=follow_up_source,
         interventions=_intervention_rows(
@@ -4837,6 +5052,7 @@ def mails():
     rows = rows[:MAILS_PER_PAGE]
     return render_template("mails.html", mails=rows, q=q, page=page,
                            has_next=has_next, first_index=offset + 1,
+                           gens=_people_by_mail(db, [r["id"] for r in rows]),
                            directions=MAIL_DIRECTIONS)
 
 
@@ -5026,11 +5242,60 @@ def delete_mail(mail_id):
     return redirect(url_for("mails"))
 
 
+@app.route("/echanges/fil/supprimer", methods=["POST"])
+@login_required
+def delete_conversation():
+    """Supprimer un fil entier, d'un clic, depuis la liste des échanges.
+
+    La suppression d'un courriel existait déjà, mais seulement dans la vue
+    « un par un » : effacer une conversation de douze messages demandait douze
+    clics, sur douze pages. Les deux vues étant désormais deux lectures du même
+    onglet, l'asymétrie n'avait plus de raison d'être.
+
+    Définitif, et sans effet de bord : la déduplication s'appuie sur
+    `imported_mails`, que ceci ne touche pas, donc l'import suivant ne fait pas
+    revenir le fil.
+    """
+    key = (request.form.get("key") or "").strip()
+    if not key:
+        abort(400)
+    db = get_db()
+    # Le même COALESCE que /echanges/fil : un courriel sans fil connu est un
+    # fil à lui tout seul, sous la clé « m<id> ».
+    rows = db.execute(
+        """
+        SELECT x.id, x.document_stored_name
+          FROM mails x
+          LEFT JOIN mail_thread mt ON mt.mail_id = x.id
+         WHERE COALESCE(mt.thread_key, 'm' || x.id) = ?
+        """,
+        (key,),
+    ).fetchall()
+    if not rows:
+        abort(404)
+    for row in rows:
+        _delete_upload(row["document_stored_name"])
+    ids = [row["id"] for row in rows]
+    # mail_persons, mail_members et mail_thread sont en ON DELETE CASCADE.
+    db.execute(
+        "DELETE FROM mails WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)
+    db.commit()
+    flash("Conversation supprimée : %d courriel%s."
+          % (len(ids), "" if len(ids) == 1 else "s"), "success")
+    return redirect(url_for("exchanges"))
+
+
 @app.route("/mails/<int:mail_id>")
 @login_required
 def mail_detail(mail_id):
     db = get_db()
-    mail = db.execute("SELECT * FROM mails WHERE id = ?", (mail_id,)).fetchone()
+    # Le corps vit dans `mail_bodies`, pas dans `summary` : pour un courriel
+    # citoyen, `summary` ne porte que l'étiquette « Mail d'un citoyen à … »,
+    # et la fiche n'affichait donc jamais le message lui-même.
+    mail = db.execute(
+        "SELECT x.*, b.body FROM mails x "
+        "LEFT JOIN mail_bodies b ON b.mail_id = x.id WHERE x.id = ?",
+        (mail_id,)).fetchone()
     if mail is None:
         abort(404)
     people = _persons_of(db, "mail_persons", "mail_id", mail_id)
@@ -5112,6 +5377,35 @@ def member_detail(member_id):
 # Suivi des échanges: unified, thread-grouped view of all mails
 # --------------------------------------------------------------------------- #
 
+def _people_by_mail(db, mail_ids):
+    """{id de courriel: [personnes]} — avec le portrait et la fiche officielle.
+
+    Les requêtes de fil et de liste ne rapportaient que des noms concaténés par
+    GROUP_CONCAT : de quoi afficher « Laurent Lhardit », pas de quoi en faire un
+    lien, encore moins montrer son portrait. Une requête de plus, indexée sur
+    `mail_persons`, et les trois informations utiles suivent partout où un nom
+    d'élu·e s'affiche.
+    """
+    if not mail_ids:
+        return {}
+    marques = ",".join("?" * len(mail_ids))
+    par_mail = {}
+    for row in db.execute(
+        f"""
+        SELECT xp.mail_id, p.id, p.name, p.contact_type, p.photo_url,
+               p.fiche_url, p.role, p.circonscription, p.territoire,
+               p.political_group, p.email
+          FROM mail_persons xp
+          JOIN persons p ON p.id = xp.person_id
+         WHERE xp.mail_id IN ({marques})
+         ORDER BY name_key(p.name)
+        """,
+        list(mail_ids),
+    ):
+        par_mail.setdefault(row["mail_id"], []).append(row)
+    return par_mail
+
+
 def _conversation_groups(db, mails):
     """Group a list of mail rows into conversations (by thread_key, else the mail
     itself). Each group carries a message count, latest date/subject, the élu·es
@@ -5126,11 +5420,15 @@ def _conversation_groups(db, mails):
     # The counterpart's own type, so the list can say "Journaliste" where it used
     # to say "élu·e" for everybody. Since the press CRM was merged in, half of
     # these conversations are with journalists.
-    for mid, name, ctype in db.execute(
-        f"SELECT xp.mail_id, p.name, p.contact_type FROM mail_persons xp "
-        f"JOIN persons p ON p.id = xp.person_id WHERE xp.mail_id IN ({qm})", ids):
-        elus.setdefault(mid, []).append(name)
-        kinds.setdefault(mid, set()).add(ctype)
+    #
+    # La ligne complète, et plus seulement le nom : la liste affiche désormais
+    # le portrait officiel, le nom cliquable vers la fiche CRM et le lien vers
+    # la fiche parlementaire. Voir _people_by_mail, même requête, même index.
+    gens = _people_by_mail(db, ids)
+    for mid, rows in gens.items():
+        for row in rows:
+            elus.setdefault(mid, []).append(row["name"])
+            kinds.setdefault(mid, set()).add(row["contact_type"])
     for mid, name in db.execute(
         f"SELECT mm.mail_id, COALESCE(m.name, m.email) FROM mail_members mm "
         f"JOIN members m ON m.id = mm.member_id WHERE mm.mail_id IN ({qm})", ids):
@@ -5147,15 +5445,25 @@ def _conversation_groups(db, mails):
                  # anything imported before the column existed have none, so
                  # they keep falling back to the body.
                  "subject": m["subject"] or m["summary"],
-                 "elus": set(), "members": set(),
+                 # Le corps, conservé à part : c'est lui qui porte la marque
+                 # « Mail d'un citoyen à … » posée par le pipeline citoyen, et
+                 # non l'objet. Voir le calcul de `type` plus bas.
+                 "resumes": [],
+                 # Les noms (pour la recherche et le repli) ET les fiches
+                 # elles-mêmes, dédoublonnées par identifiant : un fil de dix
+                 # messages avec la même élu·e ne l'affiche qu'une fois.
+                 "elus": set(), "gens": {}, "members": set(),
                  "has_doc": False, "directions": set()}
             groups[key] = g
             order.append(key)
         g["count"] += 1
+        g["resumes"].append(m["summary"] or "")
         if m["mail_date"] >= g["last_date"]:      # keep the latest message's subject
             g["last_date"] = m["mail_date"]
             g["subject"] = m["subject"] or m["summary"]
         g["elus"].update(elus.get(m["id"], []))
+        for row in gens.get(m["id"], []):
+            g["gens"].setdefault(row["id"], row)
         g["kinds"].update(kinds.get(m["id"], set()))
         g["members"].update(membs.get(m["id"], []))
         g["directions"].add(m["direction"])
@@ -5166,8 +5474,17 @@ def _conversation_groups(db, mails):
         # Two independent questions, and the list used to answer only the first:
         # who wrote (a member, an anonymous citizen) and who was written to (an
         # élu·e, a journalist). A press exchange showed up as plain "Membre".
-        g["type"] = ("membre" if g["members"]
-                     else "citoyen" if g["subject"].startswith("Mail d'un citoyen")
+        # Le test portait sur `subject`, qui est l'OBJET du courriel. Or la
+        # marque « Mail d'un citoyen à … » est écrite par le pipeline citoyen
+        # dans le CORPS (`summary`, voir import_campaign_mails.py), et
+        # `g["subject"]` ne retombe sur le corps que si l'objet est vide.
+        # Conséquence : tout mail citoyen ayant un objet — c'est-à-dire la
+        # quasi-totalité — tombait dans « autre », et la colonne « Origine »
+        # restait vide. C'est ce que montre le gabarit : rien n'est affiché
+        # pour « autre ».
+        citoyen = any(r.startswith("Mail d'un citoyen") for r in g["resumes"])
+        g["type"] = ("citoyen" if citoyen
+                     else "membre" if g["members"]
                      else "autre")
         # "" quand on ne sait pas, "plusieurs" quand le fil mêle des types :
         # une valeur vide plutôt qu'un caractère d'affichage stocké comme donnée.
@@ -5255,6 +5572,7 @@ def conversation(key=None):
     if not mails:
         abort(404)
     return render_template("conversation.html", mails=mails,
+                           gens=_people_by_mail(db, [x["id"] for x in mails]),
                            directions=MAIL_DIRECTIONS)
 
 
@@ -5308,8 +5626,12 @@ def deposit():
     son propre échange sait ce qu'elle dépose.
     """
     importer = _member_importer()
+    db_people = get_db().execute(
+        "SELECT id, name, contact_type FROM persons ORDER BY name COLLATE NOCASE"
+    ).fetchall()
     if request.method == "GET":
-        return render_template("deposit.html", importer=bool(importer))
+        return render_template("deposit.html", importer=bool(importer),
+                               people=db_people)
 
     if importer is None:
         flash("Le module d'import n'est pas présent dans le conteneur "
@@ -5322,6 +5644,30 @@ def deposit():
         return redirect(url_for("deposit"))
 
     db = get_db()
+    # Qui est en face, quand l'adresse n'a pas de fiche. Sans cette indication,
+    # un dépôt dont la contrepartie est inconnue mettait l'adresse en file et
+    # N'ENREGISTRAIT PAS le courriel — c'est pourtant le cas le plus courant du
+    # dépôt, le journaliste qui écrit depuis son adresse personnelle.
+    rattacher_a = (request.form.get("person_id") or "").strip()
+    nom_saisi = (request.form.get("person_nom") or "").strip()
+    if not rattacher_a.isdigit() and nom_saisi:
+        trouvees = db.execute(
+            "SELECT id FROM persons WHERE name = ? COLLATE NOCASE", (nom_saisi,)
+        ).fetchall()
+        if len(trouvees) == 1:
+            rattacher_a = str(trouvees[0]["id"])
+        else:
+            flash(f"« {nom_saisi} » : "
+                  + ("plusieurs fiches portent ce nom."
+                     if trouvees else "aucune fiche à ce nom.")
+                  + " Choisissez un nom proposé par la liste, ou laissez vide.",
+                  "error")
+            return redirect(url_for("deposit"))
+    rattacher_a = int(rattacher_a) if rattacher_a.isdigit() else None
+    # Cochée par défaut dans le formulaire : rattacher une adresse à une fiche
+    # veut presque toujours dire « et la suite aussi ». Presque : voir la case.
+    apprendre = bool(request.form.get("apprendre"))
+
     results, counts = [], {"imported": 0, "queued": 0,
                            "duplicate": 0, "unmatched": 0, "rejected": 0}
     for storage in files:
@@ -5337,7 +5683,8 @@ def deposit():
             continue
         try:
             msg = email.message_from_bytes(raw)
-            state, subject = importer.handle_one_message(db, msg)
+            state, subject = importer.handle_one_message(
+                db, msg, rattacher_a=rattacher_a, apprendre=apprendre)
         except Exception as exc:                     # noqa: BLE001
             # Un .eml mal formé ne doit pas emporter les autres fichiers du même
             # dépôt, ni rendre une erreur 500 à quelqu'un qui a juste glissé le
@@ -5386,7 +5733,8 @@ def unlinked():
     try:
         rows = db.execute(
             """
-            SELECT email, display, first_seen, last_seen, seen_count, status
+            SELECT email, display, first_seen, last_seen, seen_count, status,
+                   last_subject, last_member, last_direction
               FROM civicrm_pending
              WHERE status IN (?, ?)
              ORDER BY seen_count DESC, last_seen DESC
@@ -5411,8 +5759,32 @@ def unlinked_link():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    person_id = request.form.get("person_id") or ""
-    if not address or not person_id.isdigit():
+    person_id = (request.form.get("person_id") or "").strip()
+    nom = (request.form.get("person_nom") or "").strip()
+    if not address:
+        flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
+        return redirect(url_for("unlinked"))
+
+    # Sans JavaScript, le formulaire n'envoie qu'un nom, tapé avec l'aide du
+    # datalist : on le résout ici. Un nom porté par deux fiches n'est jamais
+    # tranché au hasard — rattacher un échange à la mauvaise personne est pire
+    # que de redemander.
+    if not person_id.isdigit() and nom:
+        homonymes = db.execute(
+            "SELECT id, name FROM persons WHERE name = ? COLLATE NOCASE", (nom,)
+        ).fetchall()
+        if len(homonymes) == 1:
+            person_id = str(homonymes[0]["id"])
+        elif len(homonymes) > 1:
+            flash(f"Plusieurs fiches portent le nom « {nom} » : ouvrez la fiche "
+                  f"voulue et rattachez l'adresse depuis celle-ci.", "error")
+            return redirect(url_for("unlinked"))
+        else:
+            flash(f"Aucune fiche au nom de « {nom} ». Choisissez un nom proposé "
+                  f"par la liste, ou créez la fiche d'abord.", "error")
+            return redirect(url_for("unlinked"))
+
+    if not person_id.isdigit():
         flash("Indiquez l'adresse et la personne à qui la rattacher.", "error")
         return redirect(url_for("unlinked"))
     person = db.execute(
@@ -5443,13 +5815,29 @@ def unlinked_ignore():
     """
     db = get_db()
     address = (request.form.get("email") or "").strip().lower()
-    target = "pending" if request.form.get("undo") else "ignored"
+    # Trois états possibles depuis l'interface :
+    #   pending  : remise en file (« Réexaminer »)
+    #   ignored  : plus proposée au rattachement, mais rien n'est bloqué
+    #   refused  : « ne jamais enregistrer » — plus de file ET plus d'import
+    #              automatique. Un dépôt manuel reste possible : c'est un geste
+    #              délibéré, et c'est la porte de sortie voulue.
+    if request.form.get("undo"):
+        target = "pending"
+    elif request.form.get("refuser"):
+        target = "refused"
+    else:
+        target = "ignored"
     db.execute("UPDATE civicrm_pending SET status = ? WHERE email = ?",
                (target, address))
     db.commit()
-    flash(f"{address} : {'remise en file' if target == 'pending' else 'ignorée'}.",
-          "success")
-    return redirect(url_for("unlinked", ignorees=1 if target == "ignored" else None))
+    libelle = {
+        "pending": "remise en file",
+        "ignored": "ignorée",
+        "refused": "ne sera plus jamais enregistrée automatiquement",
+    }[target]
+    flash(f"{address} : {libelle}.", "success")
+    return redirect(url_for("unlinked",
+                            ignorees=1 if target != "pending" else None))
 
 
 @app.route("/echanges/a-rattacher/ignorees")
@@ -5459,7 +5847,7 @@ def unlinked_ignored():
     try:
         rows = db.execute(
             "SELECT email, display, first_seen, last_seen, seen_count, status "
-            "FROM civicrm_pending WHERE status = 'ignored' "
+            "FROM civicrm_pending WHERE status IN ('ignored', 'refused') "
             "ORDER BY seen_count DESC, last_seen DESC").fetchall()
     except sqlite3.Error:
         rows = []
@@ -5497,6 +5885,9 @@ def mail_download(mail_id):
 #     single-process internal app — swap for Flask-Limiter + Redis if scaled).
 RATE_LIMIT_MAX = 10           # submissions allowed...
 RATE_LIMIT_WINDOW = 300      # ...per this many seconds, per IP
+# Au-delà, on balaie les adresses inactives. Assez haut pour qu'un afflux
+# légitime n'en paie pas le coût, assez bas pour borner la mémoire.
+RATE_LIMIT_MAX_IPS = 5000
 _submission_log = defaultdict(list)
 
 
@@ -5520,11 +5911,27 @@ def _check_captcha(errors):
 
 def _rate_limited():
     """True if the requesting IP has already hit the submission cap. Prunes
-    timestamps outside the window as a side effect."""
+    timestamps outside the window as a side effect.
+
+    Le ménage portait sur les horodatages, jamais sur les CLÉS : une adresse
+    vue une fois gardait son entrée pour toujours. Un formulaire public est
+    scanné en continu, et le processus gunicorn tourne des semaines sans
+    redémarrer — le dictionnaire ne faisait que grossir. Il se vide
+    maintenant de lui-même, et on balaie les adresses devenues inactives
+    quand il grandit trop, pour ne pas payer un parcours complet à chaque
+    soumission.
+    """
     ip = request.remote_addr or "unknown"
     now = time.monotonic()
-    recent = [t for t in _submission_log[ip] if now - t < RATE_LIMIT_WINDOW]
-    _submission_log[ip] = recent
+    recent = [t for t in _submission_log.get(ip, []) if now - t < RATE_LIMIT_WINDOW]
+    if recent:
+        _submission_log[ip] = recent
+    else:
+        _submission_log.pop(ip, None)
+    if len(_submission_log) > RATE_LIMIT_MAX_IPS:
+        for autre, quand in list(_submission_log.items()):
+            if not quand or now - max(quand) >= RATE_LIMIT_WINDOW:
+                del _submission_log[autre]
     return len(recent) >= RATE_LIMIT_MAX
 
 

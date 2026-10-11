@@ -83,6 +83,76 @@ class ListingTests(unittest.TestCase):
         self.assertEqual(html.count("<tr onclick"),
                          self.MAILS % self.app.MAILS_PER_PAGE)
 
+    def test_the_pager_is_in_the_page_and_not_in_the_title(self):
+        # Il était appelé depuis le bloc « title » : les liens partaient dans
+        # la balise <title>, donc invisibles, et les 550 courriels suivants
+        # n'étaient atteignables qu'en écrivant ?page=2 à la main. Les tests
+        # ci-dessus cherchaient « Suivants » dans tout le HTML et passaient.
+        html = self._html("/mails")
+        titre = html.split("<title>")[1].split("</title>")[0]
+        self.assertNotIn("Suivants", titre)
+        corps = html.split("</head>")[1]
+        self.assertIn("Suivants", corps)
+
+    def test_the_two_readings_live_under_one_tab(self):
+        # « Échanges » et « Tous les courriels » étaient deux sous-onglets, et
+        # « Suivi des échanges » et « Courriels » deux entrées du menu, pour
+        # les mêmes courriels. Un seul onglet désormais, deux lectures — sans
+        # rien perdre : chaque vue garde ses filtres et ses actions.
+        for url in ("/echanges", "/mails"):
+            html = self._html(url)
+            self.assertNotIn('class="subtab" href="/mails"', html, url)
+            self.assertNotIn('class="subtab active" href="/mails"', html, url)
+            self.assertIn("Par conversation", html, url)
+            self.assertIn("Un par un", html, url)
+            # L'onglet « Échanges » reste actif sur les deux.
+            self.assertIn('class="subtab active"', html, url)
+        self.assertIn('aria-current="page"', self._html("/mails"))
+
+    def test_the_other_subtabs_survive_the_merge(self):
+        html = self._html("/echanges")
+        for onglet in ("Échanges", "Membres", "À rattacher", "Déposer"):
+            self.assertIn(onglet, html)
+
+    def test_a_stored_timestamp_is_shown_as_a_readable_date(self):
+        # Les fiches affichaient « Enregistrée le 2026-10-10T20:10:32+00:00 ».
+        self.assertEqual(
+            self.app.fr_datetime("2026-10-10T20:10:32+00:00"),
+            "10/10/2026 à 22:10")          # UTC -> Paris, heure d'été
+        self.assertEqual(self.app.fr_datetime(""), "")
+        self.assertEqual(self.app.fr_datetime("pas une date"), "pas une date")
+
+    def test_a_conversation_can_be_deleted_in_one_click(self):
+        # La suppression n'existait que dans la vue « un par un », par
+        # courriel : un fil de douze messages demandait douze clics.
+        avant = self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0]
+        mail_id = self.db.execute(
+            "SELECT id FROM mails ORDER BY id LIMIT 1").fetchone()[0]
+        reponse = self.client.post("/echanges/fil/supprimer",
+                                   data={"key": f"m{mail_id}"})
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0], avant - 1)
+
+    def test_deleting_a_whole_thread_takes_all_its_mails(self):
+        ids = [r[0] for r in self.db.execute(
+            "SELECT id FROM mails ORDER BY id LIMIT 3")]
+        for mail_id in ids:
+            self.db.execute(
+                "INSERT OR REPLACE INTO mail_thread (mail_id, thread_key) "
+                "VALUES (?, 'fil-test')", (mail_id,))
+        self.db.commit()
+        avant = self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0]
+        self.client.post("/echanges/fil/supprimer", data={"key": "fil-test"})
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0],
+            avant - len(ids))
+
+    def test_deleting_an_unknown_thread_is_a_404_not_a_silent_success(self):
+        self.assertEqual(
+            self.client.post("/echanges/fil/supprimer",
+                             data={"key": "nexiste-pas"}).status_code, 404)
+
     def test_a_search_keeps_its_terms_across_pages(self):
         html = self._html("/mails?q=Sujet&page=2")
         self.assertIn("q=Sujet", html)

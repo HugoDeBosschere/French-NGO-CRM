@@ -35,6 +35,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from orglink import link_group  # noqa: E402
+# Une seule définition de « cette URL vient-elle d'une source
+# officielle ? », partagée avec la synchro des député·es et des
+# sénateur·ices : deux copies divergeraient.
+from sync_emails_from_elus import pose_par_le_script  # noqa: E402
+from civicrm import norm_name  # noqa: E402
+from elus_roster import (  # noqa: E402
+    GROUPE_ATTENTE,
+    app_constant,
+    merge_roles,
+    resoudre_groupe,
+)
 
 SRC = os.path.join(ROOT, "actual_dataset", "eurodeputes_fr.json")
 DB = os.path.join(ROOT, "meetings.db")
@@ -82,6 +93,46 @@ def app_labels(chamber):
     return set(groups[chamber]), set(roles)
 
 
+
+# Les colonnes de portrait et de fiche officielle n'existent que depuis la
+# migration d'octobre 2026 : une base plus ancienne, ou un test, peut ne pas
+# les avoir, et le script ne doit pas tomber pour autant.
+def _colonnes_medias(db):
+    cols = {r[1] for r in db.execute("PRAGMA table_info(persons)")}
+    return {"photo_url", "fiche_url"} <= cols
+
+
+def poser_medias(db, person_id, photo, fiche):
+    """Portrait et fiche officielle, remplis s'ils manquent, rafraîchis s'ils
+    viennent déjà du Parlement européen.
+
+    Même règle que sync_emails_from_elus.py pour les député·es et les
+    sénateur·ices : on ne remplace que ce que nos propres scripts ont posé, et
+    jamais une valeur saisie à la main. L'adresse du portrait change quand la
+    photo officielle change.
+    """
+    if not _colonnes_medias(db):
+        return 0
+    actuel = db.execute(
+        "SELECT photo_url, fiche_url FROM persons WHERE id = ?",
+        (person_id,)).fetchone() or (None, None)
+    neufs = []
+    for colonne, valeur, ancien in (("photo_url", photo, actuel[0]),
+                                    ("fiche_url", fiche, actuel[1])):
+        if not valeur:
+            continue
+        ancien = (ancien or "").strip()
+        # `pose_par_le_script` plutôt qu'un test maison : il compare l'HÔTE et
+        # non la fin de la chaîne. Un « in » laissait passer
+        # evil-europarl.europa.eu.pirate.fr, attrapé par un test.
+        if not ancien or (pose_par_le_script(ancien) and ancien != valeur):
+            neufs.append((colonne, valeur))
+    if not neufs:
+        return 0
+    db.execute("UPDATE persons SET " + ", ".join(f"{c} = ?" for c, _v in neufs)
+               + " WHERE id = ?", [v for _c, v in neufs] + [person_id])
+    return 1
+
 def main():
     valid_groups, valid_roles = app_labels("Parlement européen")
     if ROLE not in valid_roles:
@@ -115,21 +166,80 @@ def main():
     db.execute("PRAGMA busy_timeout = 30000")
     db.execute("PRAGMA foreign_keys = ON")
 
-    existing = {r[0] for r in db.execute("SELECT name FROM persons")}
+    # Même correctif que pour les deux autres chambres (utils/elus_roster.py) :
+    # on lit le rôle, pour voir qu'une fiche existante n'a pas encore le mandat.
+    existing = {
+        r[0]: (r[1], r[2]) for r in db.execute("SELECT name, id, role FROM persons")
+    }
+    # Un second index, insensible aux accents et à la ponctuation. L'API du
+    # Parlement écrit « Leila Chaibi » là où le CRM a « Leïla Chaibi » : la
+    # comparaison stricte en faisait deux personnes, créait une fiche en
+    # double et annonçait l'originale comme partie du Parlement. Constaté sur
+    # la base de production. Même normalisation que le script de fusion.
+    par_nom_normalise = {}
+    for nom, (pid, role) in existing.items():
+        par_nom_normalise.setdefault(norm_name(nom), (nom, pid, role))
+    roles_order = app_constant("POLITICAL_ROLES")
+    groupes_neutres = set(app_constant("POLITICAL_GROUPS")["Autre"])
     seen = set()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    inserted = skipped = backfilled = 0
+    inserted = skipped = backfilled = medias = 0
+    promus, unmapped, sans_groupe_decl = [], [], []
     for m in meps:
         name = m["nom_complet"]
         seen.add(name)
+        # Un groupe inconnu ne doit plus planter l'import au milieu : la
+        # personne entre avec le groupe d'attente, et l'anomalie est signalée
+        # à la fin, une fois tout le monde enregistré.
+        group, anomalie = resoudre_groupe(
+            m["groupe"], GROUPE_TO_GROUP, "Parlement européen"
+        )
+        if anomalie:
+            unmapped.append((name, anomalie))
+        elif group == GROUPE_ATTENTE["Parlement européen"]:
+            sans_groupe_decl.append(name)
+
+        proche = par_nom_normalise.get(norm_name(name))
+        if name not in existing and proche:
+            # Même personne, orthographe différente : on garde la fiche et son
+            # historique, et on note le nom du CRM comme « vu », sinon il
+            # serait annoncé comme ayant quitté le Parlement.
+            name = proche[0]
+            seen.add(name)
         if name in existing:
-            skipped += 1
+            pid, role_actuel = existing[name]
+            # Avant toute autre considération : le portrait et la fiche ne
+            # dépendent ni du rôle ni du groupe. Posés plus bas, ils ne
+            # touchaient que les fiches dont le mandat changeait — mesuré sur
+            # la base de production : 1 portrait pour 81 eurodéputé·es, les 80
+            # autres étant « déjà présentes » et sortant par `continue`.
+            medias += poser_medias(db, pid, m.get("photo"), m.get("url"))
+            fusion = merge_roles(role_actuel, ROLE, roles_order)
+            if fusion != (role_actuel or ""):
+                ancien_groupe = db.execute(
+                    "SELECT political_group FROM persons WHERE id = ?", (pid,)
+                ).fetchone()[0]
+                db.execute(
+                    "UPDATE persons SET role = ?, political_group = ?,"
+                    " email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?",
+                    (
+                        fusion,
+                        group if not ancien_groupe or ancien_groupe in groupes_neutres
+                        else ancien_groupe,
+                        m["email"],
+                        pid,
+                    ),
+                )
+                link_group(db, pid, group, "Parlement européen")
+                promus.append(f"{name} : {role_actuel or '—'} -> {fusion}")
+            else:
+                skipped += 1
             if m["email"]:
                 backfilled += db.execute(
-                    "UPDATE persons SET email = ? WHERE name = ? AND role = ? "
+                    "UPDATE persons SET email = ? WHERE name = ? AND role LIKE ? "
                     "AND (email IS NULL OR email = '')",
-                    (m["email"], name, ROLE),
+                    (m["email"], name, f"%{ROLE}%"),
                 ).rowcount
             continue
         cur = db.execute(
@@ -139,12 +249,13 @@ def main():
                 added_by, validated_by, created_at
             ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)
             """,
-            (name, ROLE, GROUPE_TO_GROUP[m["groupe"]], "Inconnu", m["email"], now),
+            (name, ROLE, group, "Inconnu", m["email"], now),
         )
-        link_group(db, cur.lastrowid, GROUPE_TO_GROUP[m["groupe"]],
-                   "Parlement européen")
+        link_group(db, cur.lastrowid, group, "Parlement européen")
+        medias += poser_medias(db, cur.lastrowid, m.get("photo"), m.get("url"))
         inserted += 1
-        existing.add(name)
+        existing[name] = (cur.lastrowid, ROLE)
+        par_nom_normalise.setdefault(norm_name(name), (name, cur.lastrowid, ROLE))
 
     db.commit()
 
@@ -159,13 +270,30 @@ def main():
     print(
         f"Inserted: {inserted}  |  Skipped (already present): {skipped}"
         f"  |  Emails backfilled: {backfilled}"
+        f"  |  Portraits / fiches: {medias}"
     )
     if gone:
         print(
             f"Plus au Parlement ({len(gone)}) — conservé·es, à vérifier à la "
             f"main: {', '.join(gone)}"
         )
+    if promus:
+        print(f"\nMandat de député·e européen·ne ajouté à {len(promus)} fiche(s) :")
+        for ligne in promus:
+            print(f"  {ligne}")
+    if sans_groupe_decl:
+        print(
+            f"\n{len(sans_groupe_decl)} eurodéputé·e(s) sans groupe déclaré, "
+            f"rangé·es dans « {GROUPE_ATTENTE['Parlement européen']} » : "
+            + ", ".join(sans_groupe_decl[:10])
+            + (" …" if len(sans_groupe_decl) > 10 else "")
+        )
     print(f"persons table now holds: {total}")
+    if unmapped:
+        raise SystemExit(
+            f"Groupes inconnus ({len(unmapped)}), "
+            f"à ajouter à GROUPE_TO_GROUP : {unmapped!r}"
+        )
 
 
 if __name__ == "__main__":

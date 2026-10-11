@@ -1,0 +1,21 @@
+[Unit]
+Description=Fusionner les fiches en double (nom identique), sans perdre d'échange
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+# Après les travaux qui créent des fiches : la synchro CiviCRM (06:30), les
+# listes officielles (lundi 05:30) et les imports de courriels. Nettoyer avant
+# eux reviendrait à laisser les doublons du jour s'installer vingt-quatre
+# heures.
+After=civicrm-sync.service sync-officials.service
+
+OnFailure=alerte@%n.service
+
+[Service]
+Type=oneshot
+ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# Une sauvegarde AVANT, parce que c'est le seul travail planifié qui SUPPRIME
+# des lignes. `VACUUM INTO` et non `cp` : la base est en WAL.
+ExecStartPre=/usr/bin/docker exec website-meeting-app python3 /app/utils/backup_db.py
+ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/fusionner_doublons.py --db /app/meetings.db

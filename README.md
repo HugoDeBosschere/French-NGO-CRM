@@ -52,6 +52,19 @@ session (`login_required`).
   - **Validé par** — who validated it (**mandatory**).
   - **Qui a participé / reçu** — the _utilisateurices_ involved in the meeting
     or who received the mail.
+- **Suivi des échanges** (`/echanges`) — tous les courriels, en **deux
+  lectures d'un même onglet** : *Par conversation*, regroupés par fil, avec
+  filtres par origine, interlocuteur et membre ; *Un par un*, à plat, paginés,
+  avec suppression en ligne. Les sous-onglets *Membres*, *À rattacher* et
+  *Déposer* complètent la famille. Une conversation entière se supprime d'un
+  clic. Le corps des courriels est mis en forme à l'affichage : les retours à
+  la ligne durs du client d'envoi sont défaits, les listes recollées, les
+  adresses rendues cliquables.
+- **Élu·es** — partout où une personne apparaît : son **portrait officiel**,
+  son nom cliquable vers sa fiche CRM, sa fonction / circonscription / groupe
+  en une ligne, son adresse, et un lien vers sa **fiche parlementaire** sur le
+  site de l'Assemblée ou du Sénat. Renseignés automatiquement depuis
+  `elus.json`, la même source que l'outil « Écrire à mes élus » du site.
 - **Calendar** — a monthly view (`/calendar`) plotting upcoming meetings and
   follow-up ("relance") dates, with month-to-month navigation.
 - **Edit & delete** — every record (person, meeting, mail) can be **edited** via
@@ -110,7 +123,8 @@ staging tables for anonymous submissions:
 persons ──< person_organisations  >── organisations
 persons ──< meeting_persons       >── meetings ──< meeting_moderators   >── moderators
                                               └──< meeting_availability >── moderators
-persons ──< mail_persons          >── mails
+persons ──< mail_persons          >── mails ──── mail_bodies (le corps, à part)
+persons ──< person_emails  (adresses apprises : cabinet, attaché·e, perso)
 persons ──< intervention_persons  >── interventions >── organisations
                                               └──< intervention_moderators >── moderators
 persons ──< content_persons       >── contents      >── organisations
@@ -236,8 +250,12 @@ start empty).
 ```
 app.py               Flask app: config, schema/migrations, routes
 static/style.css     Stylesheet (no build step)
-static/form-masks.js Client-side input helpers (date/time masks, and the
-                     type-de-contact / type-d'organisation form toggles)
+static/form-masks.js Client-side input helpers (date/time masks, the
+                     type-de-contact / type-d'organisation form toggles, and
+                     the search that filters a list of checkboxes)
+static/person-picker.js  Searchable combobox over the 1 800 fiches
+static/rows.js       Clickable table rows made keyboard-reachable, and the
+                     broken-portrait fallback
 templates/           Jinja templates (base, _macros, login, people,
                      organisations, interventions, contenus, meetings, mails,
                      declarer_*, moderation, moderators)

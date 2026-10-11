@@ -2,13 +2,14 @@
 {% from "_macros.html" import pager %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Organisations{% endblock %}
+{% block container_class %}container-wide{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Organisations</h1>
   <span class="head-actions">
     {# One button, not one per type: the form asks for the type anyway, and
        six of them would not fit on the line. #}
-    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Organisation</a>
+    <a class="btn btn-primary" href="{{ url_for('new_organisation') }}">+ Nouvelle organisation</a>
   </span>
 </div>
 
@@ -17,7 +18,7 @@
          placeholder="Rechercher par nom, type, chambre, religion ou position…">
   {% if org_type %}<input type="hidden" name="org_type" value="{{ org_type }}">{% endif %}
   <button class="btn" type="submit">Rechercher</button>
-  {% if q %}<a class="btn btn-ghost" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
+  {% if q %}<a class="btn btn-ghost" title="Effacer la recherche et réafficher toute la liste" href="{{ url_for('organisations', org_type=org_type or none) }}">Effacer</a>{% endif %}
 </form>
 
 <div class="filter-chips">
@@ -25,7 +26,9 @@
      href="{{ url_for('organisations', q=q or none) }}">Toutes <span class="muted">{{ total }}</span></a>
   {# « ONG » is invariable and « Autre » reads as a label rather than a noun,
      so the plural is a lookup and not a bare « s ». #}
-  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres'} %}
+  {# « Groupe politique » + « s » donnait « Groupe politiques ». #}
+  {% set ORG_CHIP_LABEL = {'ONG': 'ONG', 'Autre': 'Autres',
+                           'Groupe politique': 'Groupes politiques'} %}
   {% for t in org_types %}
     <a class="chip {{ 'chip-on' if org_type == t }}"
        href="{{ url_for('organisations', q=q or none, org_type=t) }}">
@@ -36,11 +39,27 @@
 {% if organisations %}
 <div class="table-wrap">
   <table class="meetings">
+    <colgroup>
+      <col style="width: 21%">
+      <col style="width: 12%">
+      <col style="width: 11%">
+      <col style="width: 15%">
+      <col style="width: 12%">
+      <col class="col-num" style="width: 7%">
+      <col class="col-num" style="width: 8%">
+      <col class="col-num" style="width: 7%">
+      <col style="width: 7%">
+    </colgroup>
     <thead>
       <tr>
-        <th>Nom</th><th>Type</th><th>Type de média / Chambre</th>
-        <th>Orientation</th><th>Position sur PauseIA</th>
-        <th>Personnes</th><th>Interventions</th><th>Contenus</th><th>Lien</th>
+        {# Neuf colonnes dans une carte de 1 150 px : les trois compteurs
+           portent un libellé abrégé, sinon « Interventions » se coupe en
+           « INTERV / ENTION / S ». Le mot entier reste au survol. #}
+        <th>Nom</th><th>Type</th><th>Média / Chambre</th>
+        <th>Orientation</th><th>Position</th>
+        <th class="col-num" title="Personnes rattachées">Pers.</th>
+        <th class="col-num" title="Interventions">Interv.</th>
+        <th class="col-num" title="Contenus">Cont.</th><th>Lien</th>
       </tr>
     </thead>
     <tbody>
@@ -51,10 +70,10 @@
         <td>{{ o['media_type'] or o['chambre'] or o['religion'] or '' }}</td>
         <td>{{ o['orientation'] or '' }}</td>
         <td>{{ o['stance'] }}</td>
-        <td class="nowrap">{{ o['person_count'] }}</td>
-        <td class="nowrap">{{ o['intervention_count'] }}</td>
-        <td class="nowrap">{{ o['content_count'] }}</td>
-        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
+        <td class="col-num">{{ o['person_count'] }}</td>
+        <td class="col-num">{{ o['intervention_count'] }}</td>
+        <td class="col-num">{{ o['content_count'] }}</td>
+        <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

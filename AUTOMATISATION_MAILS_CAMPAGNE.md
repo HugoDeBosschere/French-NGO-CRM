@@ -74,12 +74,49 @@ depuis la source officielle, ce qui a débloqué leur matching.
 - Pour les reprises historiques : dédoublonnage supplémentaire par
   (élu·e, date) contre les mails déjà présents.
 
-## 7. RGPD
+## 7. Ce qui est conservé
 
-Minimisation : on ne stocke que **l'élu·e, la date et l'objet** du mail.
-**L'identité du citoyen n'est jamais enregistrée** (l'en-tête `From` n'est pas lu).
+**L'en-tête `From` n'est ni lu ni stocké** : le CRM ne tient pas de registre
+des expéditeurs.
 
-Cette règle commande la mise en file décrite ci-dessous : `queue_unknown_
+> **Révisé en octobre 2026.** Jusque-là, on ne gardait que l'élu·e, la date et
+> l'objet, au nom de la minimisation. Deux raisons de revenir dessus. D'abord
+> la minimisation était illusoire : c'est le citoyen lui-même qui met PauseIA
+> en copie cachée de ce qu'il écrit — un acte délibéré de sa part, pas une
+> captation. Ensuite c'était inexploitable : sans le corps, impossible de
+> distinguer un premier envoi d'un fil où l'élu·e avait fini par répondre.
+>
+> **Le corps est donc conservé**, dans `mail_bodies` et non dans `summary` —
+> `summary` garde l'étiquette « Mail d'un citoyen à … », dont dépend la colonne
+> « Origine » du suivi des échanges.
+>
+> Ce que ça implique, et qu'il faut savoir plutôt que découvrir : le corps
+> porte la signature du citoyen, donc son nom et parfois ses coordonnées, dans
+> une page que lit toute personne ayant le mot de passe partagé.
+>
+> Les courriels importés avant ce changement n'ont pas de corps, et aucun
+> import futur ne le leur donnera (la déduplication se fait sur le
+> Message-ID). `utils/backfill_campagne_corps.py` relit la boîte pour les
+> rattraper — voir `utils/README.md`.
+
+### Le sens de l'échange
+
+Le pipeline ne voit qu'un côté. Deux indices, du plus sûr au moins sûr :
+
+1. **À qui c'est adressé.** L'élu·e dans `To`/`Cc` : le citoyen lui écrit et
+   nous met en copie cachée — premier envoi. Notre adresse dans `To`/`Cc` sans
+   celle de l'élu·e : le citoyen s'adresse à nous, il nous transmet quelque
+   chose. Structurel, indépendant de la langue et du client de messagerie.
+2. **L'objet**, à défaut : `Re:`, `TR:`, `Fwd:`. Moins fiable — un citoyen peut
+   se répondre à lui-même, et certains clients ne préfixent rien.
+
+Aucun des deux ne prouve que c'est l'élu·e qui a répondu : le sens reste
+corrigeable à la main sur la fiche du courriel, et le corps conservé permet de
+trancher.
+
+### La file d'identification reste asymétrique
+
+Que le corps soit conservé ne change rien à la règle suivante : `queue_unknown_
 recipients()` ne lit **que** les en-têtes de destinataires. Le pipeline des
 membres, lui, met en file les deux côtés — c'est légitime là-bas, où les deux
 correspondants sont identifiés. Ici, la même symétrie serait une fuite : elle

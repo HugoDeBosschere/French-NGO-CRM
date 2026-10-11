@@ -178,3 +178,50 @@ class PruneScopeTests(unittest.TestCase):
     def test_a_dry_run_removes_nothing(self):
         self.cl.cmd_prune(self.db, type("A", (), {"commit": False})())
         self.assertEqual(len(self._left()), 6)
+
+
+class AideEtTiretsTests(unittest.TestCase):
+    """Ce que la page explique, et comment elle l'écrit.
+
+    « À rattacher » posait une question sans la poser et proposait trois
+    boutons sans dire ce qu'ils font. Et les tirets longs sont proscrits dans
+    le texte visible.
+    """
+
+    def setUp(self):
+        os.environ.setdefault("CRM_DB_PATH", tempfile.mkstemp(suffix=".db")[1])
+        os.environ["APP_PASSWORD"] = "x"
+        import app                                    # noqa: PLC0415
+        app.init_db()
+        self.client = app.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["authenticated"] = True
+
+    def _html(self):
+        return self.client.get("/echanges/a-rattacher").get_data(as_text=True)
+
+    def test_la_question_posee_est_ecrite(self):
+        self.assertIn("À qui appartient cette adresse", self._html())
+
+    def test_les_trois_actions_sont_expliquees(self):
+        html = self._html()
+        for mot in ("Rattacher", "Pas une personne à suivre",
+                    "Bloquer cette adresse"):
+            self.assertIn(mot, html)
+        self.assertIn("Trois réponses possibles", html)
+
+    def test_la_difference_entre_les_deux_refus_est_dite(self):
+        # « Ignorer » et « Ne jamais enregistrer » ne disaient pas en quoi
+        # elles diffèrent, et le texte que j'avais écrit était faux : les deux
+        # retirent l'adresse de la liste. La vraie différence porte sur ce qui
+        # arrive ENSUITE aux courriels.
+        html = self._html()
+        self.assertIn("ses courriels entreront normalement", html)
+        self.assertIn("jamais", html)
+
+    def test_aucun_tiret_long_dans_le_texte_visible(self):
+        self.assertNotIn("—", self._html())
+
+    def test_la_page_de_depot_non_plus(self):
+        self.assertNotIn(
+            "—", self.client.get("/echanges/deposer").get_data(as_text=True))

@@ -3,6 +3,10 @@ Description=Sauvegarde cohérente de meetings.db, sortie du conteneur
 After=docker.service
 Requires=docker.service
 
+# Prévient en cas d'échec (unité modèle alerte@.service). Sans cette ligne,
+# une panne ne se voit que dans le journal, c'est-à-dire par personne.
+OnFailure=alerte@%n.service
+
 [Service]
 Type=oneshot
 # BACKUP_DIR, BACKUP_KEEP et surtout RSYNC_DEST (copie hors machine) se règlent

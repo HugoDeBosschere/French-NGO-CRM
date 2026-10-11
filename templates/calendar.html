@@ -7,9 +7,9 @@
 </div>
 
 <div class="cal-bar">
-  <a class="btn" href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}">←</a>
+  <a class="btn" href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}" title="Mois précédent" aria-label="Mois précédent">←</a>
   <strong class="cal-title">{{ month_name | capitalize }} {{ year }}</strong>
-  <a class="btn" href="{{ url_for('calendar_view', year=next_year, month=next_month) }}">→</a>
+  <a class="btn" href="{{ url_for('calendar_view', year=next_year, month=next_month) }}" title="Mois suivant" aria-label="Mois suivant">→</a>
   <a class="btn btn-ghost" href="{{ url_for('calendar_view') }}">Aujourd'hui</a>
   <span class="cal-legend">
     <span class="cal-ev cal-meeting">Rencontre</span>

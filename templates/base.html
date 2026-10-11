@@ -34,10 +34,17 @@
         <a href="{{ url_for('fait') }}">Fait</a>
         <a class="nav-repartition" href="{{ url_for('repartition') }}">Répartition</a>
         <a class="nav-calendar" href="{{ url_for('calendar_view') }}">Calendrier</a>
-        <a href="{{ url_for('exchanges') }}">Suivi des échanges</a>
+        {# Un seul point d'entrée pour les courriels. « Courriels » menait à
+           /mails, qui n'est qu'un des cinq sous-onglets de cette famille :
+           le suivi des échanges les porte tous (Échanges, Membres, À
+           rattacher, Déposer, Tous les courriels), donc c'est lui qui reste.
+           /mails garde son adresse et tous ses liens. Le compteur des
+           adresses à rattacher s'affiche ici, puisque c'est désormais la
+           seule porte d'entrée : sinon personne ne verrait qu'il y en a. #}
+        <a href="{{ url_for('exchanges') }}">Suivi des échanges{% if unlinked_count %}
+          <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
         <a class="nav-record" href="{{ url_for('index') }}">Rencontres</a>
         <a class="nav-record" href="{{ url_for('people') }}">Personnes</a>
-        <a class="nav-record" href="{{ url_for('mails') }}">Courriels</a>
         <a class="nav-record" href="{{ url_for('organisations') }}">Organisations</a>
         <a class="nav-record" href="{{ url_for('interventions') }}">Interventions</a>
         <a class="nav-record" href="{{ url_for('contents') }}">Contenus</a>

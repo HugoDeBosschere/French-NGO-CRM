@@ -1,0 +1,12 @@
+[Unit]
+Description=Nettoyage quotidien des fiches en double
+
+[Timer]
+# 07:10 : après la synchro CiviCRM de 06:30, qui est la principale pourvoyeuse
+# de doublons — une même personne arrivant par CiviCRM et par l'open data
+# parlementaire obtient deux fiches.
+OnCalendar=*-*-* 07:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import valeur %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Courriel · {{ x['mail_date'] | fr_date }}{% endblock %}
 {% block content %}
@@ -18,7 +19,7 @@
   <div class="grid-2">
     <div class="field">
       <label>Sens</label>
-      <p>{{ directions[x['direction']] }}</p>
+      <p>{{ valeur(directions[x['direction']]) }}</p>
     </div>
     <div class="field">
       <label>Importance</label>
@@ -32,7 +33,7 @@
       <ul class="people-list">
         {% for p in people %}
           <li>
-            <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+            {{ ui.personne_lien(p) }}
             {% if p['organisation_names'] %}<span class="tag">{{ p['organisation_names'] }}</span>{% endif %}
             {{ ui.contact_tag(p['contact_type']) }}
             <span class="muted">· {{ p['stance'] }}</span>
@@ -77,22 +78,25 @@
 
   <div class="field">
     <label>Objet</label>
-    <p>{{ x['subject'] or '' }}</p>
+    <p>{{ valeur(x['subject']) }}</p>
   </div>
 
   <div class="field">
     <label>Corps du texte</label>
-    <p class="prose">{{ x['summary'] }}</p>
+    {# Le vrai corps quand il est conservé ; sinon le résumé, qui pour un
+       courriel citoyen n'est que l'étiquette « Mail d'un citoyen à … ». #}
+    {% if x['body'] %}<div class="mail-text">{{ x['body'] | corps_mail }}</div>
+    {% else %}<p class="prose">{{ valeur(x['summary']) }}</p>{% endif %}
   </div>
 
   <div class="grid-2">
     <div class="field">
       <label>Qui a reçu / envoyé le mail</label>
-      <p>{{ received_by or '' }}</p>
+      <p>{{ valeur(received_by) }}</p>
     </div>
     <div class="field">
       <label>Validé par</label>
-      <p>{{ validated_by or '' }}</p>
+      <p>{{ valeur(validated_by) }}</p>
     </div>
   </div>
 
@@ -105,6 +109,6 @@
     {% endif %}
   </div>
 
-  <p class="muted count">Enregistré le {{ x['created_at'] }} · courriel n°{{ x['id'] }}</p>
+  <p class="muted count">Enregistré le {{ x['created_at'] | fr_datetime }} · courriel n°{{ x['id'] }}</p>
 </div>
 {% endblock %}

@@ -66,6 +66,13 @@ class BackupTests(unittest.TestCase):
         self._run()
         self.assertEqual(len(self._backups()), 2)
 
+    def test_four_runs_in_one_second_keep_four_copies(self):
+        # Deux passages dans la même seconde portaient le même nom : le second
+        # écrasait le premier sans rien dire. Quatre copies, quatre fichiers.
+        for _ in range(4):
+            self._run()
+        self.assertEqual(len(self._backups()), 4)
+
     def test_rotation_keeps_the_most_recent(self):
         for _ in range(4):
             self._run()

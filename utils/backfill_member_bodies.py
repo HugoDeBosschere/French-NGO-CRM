@@ -100,10 +100,82 @@ def backfill_pending(db, dry_run):
     return fixed
 
 
+def refaire_les_corps(db, dry_run):
+    """Ré-extraire le corps des courriels de membres déjà enregistrés.
+
+    Même besoin que `--refaire` côté citoyen, et même raison : les corps ont
+    été extraits par une version qui remplaçait chaque balise HTML par une
+    espace et ne décodait pas les entités. Un message transféré arrivait d'un
+    seul tenant, avec « &nbsp; », « &lt; » et « &gt; » en clair. Constaté sur
+    trois courriels de la base de production, dont un transfert de l'équipe
+    plaidoyer.
+
+    On relit la boîte d'audit et on rapproche par (sens, date, objet), comme
+    le fait déjà la reprise des brouillons ci-dessus. La source est la même,
+    donc le résultat ne peut qu'être meilleur, et le corps n'est modifiable
+    nulle part dans l'interface : aucun travail humain n'est écrasé.
+    """
+    lignes = db.execute(
+        """
+        SELECT x.id, x.direction, x.mail_date, COALESCE(x.subject, '') AS objet
+          FROM mails x
+          JOIN mail_members mm ON mm.mail_id = x.id
+          JOIN mail_bodies  b  ON b.mail_id  = x.id
+         GROUP BY x.id
+        """
+    ).fetchall()
+    if not lignes:
+        log("Corps de membres à reprendre : aucun.")
+        return 0
+    if not (os.environ.get("MEMBER_IMAP_USER")
+            and os.environ.get("MEMBER_IMAP_APP_PASSWORD")):
+        log(f"Corps de membres : {len(lignes)} trouvés, mais MEMBER_IMAP_* "
+            f"n'est pas renseigné — rien relu.")
+        return 0
+
+    email_index = load_email_index_with_aliases(db)
+    name_patterns = build_name_pattern_index(db)
+    mailbox = os.environ.get("MEMBER_IMAP_MAILBOX", "INBOX")
+    conn = connect_imap()
+    corps = {}
+    try:
+        for uid in fetch_uids(conn, mailbox, 0, True):
+            statut, data = conn.uid("fetch", str(uid), "(RFC822)")
+            if statut != "OK" or not data or not data[0]:
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            direction, _m, _mem, _l, _low = classify(
+                msg, db, email_index, name_patterns)
+            if not direction:
+                continue
+            texte = extract_body(msg)
+            if texte:
+                corps[(direction, mail_date_iso(msg),
+                       decoded(msg.get("Subject")) or "(sans objet)")] = texte
+    finally:
+        conn.logout()
+
+    refaits = 0
+    for mail_id, direction, mail_date, objet in lignes:
+        texte = corps.get((direction, mail_date, objet))
+        if not texte:
+            continue
+        if not dry_run:
+            db.execute(
+                "INSERT OR REPLACE INTO mail_bodies (mail_id, body) "
+                "VALUES (?, ?)", (mail_id, texte))
+        refaits += 1
+    log(f"Corps de membres ré-extraits : {refaits}/{len(lignes)}")
+    return refaits
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=os.environ.get("IMAP_DB_PATH", DEFAULT_DB))
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--refaire", action="store_true",
+                    help="ré-extraire les corps déjà enregistrés, pour "
+                         "profiter d'une extraction HTML corrigée")
     args = ap.parse_args()
 
     db = sqlite3.connect(args.db)
@@ -111,6 +183,8 @@ def main():
     # with "database is locked" on the first contention.
     db.execute("PRAGMA busy_timeout = 30000")
     ensure_member_tables(db)
+    if args.refaire:
+        refaire_les_corps(db, args.dry_run)
     backfill_published(db, args.dry_run)
     backfill_pending(db, args.dry_run)
     if not args.dry_run:

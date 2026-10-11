@@ -193,6 +193,12 @@ h2 { font-size: 1.2rem; margin: 2rem 0 .75rem; }
 
 /* ---------- Tables ---------- */
 .table-wrap {
+  /* Sans bloc conteneur ici, un enfant `position: absolute` — le libellé
+     `.sr-only` de la colonne « Supprimer », tout à droite du tableau — se
+     positionne par rapport à la page et échappe au défilement ci-dessous :
+     1 px invisible à 530 px du bord emportait toute la page de 237 px vers la
+     droite sur un téléphone de 320 px. Mesuré, pas supposé. */
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -217,6 +223,24 @@ table.meetings thead th {
   border-bottom: 1px solid var(--line);
 }
 table.meetings tbody td { padding: .8rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+/* Les tableaux tiennent dans l'écran, point. On a essayé l'inverse — laisser
+   l'algorithme de colonnes faire au mieux et donner au tableau une largeur
+   minimale, la carte défilant en dessous — et c'était impraticable : la barre
+   de défilement se trouve tout en bas d'un tableau de vingt mille pixels de
+   haut, et il faut la chercher puis faire des allers-retours pour lire une
+   seule ligne.
+
+   `table-layout: fixed` plus une largeur par colonne (voir le <colgroup> de
+   chaque gabarit) : la répartition est décidée d'avance, le texte revient à la
+   ligne dans sa cellule, et rien ne sort de l'écran. C'est aussi ce qui
+   empêche le navigateur d'écraser une colonne à une lettre — le défaut qui
+   découpait les noms propres en « Pernel / le / Fricot / eaux ».
+
+   `break-word` reste pour les chaînes sans espace : une adresse électronique
+   ou une URL plus large que sa colonne doit se couper plutôt que déborder. */
+table.meetings { table-layout: fixed; width: 100%; }
+table.meetings td,
+table.meetings th { overflow-wrap: break-word; }
 table.meetings tbody tr:last-child td { border-bottom: 0; }
 table.meetings tbody tr { cursor: pointer; transition: background .1s; }
 table.meetings tbody tr:hover { background: var(--brand-soft); }
@@ -393,10 +417,19 @@ a.cal-ev:hover {
 @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
 
 .field > label { display: block; font-weight: 600; margin-bottom: .35rem; font-size: .92rem; }
+/* La liste était incomplète : `email`, `tel`, `url` et `time` n'y figuraient
+   pas et gardaient la largeur par défaut du navigateur. Sur « Proposer une
+   personne », « Courriel » faisait la moitié de « Téléphone » juste à côté,
+   dans la même grille ; « Heure » était un timbre-poste à côté de « Date ».
+   `number` reste dehors : plusieurs blocs le veulent étroit exprès. */
 .field input[type="text"],
 .field input[type="date"],
+.field input[type="email"],
 .field input[type="password"],
 .field input[type="search"],
+.field input[type="tel"],
+.field input[type="time"],
+.field input[type="url"],
 .field select,
 .field textarea {
   width: 100%;
@@ -516,13 +549,22 @@ a.cal-ev:hover {
 .notice a { color: #7a5300; text-decoration: underline; }
 
 /* ---------- Sub-tabs (secondary nav within a page) ---------- */
+/* Les cinq onglets totalisent ~450 px : sur un téléphone de 390 px, ils
+   poussaient TOUTE la page en débordement horizontal (mesuré : +63 px sur
+   /mails). La barre défile désormais pour son propre compte, les onglets
+   restent tous atteignables d'un glissement, et la page ne bouge plus. */
 .subtabs {
   display: flex;
   gap: .25rem;
   border-bottom: 1px solid var(--line);
   margin: -.25rem 0 1.25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 .subtab {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: .5rem .9rem;
   color: var(--muted);
   border-bottom: 2px solid transparent;
@@ -618,14 +660,17 @@ a.cal-ev:hover {
 }
 .mail-addr-val { flex: 1 1 auto; }
 
+/* Le corps d'un courriel. `pre-wrap` est parti avec le <pre> : les retours à
+   la ligne durs du client d'envoi (autour de 75 caractères) étaient conservés
+   tels quels et cassaient les phrases au milieu, quelle que soit la largeur de
+   l'écran. Le filtre `corps_mail` les défait et rend des paragraphes. */
 .mail-text {
   margin: .85rem 0 0;
   padding: 1rem;
   background: #fafbfc;
   border: 1px solid var(--line);
   border-radius: 8px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
   font-family: inherit;
   font-size: .95rem;
   line-height: 1.55;
@@ -1090,6 +1135,11 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
     display: block;
     width: 100%;
   }
+  /* Le `min-width` des tableaux donne de l'air aux colonnes ; empilée en
+     fiches, cette largeur n'a plus de sens et ne faisait que rejeter la moitié
+     de chaque fiche — le bouton « Ne jamais enregistrer » compris — derrière
+     le bord droit de l'écran. */
+  table.table-unlinked { min-width: 0; }
   .table-unlinked thead { display: none; }
   .table-unlinked tr {
     padding: .75rem .25rem;
@@ -1108,8 +1158,12 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   .inline-form { display: flex; flex-wrap: wrap; margin: .4rem 0 0; }
   .inline-form + .inline-form { margin-left: 0; }
   /* `min-width: 0` : sans lui un <select> refuse de descendre sous la largeur
-     de sa plus longue option et éjecte le bouton hors de l'écran. */
-  .inline-form select { max-width: none; flex: 1 1 100%; min-width: 0; }
+     de sa plus longue option et éjecte le bouton hors de l'écran. Le champ de
+     recherche qui a remplacé ce <select> a le même défaut — sa largeur par
+     défaut est celle de vingt caractères — et renvoyait « Rattacher » et « Ne
+     jamais enregistrer » hors du bord droit du téléphone. */
+  .inline-form select,
+  .inline-form .picker { max-width: none; flex: 1 1 100%; min-width: 0; }
   .inline-form .btn { flex: 1 1 auto; }
 }
 
@@ -1149,3 +1203,279 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
 .deposit-help { margin: 1.5rem 0; }
 .deposit-help summary { cursor: pointer; font-weight: 600; }
 .deposit-results-title { font-size: 1.05rem; margin: 1.5rem 0 .6rem; }
+
+/* ── Sélecteur de personne à recherche (file « À rattacher ») ─────────────
+   Remplace un <select> de près de deux mille entrées, recopié dans chaque
+   ligne du tableau. Voir static/person-picker.js. */
+.picker { position: relative; display: inline-block; min-width: 15rem; }
+
+.picker-input {
+  width: 100%;
+  padding: .35rem .55rem;
+  border: 1px solid var(--border, #cfd6dd);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+}
+.picker-input:focus {
+  outline: 2px solid var(--brand, #2d6cdf);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+/* Signale un envoi tenté sans avoir choisi quelqu'un dans la liste. */
+.picker-erreur { border-color: #b42318; background: #fbeaea; }
+
+.picker-list {
+  position: absolute;
+  z-index: 30;
+  inset-inline: 0;
+  top: calc(100% + 2px);
+  margin: 0;
+  padding: .2rem;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cfd6dd;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+.picker-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  padding: .4rem .55rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.picker-list li.actif { background: #eef3fb; }
+.picker-nom { font-weight: 600; }
+.picker-type { font-size: .82em; color: var(--muted, #6b7580); white-space: nowrap; }
+
+/* Le <select> de repli disparaît dès que le script a pris la main : il est
+   retiré du DOM par person-picker.js, cette règle ne sert qu'au cas où. */
+.picker-repli { max-width: 15rem; }
+
+/* Bouton de suppression en bout de ligne (liste des courriels) : discret,
+   il ne doit pas concurrencer la lecture, mais rester atteignable. */
+.btn-sm { padding: .15rem .45rem; font-size: .9em; line-height: 1.2; }
+.btn-sm:hover { background: #fbeaea; color: #b42318; }
+
+/* Étiquette réservée aux lecteurs d'écran : une colonne sans en-tête visible
+   reste une colonne, et doit s'annoncer. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Champ « ces courriels concernent » de la page de dépôt. */
+.deposit-person { margin: 1rem 0; }
+.deposit-person label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.deposit-person .picker-input { max-width: 22rem; }
+.deposit-person .hint { margin-top: .35rem; }
+
+/* Portrait officiel et lien vers la fiche parlementaire (page personne). */
+/* `wrap` : à 320 px, le portrait de 72 px et le bouton « Voir la fiche
+   parlementaire ↗ » côte à côte poussaient la page entière de 70 px vers la
+   droite. Mesuré une fois les photos présentes dans la base — sans elles, le
+   bloc ne s'affiche pas et le défaut restait invisible. */
+.fiche-officielle { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.fiche-officielle .btn { white-space: normal; }
+.fiche-officielle .portrait {
+  inline-size: 72px; block-size: 72px;
+  object-fit: cover; border-radius: 8px;
+  background: #eceff2;
+}
+.fiche-officielle .muted { margin: 0 0 .35rem; font-size: .85em; }
+
+/* Recherche dans une liste de cases à cocher (personnes concernées). */
+.checklist-filter {
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  padding: .35rem .55rem;
+  border: 1px solid #cfd6dd;
+  border-radius: 6px;
+  font: inherit;
+}
+.checklist-filter:focus { outline: 2px solid var(--brand, #2d6cdf); outline-offset: 1px; }
+
+/* ---------- Les deux lectures de l'onglet « Échanges » ---------- */
+/* « Par conversation » et « Un par un » ne sont pas deux sections : c'est le
+   même jeu de courriels, lu de deux façons. Un interrupteur le dit mieux que
+   deux onglets, qui laissaient croire à deux contenus différents. */
+.vue-switch {
+  display: inline-flex;
+  margin: -.75rem 0 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.vue {
+  padding: .4rem .9rem;
+  font-size: .92rem;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.vue + .vue { border-left: 1px solid var(--line); }
+.vue:hover { background: var(--bg); text-decoration: none; }
+.vue-on {
+  background: var(--brand-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Le rythme vertical d'une fiche. Les valeurs sont tantôt un <p>, tantôt une
+   <ul>, tantôt une étiquette colorée : chacune portait la marge que le
+   navigateur lui donne, si bien que « Résumé » collait à « Saisi par » pendant
+   que « Lien » flottait. Une seule marge pour toutes. Les indications sous un
+   champ de formulaire (.hint) gardent la leur : elles appartiennent au champ
+   au-dessus, pas au suivant. */
+.card .field > p:not(.hint),
+.card .field > ul { margin: 0 0 1rem; }
+.card .field:last-child > p:not(.hint),
+.card .field:last-child > ul { margin-bottom: 0; }
+
+/* L'ombre qui dit qu'un tableau continue au-delà du bord. Le bloc .table-zone
+   et les deux .table-ombre sont posés par rows.js, qui allume chaque côté
+   selon la position du défilement — une ombre permanente mentirait aussi
+   sûrement que pas d'ombre du tout. */
+.table-zone { position: relative; }
+.table-ombre {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border-radius: var(--radius);
+}
+.table-ombre-d {
+  right: 1px;
+  background: linear-gradient(to left, rgba(16, 24, 40, .16), transparent);
+}
+.table-ombre-g {
+  left: 1px;
+  background: linear-gradient(to right, rgba(16, 24, 40, .16), transparent);
+}
+.table-zone.defile-droite .table-ombre-d { opacity: 1; }
+.table-zone.defile-gauche .table-ombre-g { opacity: 1; }
+/* La barre de défilement, visible plutôt que fantôme : sur macOS elle
+   n'apparaît qu'au mouvement, donc l'indice ne peut pas reposer sur elle
+   seule, mais autant qu'elle se voie quand elle existe. */
+.table-wrap { scrollbar-width: thin; }
+
+/* ---------- Une personne : portrait, nom, fiche officielle ---------- */
+/* `flex-start` : avec deux lignes de texte, un portrait centré flotte au
+   milieu et ne se rattache visuellement à rien. Aligné sur le nom, il le
+   désigne. Le léger décalage compense la hauteur de ligne. */
+.personne { display: inline-flex; align-items: flex-start; gap: .45rem; vertical-align: top; }
+.personne .portrait-mini { margin-top: .1rem; }
+.personne + .personne { margin-left: .75rem; }
+.personne-texte { display: inline-flex; flex-direction: column; line-height: 1.25; }
+/* « Sénatrice · Savoie · Les Républicains » : l'information qui dit de qui on
+   parle, sans ouvrir la fiche. Petite et discrète — c'est un sous-titre, pas
+   une deuxième ligne de données. */
+.personne-id { font-size: .8em; color: var(--muted); }
+.personne-mail { font-size: .8em; color: var(--muted); text-decoration: none; }
+.personne-mail:hover { color: var(--brand-ink); text-decoration: underline; }
+.portrait-mini {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;   /* un portrait se cadre sur le visage */
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+/* La flèche vers l'assemblée : discrète, mais pas invisible — et une cible
+   d'au moins 24 px, sinon elle est intouchable au doigt. */
+.fiche-off {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .9em;
+  line-height: 1;
+  padding: .3rem;
+  margin: -.3rem;
+}
+.fiche-off:hover { color: var(--brand-ink); }
+
+/* La colonne de suppression : un en-tête, mais le plus discret possible — il
+   nomme une action rare, il ne doit pas peser autant que « Objet ». */
+.th-suppr { font-weight: 500; opacity: .75; }
+
+.mail-text p { margin: 0 0 .75rem; }
+.mail-text p:last-child { margin-bottom: 0; }
+/* Un point de liste : le numéro ou la puce est resté dans le texte, on lui
+   donne juste le retrait qui le fait lire comme une liste. */
+.mail-text .mail-puce { padding-left: 1.25rem; text-indent: -1.25rem; }
+/* Une citation — le message auquel on répond — en retrait et plus pâle, pour
+   qu'on distingue d'un coup d'œil ce qui a été écrit de ce qui est repris. */
+.mail-text .mail-citation {
+  padding-left: .85rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+/* Dans la file « à rattacher », le champ de recherche gardait sa largeur
+   minimale de 15 rem et poussait la colonne d'action hors du tableau — le
+   dernier endroit où une largeur fixe devait l'emporter sur la mise en page.
+   Il prend la place de sa colonne, ni plus ni moins. */
+.table-unlinked .picker { min-width: 0; width: 100%; }
+.table-unlinked .inline-form { flex-wrap: wrap; row-gap: .35rem; }
+
+/* Une étiquette dans une cellule : elle ne doit pas déborder sur la colonne
+   voisine. « Groupe politique » recouvrait « Sénat » à 1 024 px. */
+table.meetings .tag { max-width: 100%; white-space: normal; }
+
+/* Une colonne de compteur. Le remplissage par défaut — 1 rem de chaque côté —
+   mangeait 32 px sur une colonne qui en fait 70, si bien que « Interv. » se
+   coupait en « INTER / V. ». Moins de marge, alignée à droite comme un nombre,
+   et le libellé tient d'un seul tenant. */
+table.meetings th.col-num,
+table.meetings td.col-num {
+  padding-left: .35rem;
+  padding-right: .35rem;
+  text-align: right;
+  overflow-wrap: normal;
+}
+
+/* L'encadré d'aide de la file « à rattacher ». La page posait une question
+   sans dire laquelle, et proposait trois boutons sans dire ce qu'ils font. */
+/* `.notice` est une boîte en ligne (icône + texte) ; ici c'est un bloc
+   d'explication de plusieurs paragraphes, d'où le retour à display: block. */
+.notice-aide { display: block; margin-bottom: 1.25rem; padding: .9rem 1.1rem; }
+.notice-aide p { margin: 0 0 .5rem; }
+.notice-aide p:last-of-type { margin-bottom: 0; }
+.aide-actions { margin: .6rem 0 0; padding-left: 1.1rem; }
+.aide-actions li { margin-bottom: .35rem; }
+.aide-actions li:last-child { margin-bottom: 0; }
+.petite { display: block; font-size: .85em; margin-top: .15rem; }
+
+/* La colonne d'action de la file : trois décisions, dont une seule courante.
+   « Rattacher » reste un bouton plein ; les deux autres se rangent côte à
+   côte en dessous, plus discrètes, pour qu'on ne les clique pas par défaut. */
+.table-unlinked .inline-form + .inline-form {
+  gap: .5rem;
+  margin-top: .3rem;
+  justify-content: flex-start;
+}
+.table-unlinked .inline-form .btn-ghost {
+  flex: 0 1 auto;
+  font-size: .85rem;
+  padding: .3rem .5rem;
+}
+
+/* La case « enregistrer aussi les prochains échanges » porte une phrase, pas
+   un mot : en flex sans retour à la ligne, elle poussait la page de 55 px sur
+   un écran de 320 px. La case reste alignée en haut du texte, qui s'enroule. */
+.deposit-apprendre:not([hidden]) {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: .75rem;
+}
+.deposit-apprendre input { margin-top: .2rem; flex: 0 0 auto; }
+.deposit-apprendre > :not(input) { min-width: 0; }

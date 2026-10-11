@@ -1,18 +1,13 @@
 {% extends "base.html" %}
-{% from "_macros.html" import import_banner %}
+{% from "_macros.html" import import_banner, exchange_subtabs  %}
 {% block title %}Membres{% endblock %}
+{% block container_class %}container-wide{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Suivi des échanges</h1>
 </div>
 
-<nav class="subtabs">
-  <a class="subtab" href="{{ url_for('exchanges') }}">Échanges</a>
-  <a class="subtab active" href="{{ url_for('members') }}">Membres</a>
-  <a class="subtab" href="{{ url_for('unlinked') }}">À rattacher{% if unlinked_count %} <span class="badge">{{ unlinked_count }}</span>{% endif %}</a>
-  <a class="subtab" href="{{ url_for('deposit') }}">Déposer</a>
-  <a class="subtab" href="{{ url_for('mails') }}">Tous les courriels</a>
-</nav>
+{{ exchange_subtabs('membres') }}
 
 {{ import_banner(import_state) }}
 
@@ -23,6 +18,11 @@ membres, toutes les 10 minutes).</p>
 {% if members %}
 <div class="table-wrap">
   <table class="meetings">
+    <colgroup>
+      <col style="width: 34%">
+      <col style="width: 38%">
+      <col style="width: 28%">
+    </colgroup>
     <thead>
       <tr><th>Nom</th><th>Adresse</th><th>Courriels enregistrés</th></tr>
     </thead>

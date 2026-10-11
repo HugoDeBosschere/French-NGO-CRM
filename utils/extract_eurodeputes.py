@@ -82,6 +82,17 @@ def get(path, **params):
     raise last_err
 
 
+def fiche_url(ident):
+    """La fiche officielle d'un·e député·e européen·ne."""
+    return f"https://www.europarl.europa.eu/meps/fr/{ident}"
+
+
+def photo_url(ident):
+    """Le portrait officiel. Le Parlement le sert à une adresse dérivée de
+    l'identifiant : aucun appel d'API, donc aucune limite de débit à ménager."""
+    return f"https://www.europarl.europa.eu/mepphoto/{ident}.jpg"
+
+
 def main():
     listing = get("meps/show-current", **{"country-of-representation": COUNTRY})
     meps = listing.get("data", [])
@@ -118,6 +129,15 @@ def main():
             # group from the live list, since that can change mid-term.
             rec = dict(cached)
             rec["groupe"] = m.get("api:political-group")
+            # Portrait et fiche : ils se déduisent de l'identifiant, donc on
+            # les repose à chaque passage plutôt que de les lire du cache. Sans
+            # ça, une fiche déjà en cache n'aurait jamais gagné le portrait
+            # ajouté après coup : le premier passage l'a posé pour tout le
+            # monde, et tous les suivants, servis par le cache, l'auraient
+            # perdu. C'est le genre de régression qui ne se voit qu'une
+            # semaine plus tard.
+            rec["url"] = fiche_url(ident)
+            rec["photo"] = photo_url(ident)
             out.append(rec)
             continue
 
@@ -149,7 +169,8 @@ def main():
                 "genre": genre,
                 "email": email,
                 "date_naissance": detail.get("bday"),
-                "url": f"https://www.europarl.europa.eu/meps/fr/{ident}",
+                "url": fiche_url(ident),
+                "photo": photo_url(ident),
             }
         )
         print(f"  + {prenom} {nom} (nouveau·lle)")

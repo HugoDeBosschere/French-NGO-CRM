@@ -44,6 +44,7 @@ import re
 import sqlite3
 import sys
 import unicodedata
+import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -105,6 +106,56 @@ def build_email_index(elus, min_rank):
     return index
 
 
+def build_media_index(elus):
+    """nom normalisé -> (photo, fiche officielle).
+
+    Indépendant des adresses : un portrait et un lien de fiche n'ont pas de
+    niveau de confiance, et un élu sans e-mail publiable a quand même une
+    photo. Comme pour les adresses, un nom porté par deux fiches aux médias
+    différents est écarté plutôt que tranché au hasard.
+    """
+    candidats = {}
+    for elu in elus.get("deputes", []) + elus.get("senateurs", []):
+        cle = norm_name(elu.get("nom", ""))
+        if not cle:
+            continue
+        couple = ((elu.get("photo") or "").strip(),
+                  (elu.get("contactUrl") or "").strip())
+        if not any(couple):
+            continue
+        candidats.setdefault(cle, set()).add(couple)
+    return {k: next(iter(v)) for k, v in candidats.items() if len(v) == 1}
+
+
+# Les domaines d'où elus.json tire ses portraits et ses fiches. Une valeur
+# stockée qui en vient a été posée par ce script ; tout le reste a été saisi à
+# la main et ne doit jamais être écrasé.
+DOMAINES_OFFICIELS = (
+    "assemblee-nationale.fr",
+    "senat.fr",
+    "nosdeputes.fr",
+    "nossenateurs.fr",
+    "europarl.europa.eu",
+)
+
+
+def pose_par_le_script(valeur):
+    """True si cette URL vient d'une source officielle, donc d'ici.
+
+    Le script ne remplissait que les champs vides : une valeur juste une fois,
+    jamais rafraîchie. À chaque législature les portraits de l'Assemblée
+    changent d'URL, et les anciennes restent en base en affichant du vide,
+    puisque l'interface efface l'image cassée. On rafraîchit donc ce qui vient
+    manifestement de la source officielle — et seulement cela : une photo
+    déposée à la main par l'équipe reste intouchable.
+    """
+    valeur = (valeur or "").strip().lower()
+    if not valeur:
+        return False
+    hote = urllib.parse.urlsplit(valeur).hostname or ""
+    return any(hote == d or hote.endswith("." + d) for d in DOMAINES_OFFICIELS)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -123,18 +174,64 @@ def main():
     min_rank = CONFIDENCE_RANK[args.min_confidence]
     elus = load_elus(args.elus, args.elus_url)
     index = build_email_index(elus, min_rank)
+    medias = build_media_index(elus)
     log(f"elus.json: {len(index)} usable address(es) at confidence "
-        f">= {args.min_confidence}.")
+        f">= {args.min_confidence}, {len(medias)} portrait(s)/fiche(s).")
+    # Un elus.json joignable mais vide — une refonte de la source, un fichier
+    # tronqué — ne doit pas passer pour un succès : sans ce garde-fou, le job
+    # rendrait 0 et l'alerte ne partirait jamais. Le seuil est volontairement
+    # bas : il attrape « la source est cassée », pas « elle a un peu changé ».
+    if len(index) < 100 or len(medias) < 100:
+        sys.exit("elus.json ne contient presque rien "
+                 f"({len(index)} adresses, {len(medias)} portraits) : "
+                 "source probablement cassée, rien n'a été écrit.")
 
     db = sqlite3.connect(args.db)
     # The app writes to this same file. Wait for it rather than failing
     # with "database is locked" on the first contention.
     db.execute("PRAGMA busy_timeout = 30000")
+    colonnes = {r[1] for r in db.execute("PRAGMA table_info(persons)")}
+    avec_medias = {"photo_url", "fiche_url"} <= colonnes
+    if not avec_medias:
+        log("Note : colonnes photo_url / fiche_url absentes — lancez l'app une "
+            "fois pour appliquer la migration, puis relancez ce script.")
     persons = db.execute("SELECT id, name, email FROM persons").fetchall()
 
     filled, updated, already_ok, no_match, conflict_kept = 0, 0, 0, 0, 0
+    medias_remplis = 0
     unmatched = []
     for pid, name, current in persons:
+        # Portrait et fiche d'abord : ils ne dépendent pas de l'adresse, donc
+        # un élu dont l'e-mail n'est pas publiable en profite quand même. On ne
+        # remplit que ce qui est vide : une valeur posée à la main l'emporte.
+        if avec_medias:
+            media = medias.get(norm_name(name))
+            if media:
+                photo, fiche = media
+                actuel = db.execute(
+                    "SELECT photo_url, fiche_url FROM persons WHERE id = ?",
+                    (pid,)).fetchone() or (None, None)
+                neufs = []
+                for colonne, valeur, ancien in (
+                        ("photo_url", photo, actuel[0]),
+                        ("fiche_url", fiche, actuel[1])):
+                    if not valeur:
+                        continue
+                    vide = not (ancien or "").strip()
+                    if vide or (pose_par_le_script(ancien)
+                                and (ancien or "").strip() != valeur):
+                        neufs.append((colonne, valeur))
+                if neufs:
+                    if args.dry_run:
+                        log(f"  [dry-run] {name}: "
+                            + ", ".join(c for c, _v in neufs))
+                    else:
+                        db.execute(
+                            "UPDATE persons SET "
+                            + ", ".join(f"{c} = ?" for c, _v in neufs)
+                            + " WHERE id = ?",
+                            [v for _c, v in neufs] + [pid])
+                    medias_remplis += 1
         hit = index.get(norm_name(name))
         if not hit:
             # Only worth reporting people who lack an email and weren't matched.
@@ -168,6 +265,8 @@ def main():
         db.commit()
     db.close()
 
+    if avec_medias:
+        log(f"Portraits / fiches renseignés : {medias_remplis}.")
     log(f"\nDone. Filled: {filled} | updated: {updated} | already correct: "
         f"{already_ok} | kept (conflict): {conflict_kept} | no match & still "
         f"without email: {no_match}.")
