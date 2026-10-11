@@ -69,7 +69,7 @@
       {% endif %}
 
       {% if x['body'] %}
-        <pre class="mail-text">{{ x['body'] }}</pre>
+        <div class="mail-text">{{ x['body'] | corps_mail }}</div>
       {% else %}
         <p class="muted mail-nobody">{{ x['summary'] }}</p>
         <p class="muted mail-nobody-note">(Corps du message non conservé.)</p>

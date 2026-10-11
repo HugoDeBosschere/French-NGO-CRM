@@ -36,6 +36,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+
+from markupsafe import Markup, escape
 from zoneinfo import ZoneInfo
 
 import magic
@@ -738,6 +740,124 @@ def fr_datetime(value):
     except Exception:                                   # noqa: BLE001
         pass
     return moment.strftime("%d/%m/%Y à %H:%M")
+
+
+# --------------------------------------------------------------------------- #
+# Mise en forme du corps d'un courriel
+# --------------------------------------------------------------------------- #
+
+# Une URL nue, éventuellement entre chevrons comme les clients de messagerie
+# les écrivent dans la partie texte d'un message HTML.
+URL_NUE = re.compile(r"<?(https?://[^\s<>()\[\]]+)>?")
+# Une puce ou un numéro, seuls sur leur ligne : c'est ainsi que Gmail dégrade
+# une liste HTML dans sa partie texte, le contenu arrivant deux lignes plus bas.
+PUCE_SEULE = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s*$")
+PUCE_DEBUT = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s+")
+CITATION = re.compile(r"^\s*>")
+# *gras* à la mode des messageries : une paire d'astérisques collée au texte.
+GRAS = re.compile(r"\*(?=\S)([^*\n]+?)(?<=\S)\*")
+
+
+def _bloc_en_html(brut):
+    """Un paragraphe BRUT -> HTML sûr, liens et gras compris.
+
+    L'échappement se fait morceau par morceau plutôt que d'un bloc : échapper
+    d'abord transformerait les chevrons que les messageries posent autour des
+    adresses en `&lt;` `&gt;`, que l'expression d'URL avalerait ensuite dans le
+    lien. Mesuré : le href finissait par `...models/&gt;`.
+    """
+    morceaux, fin = [], 0
+    for m in URL_NUE.finditer(brut):
+        morceaux.append(_texte_en_html(brut[fin:m.start()]))
+        url = m.group(1)
+        morceaux.append(f'<a href="{escape(url)}" target="_blank" '
+                        f'rel="noopener noreferrer">{escape(url)}</a>')
+        fin = m.end()
+    morceaux.append(_texte_en_html(brut[fin:]))
+    return "".join(morceaux)
+
+
+def _texte_en_html(brut):
+    """Du texte sans URL -> HTML échappé, avec le *gras* des messageries."""
+    return GRAS.sub(r"<strong>\1</strong>", str(escape(brut)))
+
+
+@app.template_filter("corps_mail")
+def corps_mail(texte):
+    """Le corps d'un courriel, lisible.
+
+    Il s'affichait dans un <pre> : les retours à la ligne durs posés par le
+    client d'envoi — autour de 75 caractères — étaient conservés tels quels, si
+    bien qu'une phrase se brisait au milieu quelle que soit la largeur de
+    l'écran. Et les listes numérotées arrivaient éclatées, le « 1. » seul sur
+    sa ligne et son contenu deux lignes plus bas, parce que c'est ainsi que
+    Gmail dégrade une liste HTML dans la partie texte du message.
+
+    Markdown ne serait pas le bon outil : ce n'est pas du Markdown, c'est la
+    version texte d'un courriel HTML. Ce qu'il faut, c'est défaire le
+    retour-chariot dur, recoller les puces à leur contenu et rendre les
+    adresses cliquables. Le reste est laissé tel quel : on ne réécrit pas le
+    message de quelqu'un.
+
+    Le texte est échappé AVANT toute mise en forme : il vient de l'extérieur,
+    et le seul HTML qui sorte d'ici est celui qu'on y met.
+    """
+    if not texte:
+        return Markup("")
+    lignes = [l.rstrip() for l in str(texte).replace("\r\n", "\n")
+              .replace("\r", "\n").split("\n")]
+
+    # 1) Recoller une puce seule au premier texte qui la suit.
+    recollees, i = [], 0
+    while i < len(lignes):
+        if PUCE_SEULE.match(lignes[i]):
+            j = i + 1
+            while j < len(lignes) and not lignes[j].strip():
+                j += 1
+            if j < len(lignes):
+                recollees.append(f"{lignes[i].strip()} {lignes[j].strip()}")
+                i = j + 1
+                continue
+        recollees.append(lignes[i])
+        i += 1
+
+    # 2) Regrouper en paragraphes, en défaisant le retour à la ligne dur. Une
+    #    puce ou une citation commence toujours une nouvelle ligne : les
+    #    recoller effacerait la structure au lieu de la restituer.
+    paras, courant = [], []
+    for ligne in recollees:
+        nu = ligne.strip()
+        if not nu:
+            if courant:
+                paras.append(courant)
+                courant = []
+            continue
+        # Une NOUVELLE puce ou citation ouvre un paragraphe ; les lignes qui
+        # suivent lui appartiennent et doivent être recollées, sinon un point
+        # de liste se coupe à l'endroit exact où le client d'envoi a replié la
+        # ligne — c'est précisément ce qu'on cherche à défaire.
+        quitte_citation = bool(CITATION.match(courant[-1])) if courant else False
+        if courant and (PUCE_DEBUT.match(ligne)
+                        or bool(CITATION.match(ligne)) != quitte_citation):
+            paras.append(courant)
+            courant = [ligne]
+        else:
+            courant.append(ligne)
+    if courant:
+        paras.append(courant)
+
+    morceaux = []
+    for para in paras:
+        classe = ""
+        if CITATION.match(para[0]):
+            classe = ' class="mail-citation"'
+            brut = " ".join(l.strip().lstrip(">").strip() for l in para)
+        else:
+            if PUCE_DEBUT.match(para[0]):
+                classe = ' class="mail-puce"'
+            brut = " ".join(l.strip() for l in para)
+        morceaux.append(f"<p{classe}>{_bloc_en_html(brut)}</p>")
+    return Markup("\n".join(morceaux))
 
 
 @app.template_filter("days_until")

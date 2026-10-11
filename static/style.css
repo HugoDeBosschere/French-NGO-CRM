@@ -653,14 +653,17 @@ a.cal-ev:hover {
 }
 .mail-addr-val { flex: 1 1 auto; }
 
+/* Le corps d'un courriel. `pre-wrap` est parti avec le <pre> : les retours à
+   la ligne durs du client d'envoi (autour de 75 caractères) étaient conservés
+   tels quels et cassaient les phrases au milieu, quelle que soit la largeur de
+   l'écran. Le filtre `corps_mail` les défait et rend des paragraphes. */
 .mail-text {
   margin: .85rem 0 0;
   padding: 1rem;
   background: #fafbfc;
   border: 1px solid var(--line);
   border-radius: 8px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
   font-family: inherit;
   font-size: .95rem;
   line-height: 1.55;
@@ -1396,3 +1399,16 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
 /* La colonne de suppression : un en-tête, mais le plus discret possible — il
    nomme une action rare, il ne doit pas peser autant que « Objet ». */
 .th-suppr { font-weight: 500; opacity: .75; }
+
+.mail-text p { margin: 0 0 .75rem; }
+.mail-text p:last-child { margin-bottom: 0; }
+/* Un point de liste : le numéro ou la puce est resté dans le texte, on lui
+   donne juste le retrait qui le fait lire comme une liste. */
+.mail-text .mail-puce { padding-left: 1.25rem; text-indent: -1.25rem; }
+/* Une citation — le message auquel on répond — en retrait et plus pâle, pour
+   qu'on distingue d'un coup d'œil ce qui a été écrit de ce qui est repris. */
+.mail-text .mail-citation {
+  padding-left: .85rem;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}

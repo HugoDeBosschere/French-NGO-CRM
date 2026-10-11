@@ -85,7 +85,7 @@
     <label>Corps du texte</label>
     {# Le vrai corps quand il est conservé ; sinon le résumé, qui pour un
        courriel citoyen n'est que l'étiquette « Mail d'un citoyen à … ». #}
-    {% if x['body'] %}<pre class="mail-text">{{ x['body'] }}</pre>
+    {% if x['body'] %}<div class="mail-text">{{ x['body'] | corps_mail }}</div>
     {% else %}<p class="prose">{{ valeur(x['summary']) }}</p>{% endif %}
   </div>
 
