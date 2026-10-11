@@ -755,6 +755,12 @@ URL_NUE = re.compile(r"<?(https?://[^\s<>()\[\]]+)>?")
 PUCE_SEULE = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s*$")
 PUCE_DEBUT = re.compile(r"^\s*(?:\d+[.)]|[-*•–])\s+")
 CITATION = re.compile(r"^\s*>")
+# L'en-tête d'un message transféré. Ces lignes-là ne doivent PAS être recollées
+# entre elles : « De : … » et « Objet : … » sont deux informations, pas une
+# phrase repliée. Sans cette exception, un transfert arrivait d'un seul tenant.
+ENTETE_TRANSFERT = re.compile(
+    r"^\s*(de|à|a|date|objet|cc|cci|envoyé|from|to|subject|sent|reply-to)"
+    r"\s*:", re.I)
 # *gras* à la mode des messageries : une paire d'astérisques collée au texte.
 GRAS = re.compile(r"\*(?=\S)([^*\n]+?)(?<=\S)\*")
 
@@ -839,6 +845,8 @@ def corps_mail(texte):
         # ligne — c'est précisément ce qu'on cherche à défaire.
         quitte_citation = bool(CITATION.match(courant[-1])) if courant else False
         if courant and (PUCE_DEBUT.match(ligne)
+                        or ENTETE_TRANSFERT.match(ligne)
+                        or ENTETE_TRANSFERT.match(courant[-1])
                         or bool(CITATION.match(ligne)) != quitte_citation):
             paras.append(courant)
             courant = [ligne]

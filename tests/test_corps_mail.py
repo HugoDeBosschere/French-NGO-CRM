@@ -86,3 +86,79 @@ class CorpsMailTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnteteTransfertTests(unittest.TestCase):
+    """Un message transféré arrivait d'un seul tenant.
+
+    Le filtre recolle les lignes repliées par le client d'envoi, ce qui est
+    juste pour une phrase et faux pour un en-tête : « De : … » et « Objet : … »
+    sont deux informations, pas une phrase coupée en deux.
+    """
+
+    def test_chaque_ligne_d_entete_reste_sur_sa_ligne(self):
+        rendu = mise_en_forme(
+            "Début du message transféré :\n"
+            "De: Leo Lefebvre <leo@exemple.fr>\n"
+            "Date: 8 octobre 2026\n"
+            "Objet: Suite à notre entretien\n")
+        self.assertEqual(rendu.count("<p>"), 4)
+        self.assertIn("<p>Objet: Suite à notre entretien</p>", rendu)
+
+    def test_le_corps_qui_suit_est_recolle_normalement(self):
+        rendu = mise_en_forme(
+            "Objet: Suite\n\nMonsieur le député,\nJe tenais à vous\nremercier.")
+        self.assertIn("Monsieur le député, Je tenais à vous remercier.", rendu)
+
+    def test_un_mot_suivi_de_deux_points_n_est_pas_un_entete(self):
+        # « Nos propositions : » doit rester collé à ce qui suit.
+        rendu = mise_en_forme("Nos propositions :\nun colloque au Parlement.")
+        self.assertIn("Nos propositions : un colloque", rendu)
+
+
+class HtmlEnTexteTests(unittest.TestCase):
+    """Le repli quand un courriel n'a pas de partie texte.
+
+    Il remplaçait chaque balise par une espace et ne décodait jamais les
+    entités : « &nbsp; », « &lt; » et « &gt; » arrivaient en clair, et tout le
+    message tenait sur une ligne.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "utils"))
+        from import_campaign_mails import html_en_texte   # noqa: PLC0415
+        self.convertir = html_en_texte
+
+    def test_les_entites_sont_decodees(self):
+        rendu = self.convertir("<p>Monsieur&nbsp;: &lt;a&gt; &amp; voilà</p>")
+        self.assertEqual(rendu, "Monsieur : <a> & voilà")
+
+    def test_les_blocs_deviennent_des_lignes(self):
+        rendu = self.convertir("<div>De: Leo</div><div>Objet: Suite</div>")
+        self.assertEqual(rendu.splitlines(), ["De: Leo", "Objet: Suite"])
+
+    def test_un_saut_de_ligne_html_en_est_un(self):
+        self.assertEqual(self.convertir("Cordialement,<br>Leo").splitlines(),
+                         ["Cordialement,", "Leo"])
+
+    def test_une_liste_devient_des_puces(self):
+        rendu = self.convertir("<ul><li>Un colloque</li><li>Une tribune</li></ul>")
+        self.assertIn("- Un colloque", rendu)
+        self.assertIn("- Une tribune", rendu)
+
+    def test_le_css_ne_se_retrouve_pas_dans_le_message(self):
+        rendu = self.convertir("<style>.x{color:red}</style><p>Bonjour</p>")
+        self.assertEqual(rendu, "Bonjour")
+        self.assertNotIn("color:red", rendu)
+
+    def test_le_javascript_non_plus(self):
+        self.assertEqual(
+            self.convertir("<script>alert(1)</script><p>Bonjour</p>"), "Bonjour")
+
+    def test_la_partie_texte_reste_preferee_quand_elle_existe(self):
+        import email                                      # noqa: PLC0415
+        from import_campaign_mails import extract_body    # noqa: PLC0415
+        msg = email.message.EmailMessage()
+        msg.set_content("La version texte.")
+        msg.add_alternative("<p>La version HTML.</p>", subtype="html")
+        self.assertIn("La version texte.", extract_body(msg))

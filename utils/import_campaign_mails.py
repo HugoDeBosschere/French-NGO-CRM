@@ -61,6 +61,7 @@ Matching:
 import argparse
 import email
 import imaplib
+from html import unescape
 import os
 import re
 import sqlite3
@@ -237,8 +238,43 @@ def body_text(msg):
     return "\n".join(chunks)
 
 
+# Les balises qui marquent une fin de ligne. Les remplacer par un saut plutôt
+# que par une espace est ce qui distingue un courriel lisible d'un pavé : sans
+# ça, un message transféré arrive d'un seul tenant, en-têtes collés au corps.
+FIN_DE_BLOC = re.compile(
+    r"</(p|div|li|tr|h[1-6]|blockquote|pre|table|ul|ol)\s*>|<br\s*/?>",
+    re.I)
+DEBUT_PUCE = re.compile(r"<li\b[^>]*>", re.I)
+# `<style>` et `<script>` : leur CONTENU n'est pas du texte, et le retirer
+# ensuite avec les balises laissait les règles CSS dans le corps du message.
+BLOC_INVISIBLE = re.compile(r"<(style|script)\b.*?</\1\s*>", re.I | re.S)
+
+
+def html_en_texte(source):
+    """Une partie HTML -> texte lisible, structure conservée."""
+    texte = BLOC_INVISIBLE.sub(" ", source)
+    texte = DEBUT_PUCE.sub("\n- ", texte)
+    texte = FIN_DE_BLOC.sub("\n", texte)
+    texte = re.sub(r"<[^>]+>", " ", texte)
+    # Après le retrait des balises, jamais avant : `&lt;b&gt;` redeviendrait
+    # sinon une vraie balise, aussitôt effacée avec son contenu.
+    texte = unescape(texte)
+    # L'espace insécable des traitements de texte compte comme une espace.
+    texte = texte.replace("\u00a0", " ").replace("\u200b", "")
+    texte = re.sub(r"[ \t]{2,}", " ", texte)
+    texte = re.sub(r"[ \t]+\n", "\n", texte)
+    texte = re.sub(r"\n[ \t]+", "\n", texte)
+    return re.sub(r"\n{3,}", "\n\n", texte).strip()
+
+
 def extract_body(msg, limit=100000):
-    """Readable body text: prefer text/plain, else HTML with tags stripped."""
+    """Readable body text: prefer text/plain, else HTML.
+
+    Le repli HTML remplaçait chaque balise par une espace et ne décodait
+    jamais les entités : un message transféré arrivait d'un seul tenant, avec
+    « &nbsp; », « &lt; » et « &gt; » en clair dans le texte. Mesuré sur un vrai
+    courriel de l'équipe plaidoyer.
+    """
     plain, html = [], []
     for part in msg.walk():
         ctype = part.get_content_type()
@@ -256,8 +292,7 @@ def extract_body(msg, limit=100000):
                 pass
     text = "\n".join(plain).strip()
     if not text and html:
-        text = re.sub(r"<[^>]+>", " ", "\n".join(html))
-        text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
+        text = html_en_texte("\n".join(html))
     return text[:limit]
 
 

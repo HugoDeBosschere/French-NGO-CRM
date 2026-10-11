@@ -190,6 +190,16 @@ Un `elus.json` joignable mais presque vide (source refondue, fichier tronqué)
 sort **en erreur** plutôt que de rendre 0 sans rien écrire : sans ça, l'alerte
 systemd ne partirait jamais.
 
+Ce script ne couvre que les **député·es et sénateur·ices** : `elus.json` est
+construit par l'outil « Écrire à mes élus » du site, qui ne s'adresse qu'à
+eux. Les **eurodéputé·es** obtiennent leur portrait et leur fiche par
+`insert_eurodeputes.py`, qui les dérive de l'identifiant du Parlement européen
+(`/mepphoto/<id>.jpg` et `/meps/fr/<id>`), sans appel d'API supplémentaire, et
+applique la même règle : remplir ce qui manque, rafraîchir ce qui vient du
+Parlement, ne jamais toucher une valeur saisie à la main. La fonction qui
+décide si une URL vient d'une source officielle est partagée entre les deux
+scripts, et elle compare l'hôte et non la fin de la chaîne.
+
 Minuterie : `sync-elus.timer`, tous les jours à 05:55, avec `OnFailure`.
 C'était auparavant un `ExecStartPre` de l'import citoyen précédé d'un « - »,
 qui avalait son échec — la synchro pouvait s'arrêter des mois sans que

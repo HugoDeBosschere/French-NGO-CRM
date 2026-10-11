@@ -35,6 +35,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from orglink import link_group  # noqa: E402
+# Une seule définition de « cette URL vient-elle d'une source
+# officielle ? », partagée avec la synchro des député·es et des
+# sénateur·ices : deux copies divergeraient.
+from sync_emails_from_elus import pose_par_le_script  # noqa: E402
 from elus_roster import (  # noqa: E402
     GROUPE_ATTENTE,
     app_constant,
@@ -88,6 +92,46 @@ def app_labels(chamber):
     return set(groups[chamber]), set(roles)
 
 
+
+# Les colonnes de portrait et de fiche officielle n'existent que depuis la
+# migration d'octobre 2026 : une base plus ancienne, ou un test, peut ne pas
+# les avoir, et le script ne doit pas tomber pour autant.
+def _colonnes_medias(db):
+    cols = {r[1] for r in db.execute("PRAGMA table_info(persons)")}
+    return {"photo_url", "fiche_url"} <= cols
+
+
+def poser_medias(db, person_id, photo, fiche):
+    """Portrait et fiche officielle, remplis s'ils manquent, rafraîchis s'ils
+    viennent déjà du Parlement européen.
+
+    Même règle que sync_emails_from_elus.py pour les député·es et les
+    sénateur·ices : on ne remplace que ce que nos propres scripts ont posé, et
+    jamais une valeur saisie à la main. L'adresse du portrait change quand la
+    photo officielle change.
+    """
+    if not _colonnes_medias(db):
+        return 0
+    actuel = db.execute(
+        "SELECT photo_url, fiche_url FROM persons WHERE id = ?",
+        (person_id,)).fetchone() or (None, None)
+    neufs = []
+    for colonne, valeur, ancien in (("photo_url", photo, actuel[0]),
+                                    ("fiche_url", fiche, actuel[1])):
+        if not valeur:
+            continue
+        ancien = (ancien or "").strip()
+        # `pose_par_le_script` plutôt qu'un test maison : il compare l'HÔTE et
+        # non la fin de la chaîne. Un « in » laissait passer
+        # evil-europarl.europa.eu.pirate.fr, attrapé par un test.
+        if not ancien or (pose_par_le_script(ancien) and ancien != valeur):
+            neufs.append((colonne, valeur))
+    if not neufs:
+        return 0
+    db.execute("UPDATE persons SET " + ", ".join(f"{c} = ?" for c, _v in neufs)
+               + " WHERE id = ?", [v for _c, v in neufs] + [person_id])
+    return 1
+
 def main():
     valid_groups, valid_roles = app_labels("Parlement européen")
     if ROLE not in valid_roles:
@@ -131,7 +175,7 @@ def main():
     seen = set()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    inserted = skipped = backfilled = 0
+    inserted = skipped = backfilled = medias = 0
     promus, unmapped, sans_groupe_decl = [], [], []
     for m in meps:
         name = m["nom_complet"]
@@ -166,6 +210,7 @@ def main():
                     ),
                 )
                 link_group(db, pid, group, "Parlement européen")
+                medias += poser_medias(db, pid, m.get("photo"), m.get("url"))
                 promus.append(f"{name} : {role_actuel or '—'} -> {fusion}")
             else:
                 skipped += 1
@@ -186,6 +231,7 @@ def main():
             (name, ROLE, group, "Inconnu", m["email"], now),
         )
         link_group(db, cur.lastrowid, group, "Parlement européen")
+        medias += poser_medias(db, cur.lastrowid, m.get("photo"), m.get("url"))
         inserted += 1
         existing[name] = (cur.lastrowid, ROLE)
 
@@ -202,6 +248,7 @@ def main():
     print(
         f"Inserted: {inserted}  |  Skipped (already present): {skipped}"
         f"  |  Emails backfilled: {backfilled}"
+        f"  |  Portraits / fiches: {medias}"
     )
     if gone:
         print(

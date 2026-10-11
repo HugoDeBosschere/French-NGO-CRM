@@ -150,6 +150,10 @@ def main():
                 "email": email,
                 "date_naissance": detail.get("bday"),
                 "url": f"https://www.europarl.europa.eu/meps/fr/{ident}",
+                # Le portrait officiel. Le Parlement européen le sert à une
+                # adresse dérivée de l'identifiant, sans appel d'API : rien à
+                # demander, rien à limiter en débit.
+                "photo": f"https://www.europarl.europa.eu/mepphoto/{ident}.jpg",
             }
         )
         print(f"  + {prenom} {nom} (nouveau·lle)")
