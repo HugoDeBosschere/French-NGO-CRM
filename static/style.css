@@ -1322,3 +1322,33 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
 .card .field > ul { margin: 0 0 1rem; }
 .card .field:last-child > p:not(.hint),
 .card .field:last-child > ul { margin-bottom: 0; }
+
+/* L'ombre qui dit qu'un tableau continue au-delà du bord. Le bloc .table-zone
+   et les deux .table-ombre sont posés par rows.js, qui allume chaque côté
+   selon la position du défilement — une ombre permanente mentirait aussi
+   sûrement que pas d'ombre du tout. */
+.table-zone { position: relative; }
+.table-ombre {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  border-radius: var(--radius);
+}
+.table-ombre-d {
+  right: 1px;
+  background: linear-gradient(to left, rgba(16, 24, 40, .16), transparent);
+}
+.table-ombre-g {
+  left: 1px;
+  background: linear-gradient(to right, rgba(16, 24, 40, .16), transparent);
+}
+.table-zone.defile-droite .table-ombre-d { opacity: 1; }
+.table-zone.defile-gauche .table-ombre-g { opacity: 1; }
+/* La barre de défilement, visible plutôt que fantôme : sur macOS elle
+   n'apparaît qu'au mouvement, donc l'indice ne peut pas reposer sur elle
+   seule, mais autant qu'elle se voie quand elle existe. */
+.table-wrap { scrollbar-width: thin; }

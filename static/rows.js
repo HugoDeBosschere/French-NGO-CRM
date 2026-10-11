@@ -52,3 +52,66 @@
     });
   });
 })();
+
+/* Dire qu'un tableau défile, quand il défile.
+ *
+ * `.table-wrap` défile latéralement depuis longtemps, et c'est ce qui empêche
+ * une page entière de partir de travers. Mais rien ne l'annonçait : sur
+ * /organisations, neuf colonnes dans une carte trop étroite, la dernière était
+ * simplement coupée au bord et personne ne pouvait deviner qu'il suffisait de
+ * faire glisser. Une ombre au bord concerné — et elle disparaît quand on est
+ * arrivé au bout, sinon elle ment.
+ *
+ * L'ombre est un élément posé ici, pas un `::before` du conteneur : un
+ * pseudo-élément à l'intérieur d'une zone qui défile défile avec elle, et s'il
+ * est `sticky` sa hauteur en pourcentage ne se résout pas (mesuré : 0 px). On
+ * enveloppe donc chaque tableau dans un bloc qui, lui, ne bouge pas, et les
+ * deux ombres s'y accrochent. Rien à changer dans les treize gabarits.
+ */
+(function () {
+  function etat(wrap) {
+    var reste = wrap.scrollWidth - wrap.clientWidth;
+    var zone = wrap.parentNode;
+    // 1 px de marge : les largeurs fractionnaires rendent l'égalité stricte
+    // fausse à l'arrivée, et l'ombre restait allumée au bout de la course.
+    zone.classList.toggle("defile-droite", reste - wrap.scrollLeft > 1);
+    zone.classList.toggle("defile-gauche", wrap.scrollLeft > 1);
+  }
+
+  function envelopper(wrap) {
+    if (wrap.parentNode && wrap.parentNode.classList.contains("table-zone")) {
+      return wrap.parentNode;
+    }
+    var zone = document.createElement("div");
+    zone.className = "table-zone";
+    wrap.parentNode.insertBefore(zone, wrap);
+    zone.appendChild(wrap);
+    zone.insertAdjacentHTML("beforeend",
+      '<span class="table-ombre table-ombre-g" aria-hidden="true"></span>' +
+      '<span class="table-ombre table-ombre-d" aria-hidden="true"></span>');
+    return zone;
+  }
+
+  function brancher() {
+    document.querySelectorAll(".table-wrap").forEach(function (wrap) {
+      envelopper(wrap);
+      etat(wrap);
+      wrap.addEventListener("scroll", function () { etat(wrap); }, { passive: true });
+      // La largeur change sans que la page bouge : fenêtre redimensionnée, mais
+      // aussi une colonne masquée par un filtre ou une police chargée en retard.
+      if (window.ResizeObserver) {
+        new ResizeObserver(function () { etat(wrap); }).observe(wrap);
+      }
+    });
+  }
+
+  window.addEventListener("resize", function () {
+    document.querySelectorAll(".table-wrap").forEach(etat);
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", brancher);
+  } else {
+    brancher();
+  }
+})();
