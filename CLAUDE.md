@@ -203,6 +203,18 @@ parlementaires restent un plancher.
   ce répertoire sous les pieds de `civicrm-sync`).
 - `civicrm-sync` (06:30) — **après** l'import des mails de membres, qui est
   précisément ce qui remplit la file que cette synchro vide.
+- `sync-elus` (05:55, adresses + portraits + fiches officielles depuis
+  `elus.json`). Était un `ExecStartPre` de l'import citoyen, précédé d'un
+  « - » : son échec était avalé, donc la synchro pouvait s'arrêter des mois
+  sans que personne l'apprenne. Unité séparée, avec `OnFailure`.
+- `fusion-doublons` (07:10, **après** `civicrm-sync`) — le seul travail
+  planifié qui SUPPRIME des lignes, d'où la sauvegarde en `ExecStartPre` et la
+  limite de 50 fiches par passage (`--max`), au-delà de laquelle il s'arrête
+  et alerte plutôt que de nettoyer en masse sans témoin. Les noms seulement
+  ressemblants ne sont jamais fusionnés automatiquement : `--approchants` les
+  signale, un humain tranche.
+- Chaque service renvoie à `alerte@%n.service` par `OnFailure=` : une panne que
+  personne ne voit n'est pas une panne, c'est une donnée fausse qui s'installe.
 
 ## 4. Ce qui n'est PAS (encore) automatisé — pistes
 

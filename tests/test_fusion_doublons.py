@@ -199,6 +199,36 @@ class FusionTests(unittest.TestCase):
         self.assertEqual(self.db.execute(
             "SELECT COUNT(*) FROM persons").fetchone()[0], 2)
 
+    def test_au_dela_de_la_limite_le_script_s_arrete_sans_rien_ecrire(self):
+        # Le garde-fou des passages automatiques : si le script trouve
+        # soudain des centaines de doublons, ce n'est pas que le CRM s'est
+        # dégradé d'un coup, c'est que quelque chose a changé.
+        for nom in ("Anne Dupont", "Marc Olivier", "Luc Martin"):
+            self._personne(nom)
+            self._personne(nom)
+        resultat = self._lancer("--max", "2")
+        self.assertNotEqual(resultat.returncode, 0)
+        self.assertIn("au-delà de la limite", resultat.stderr)
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM persons").fetchone()[0], 6)
+
+    def test_sous_la_limite_la_fusion_se_fait(self):
+        self._personne("Anne Dupont")
+        self._personne("Anne Dupont")
+        self.assertEqual(self._lancer("--max", "2").returncode, 0)
+        self.assertEqual(len(self._ids("Anne Dupont")), 1)
+
+    def test_la_limite_ne_bloque_jamais_un_passage_a_blanc(self):
+        # À blanc, rien n'est écrit : la limite n'a pas de raison d'empêcher
+        # de REGARDER ce qui serait fusionné — c'est même ce qu'on demande de
+        # faire quand la limite a bloqué.
+        for nom in ("Anne Dupont", "Marc Olivier", "Luc Martin"):
+            self._personne(nom)
+            self._personne(nom)
+        resultat = self._lancer("--dry-run", "--max", "1")
+        self.assertEqual(resultat.returncode, 0)
+        self.assertIn("3 fiche(s) seraient absorbées", resultat.stdout)
+
     def test_a_blanc_n_ecrit_rien(self):
         self._personne("Anne Dupont")
         self._personne("Anne Dupont")

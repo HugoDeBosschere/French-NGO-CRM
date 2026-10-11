@@ -234,6 +234,9 @@ def main():
                     help="dire ce qui serait fusionné, sans rien écrire")
     ap.add_argument("--approchants", action="store_true",
                     help="signaler aussi les noms très proches (jamais fusionnés)")
+    ap.add_argument("--max", type=int, default=50, dest="maximum",
+                    help="au-delà de ce nombre de fiches à absorber, ne rien "
+                         "faire et alerter (0 pour lever la limite)")
     args = ap.parse_args()
 
     db = sqlite3.connect(args.db)
@@ -248,6 +251,19 @@ def main():
     groupes = groupes_de_doublons(db)
     if not groupes:
         log("Aucun doublon de nom.")
+
+    # Un garde-fou pour les passages automatiques. En régime établi, une nuit
+    # produit quelques doublons ; si le script en trouve soudain des centaines,
+    # ce n'est pas que le CRM s'est dégradé d'un coup, c'est que quelque chose
+    # a changé — une normalisation de nom, un import en masse. Supprimer des
+    # centaines de fiches sans que personne regarde n'est pas une option.
+    a_absorber = sum(len(gens) - 1 for _cle, gens in groupes)
+    if args.maximum and a_absorber > args.maximum and not args.dry_run:
+        sys.exit(
+            f"ARRÊT : {a_absorber} fiches seraient absorbées, au-delà de la "
+            f"limite de {args.maximum}. Rien n'a été écrit. Relancez avec "
+            f"--dry-run pour voir la liste, puis --max {a_absorber} si elle "
+            f"est juste.")
     fusions = 0
     for _cle, gens in groupes:
         survivante, autres, deplaces, neufs = fusionner_groupe(
