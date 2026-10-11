@@ -39,6 +39,7 @@ from orglink import link_group  # noqa: E402
 # officielle ? », partagée avec la synchro des député·es et des
 # sénateur·ices : deux copies divergeraient.
 from sync_emails_from_elus import pose_par_le_script  # noqa: E402
+from civicrm import norm_name  # noqa: E402
 from elus_roster import (  # noqa: E402
     GROUPE_ATTENTE,
     app_constant,
@@ -170,6 +171,14 @@ def main():
     existing = {
         r[0]: (r[1], r[2]) for r in db.execute("SELECT name, id, role FROM persons")
     }
+    # Un second index, insensible aux accents et à la ponctuation. L'API du
+    # Parlement écrit « Leila Chaibi » là où le CRM a « Leïla Chaibi » : la
+    # comparaison stricte en faisait deux personnes, créait une fiche en
+    # double et annonçait l'originale comme partie du Parlement. Constaté sur
+    # la base de production. Même normalisation que le script de fusion.
+    par_nom_normalise = {}
+    for nom, (pid, role) in existing.items():
+        par_nom_normalise.setdefault(norm_name(nom), (nom, pid, role))
     roles_order = app_constant("POLITICAL_ROLES")
     groupes_neutres = set(app_constant("POLITICAL_GROUPS")["Autre"])
     seen = set()
@@ -191,8 +200,21 @@ def main():
         elif group == GROUPE_ATTENTE["Parlement européen"]:
             sans_groupe_decl.append(name)
 
+        proche = par_nom_normalise.get(norm_name(name))
+        if name not in existing and proche:
+            # Même personne, orthographe différente : on garde la fiche et son
+            # historique, et on note le nom du CRM comme « vu », sinon il
+            # serait annoncé comme ayant quitté le Parlement.
+            name = proche[0]
+            seen.add(name)
         if name in existing:
             pid, role_actuel = existing[name]
+            # Avant toute autre considération : le portrait et la fiche ne
+            # dépendent ni du rôle ni du groupe. Posés plus bas, ils ne
+            # touchaient que les fiches dont le mandat changeait — mesuré sur
+            # la base de production : 1 portrait pour 81 eurodéputé·es, les 80
+            # autres étant « déjà présentes » et sortant par `continue`.
+            medias += poser_medias(db, pid, m.get("photo"), m.get("url"))
             fusion = merge_roles(role_actuel, ROLE, roles_order)
             if fusion != (role_actuel or ""):
                 ancien_groupe = db.execute(
@@ -210,7 +232,6 @@ def main():
                     ),
                 )
                 link_group(db, pid, group, "Parlement européen")
-                medias += poser_medias(db, pid, m.get("photo"), m.get("url"))
                 promus.append(f"{name} : {role_actuel or '—'} -> {fusion}")
             else:
                 skipped += 1
@@ -234,6 +255,7 @@ def main():
         medias += poser_medias(db, cur.lastrowid, m.get("photo"), m.get("url"))
         inserted += 1
         existing[name] = (cur.lastrowid, ROLE)
+        par_nom_normalise.setdefault(norm_name(name), (name, cur.lastrowid, ROLE))
 
     db.commit()
 
