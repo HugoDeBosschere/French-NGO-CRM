@@ -5885,6 +5885,9 @@ def mail_download(mail_id):
 #     single-process internal app — swap for Flask-Limiter + Redis if scaled).
 RATE_LIMIT_MAX = 10           # submissions allowed...
 RATE_LIMIT_WINDOW = 300      # ...per this many seconds, per IP
+# Au-delà, on balaie les adresses inactives. Assez haut pour qu'un afflux
+# légitime n'en paie pas le coût, assez bas pour borner la mémoire.
+RATE_LIMIT_MAX_IPS = 5000
 _submission_log = defaultdict(list)
 
 
@@ -5908,11 +5911,27 @@ def _check_captcha(errors):
 
 def _rate_limited():
     """True if the requesting IP has already hit the submission cap. Prunes
-    timestamps outside the window as a side effect."""
+    timestamps outside the window as a side effect.
+
+    Le ménage portait sur les horodatages, jamais sur les CLÉS : une adresse
+    vue une fois gardait son entrée pour toujours. Un formulaire public est
+    scanné en continu, et le processus gunicorn tourne des semaines sans
+    redémarrer — le dictionnaire ne faisait que grossir. Il se vide
+    maintenant de lui-même, et on balaie les adresses devenues inactives
+    quand il grandit trop, pour ne pas payer un parcours complet à chaque
+    soumission.
+    """
     ip = request.remote_addr or "unknown"
     now = time.monotonic()
-    recent = [t for t in _submission_log[ip] if now - t < RATE_LIMIT_WINDOW]
-    _submission_log[ip] = recent
+    recent = [t for t in _submission_log.get(ip, []) if now - t < RATE_LIMIT_WINDOW]
+    if recent:
+        _submission_log[ip] = recent
+    else:
+        _submission_log.pop(ip, None)
+    if len(_submission_log) > RATE_LIMIT_MAX_IPS:
+        for autre, quand in list(_submission_log.items()):
+            if not quand or now - max(quand) >= RATE_LIMIT_WINDOW:
+                del _submission_log[autre]
     return len(recent) >= RATE_LIMIT_MAX
 
 

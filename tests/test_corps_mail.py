@@ -9,6 +9,7 @@ texte du message.
 """
 import os
 import sys
+import time
 import tempfile
 import unittest
 
@@ -162,3 +163,44 @@ class HtmlEnTexteTests(unittest.TestCase):
         msg.set_content("La version texte.")
         msg.add_alternative("<p>La version HTML.</p>", subtype="html")
         self.assertIn("La version texte.", extract_body(msg))
+
+
+class LimiteDebitTests(unittest.TestCase):
+    """Le compteur anti-spam des formulaires publics ne doit pas fuir.
+
+    Le ménage portait sur les horodatages, jamais sur les clés : une adresse
+    vue une fois gardait son entrée pour toujours. Un formulaire public est
+    scanné en continu et gunicorn tourne des semaines sans redémarrer.
+    """
+
+    def setUp(self):
+        app._submission_log.clear()
+        self.client = app.app.test_client()
+
+    def _soumettre(self, ip):
+        return self.client.get("/declarer", environ_base={"REMOTE_ADDR": ip})
+
+    def test_une_adresse_sans_envoi_recent_ne_laisse_pas_de_trace(self):
+        with app.app.test_request_context(environ_base={"REMOTE_ADDR": "1.2.3.4"}):
+            app._rate_limited()
+        self.assertNotIn("1.2.3.4", app._submission_log)
+
+    def test_les_envois_recents_sont_bien_comptes(self):
+        with app.app.test_request_context(environ_base={"REMOTE_ADDR": "1.2.3.4"}):
+            app._record_submission()
+            self.assertFalse(app._rate_limited())
+        self.assertEqual(len(app._submission_log["1.2.3.4"]), 1)
+
+    def test_au_dela_du_cap_la_limite_s_applique(self):
+        with app.app.test_request_context(environ_base={"REMOTE_ADDR": "9.9.9.9"}):
+            for _ in range(app.RATE_LIMIT_MAX):
+                app._record_submission()
+            self.assertTrue(app._rate_limited())
+
+    def test_les_adresses_inactives_sont_balayees(self):
+        vieux = time.monotonic() - app.RATE_LIMIT_WINDOW - 1
+        for i in range(app.RATE_LIMIT_MAX_IPS + 10):
+            app._submission_log[f"10.0.{i // 256}.{i % 256}"] = [vieux]
+        with app.app.test_request_context(environ_base={"REMOTE_ADDR": "1.2.3.4"}):
+            app._rate_limited()
+        self.assertLessEqual(len(app._submission_log), 1)
