@@ -122,6 +122,37 @@ class ListingTests(unittest.TestCase):
         self.assertEqual(self.app.fr_datetime(""), "")
         self.assertEqual(self.app.fr_datetime("pas une date"), "pas une date")
 
+    def test_a_conversation_can_be_deleted_in_one_click(self):
+        # La suppression n'existait que dans la vue « un par un », par
+        # courriel : un fil de douze messages demandait douze clics.
+        avant = self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0]
+        mail_id = self.db.execute(
+            "SELECT id FROM mails ORDER BY id LIMIT 1").fetchone()[0]
+        reponse = self.client.post("/echanges/fil/supprimer",
+                                   data={"key": f"m{mail_id}"})
+        self.assertEqual(reponse.status_code, 302)
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0], avant - 1)
+
+    def test_deleting_a_whole_thread_takes_all_its_mails(self):
+        ids = [r[0] for r in self.db.execute(
+            "SELECT id FROM mails ORDER BY id LIMIT 3")]
+        for mail_id in ids:
+            self.db.execute(
+                "INSERT OR REPLACE INTO mail_thread (mail_id, thread_key) "
+                "VALUES (?, 'fil-test')", (mail_id,))
+        self.db.commit()
+        avant = self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0]
+        self.client.post("/echanges/fil/supprimer", data={"key": "fil-test"})
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM mails").fetchone()[0],
+            avant - len(ids))
+
+    def test_deleting_an_unknown_thread_is_a_404_not_a_silent_success(self):
+        self.assertEqual(
+            self.client.post("/echanges/fil/supprimer",
+                             data={"key": "nexiste-pas"}).status_code, 404)
+
     def test_a_search_keeps_its_terms_across_pages(self):
         html = self._html("/mails?q=Sujet&page=2")
         self.assertIn("q=Sujet", html)

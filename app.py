@@ -5064,6 +5064,49 @@ def delete_mail(mail_id):
     return redirect(url_for("mails"))
 
 
+@app.route("/echanges/fil/supprimer", methods=["POST"])
+@login_required
+def delete_conversation():
+    """Supprimer un fil entier, d'un clic, depuis la liste des échanges.
+
+    La suppression d'un courriel existait déjà, mais seulement dans la vue
+    « un par un » : effacer une conversation de douze messages demandait douze
+    clics, sur douze pages. Les deux vues étant désormais deux lectures du même
+    onglet, l'asymétrie n'avait plus de raison d'être.
+
+    Définitif, et sans effet de bord : la déduplication s'appuie sur
+    `imported_mails`, que ceci ne touche pas, donc l'import suivant ne fait pas
+    revenir le fil.
+    """
+    key = (request.form.get("key") or "").strip()
+    if not key:
+        abort(400)
+    db = get_db()
+    # Le même COALESCE que /echanges/fil : un courriel sans fil connu est un
+    # fil à lui tout seul, sous la clé « m<id> ».
+    rows = db.execute(
+        """
+        SELECT x.id, x.document_stored_name
+          FROM mails x
+          LEFT JOIN mail_thread mt ON mt.mail_id = x.id
+         WHERE COALESCE(mt.thread_key, 'm' || x.id) = ?
+        """,
+        (key,),
+    ).fetchall()
+    if not rows:
+        abort(404)
+    for row in rows:
+        _delete_upload(row["document_stored_name"])
+    ids = [row["id"] for row in rows]
+    # mail_persons, mail_members et mail_thread sont en ON DELETE CASCADE.
+    db.execute(
+        "DELETE FROM mails WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)
+    db.commit()
+    flash("Conversation supprimée : %d courriel%s."
+          % (len(ids), "" if len(ids) == 1 else "s"), "success")
+    return redirect(url_for("exchanges"))
+
+
 @app.route("/mails/<int:mail_id>")
 @login_required
 def mail_detail(mail_id):

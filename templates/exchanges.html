@@ -64,7 +64,8 @@
     <thead>
       <tr><th>Date</th><th class="col-secondary">Origine</th><th>Interlocuteur</th>
         <th class="col-secondary">Membre</th><th>Objet</th>
-        <th class="col-secondary">Doc</th></tr>
+        <th class="col-secondary">Doc</th>
+        <th><span class="sr-only">Supprimer</span></th></tr>
     </thead>
     <tbody>
       {% for c in conversations %}
@@ -95,6 +96,19 @@
           {% if c['count'] > 1 %}<span class="thread-count">{{ c['count'] }} messages</span>{% endif %}
         </td>
         <td class="nowrap col-secondary">{% if c['has_doc'] %}📎{% endif %}</td>
+        {# Supprimer le fil entier d'un clic. La suppression existait déjà dans
+           la vue « un par un », mais par courriel : un fil de douze messages
+           demandait douze clics sur douze pages. Définitif et sans effet de
+           bord — la déduplication s'appuie sur `imported_mails`, que ceci ne
+           touche pas, donc l'import suivant ne le fait pas revenir. #}
+        <td class="nowrap" onclick="event.stopPropagation()">
+          <form method="post" action="{{ url_for('delete_conversation') }}"
+                onsubmit="return confirm('Supprimer définitivement cette conversation ({{ c['count'] }} courriel{{ '' if c['count'] == 1 else 's' }}) du CRM ?\n\nElle ne reviendra pas au prochain import.')">
+            <input type="hidden" name="key" value="{{ c['key'] }}">
+            <button class="btn btn-ghost btn-sm" type="submit"
+                    title="Supprimer cette conversation du CRM">✕</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
