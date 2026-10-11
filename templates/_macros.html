@@ -601,6 +601,11 @@
     </span>
     {%- if avec_identite %}{% set ligne = identite(p) | trim %}
     {%- if ligne %}<span class="personne-id">{{ ligne }}</span>{% endif %}
+    {#- L'adresse réelle, cliquable : savoir à quelle boîte on écrit sans
+        ouvrir la fiche. Les adresses apprises en plus (cabinet, attaché)
+        vivent sur la fiche, pas ici — une liste n'est pas un répertoire. #}
+    {%- if p['email'] %}<a class="personne-mail" href="mailto:{{ p['email'] }}"
+       onclick="event.stopPropagation()">{{ p['email'] }}</a>{% endif %}
     {%- endif %}
   </span>
 </span>

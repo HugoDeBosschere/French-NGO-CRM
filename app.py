@@ -2289,7 +2289,7 @@ def _persons_of(db, join_table, key_col, key_id):
         f"""
         SELECT p.id, p.name, p.contact_type, p.role, p.stance,
                p.photo_url, p.fiche_url, p.circonscription, p.territoire,
-               p.political_group,
+               p.political_group, p.email,
                (SELECT GROUP_CONCAT(o.name, ', ')
                   FROM person_organisations po
                   JOIN organisations o ON o.id = po.organisation_id
@@ -4172,9 +4172,21 @@ def person_detail(person_id):
     validator = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (person["validated_by"],)
     ).fetchone()
+    # Les adresses apprises au fil des échanges (cabinet, attaché·e, adresse
+    # personnelle) : elles servent déjà à rattacher les courriels, mais la
+    # fiche n'en montrait aucune — on ne voyait que `persons.email`, donc on ne
+    # savait pas à quelles boîtes on avait réellement écrit.
+    autres_adresses = [
+        row["email"] for row in db.execute(
+            "SELECT email FROM person_emails WHERE person_id = ? "
+            "ORDER BY email COLLATE NOCASE", (person_id,))
+        if (row["email"] or "").strip().lower()
+        != (person["email"] or "").strip().lower()
+    ]
     return render_template(
         "person_detail.html",
         p=person,
+        autres_adresses=autres_adresses,
         organisations=organisations,
         follow_up_source=follow_up_source,
         interventions=_intervention_rows(
@@ -5219,7 +5231,7 @@ def _people_by_mail(db, mail_ids):
         f"""
         SELECT xp.mail_id, p.id, p.name, p.contact_type, p.photo_url,
                p.fiche_url, p.role, p.circonscription, p.territoire,
-               p.political_group
+               p.political_group, p.email
           FROM mail_persons xp
           JOIN persons p ON p.id = xp.person_id
          WHERE xp.mail_id IN ({marques})

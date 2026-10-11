@@ -82,7 +82,11 @@
           {# Portrait, fiche CRM, fiche parlementaire — là où on en a besoin,
              c'est-à-dire en lisant la liste, pas seulement sur la fiche. #}
           {{ ui.personnes_liens(c['gens'].values()) }}
-          {% if c['kind'] and c['kind'] != 'plusieurs' %}
+          {# Le type de contact seulement quand la ligne d'identité ne le dit
+             pas déjà : « Sénateur·ice · Paris · Écologiste » suivi de
+             « (Politique) » ne renseignait personne et prenait deux lignes. #}
+          {% if c['kind'] and c['kind'] != 'plusieurs'
+                and not c['gens'].values() | map(attribute='role') | select | first %}
           <span class="muted">({{ c['kind'] }})</span>
           {% endif %}
           {# Sur téléphone la colonne « Membre » disparaît : le nom revient donc

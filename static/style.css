@@ -1370,6 +1370,8 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
    parle, sans ouvrir la fiche. Petite et discrète — c'est un sous-titre, pas
    une deuxième ligne de données. */
 .personne-id { font-size: .8em; color: var(--muted); }
+.personne-mail { font-size: .8em; color: var(--muted); text-decoration: none; }
+.personne-mail:hover { color: var(--brand-ink); text-decoration: underline; }
 .portrait-mini {
   width: 1.6rem;
   height: 1.6rem;

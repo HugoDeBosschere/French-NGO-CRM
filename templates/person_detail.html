@@ -131,8 +131,16 @@
 
   <div class="grid-2">
     <div class="field">
-      <label>Courriel</label>
-      <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>{% endif %}</p>
+      <label>Courriel{% if autres_adresses %}s{% endif %}</label>
+      <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>
+         {%- else %}<span class="muted">Non renseigné</span>{% endif %}</p>
+      {# Les adresses apprises au fil des échanges : elles servaient déjà à
+         rattacher les courriels sans jamais s'afficher nulle part. #}
+      {% if autres_adresses %}
+      <p class="hint">Aussi connu·e à :
+        {% for adresse in autres_adresses %}<a href="mailto:{{ adresse }}">{{ adresse }}</a>{{ ", " if not loop.last }}{% endfor %}
+      </p>
+      {% endif %}
     </div>
     <div class="field">
       <label>Téléphone</label>
