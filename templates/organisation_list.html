@@ -39,11 +39,27 @@
 {% if organisations %}
 <div class="table-wrap">
   <table class="meetings">
+    <colgroup>
+      <col style="width: 21%">
+      <col style="width: 12%">
+      <col style="width: 11%">
+      <col style="width: 15%">
+      <col style="width: 12%">
+      <col class="col-num" style="width: 7%">
+      <col class="col-num" style="width: 8%">
+      <col class="col-num" style="width: 7%">
+      <col style="width: 7%">
+    </colgroup>
     <thead>
       <tr>
-        <th>Nom</th><th>Type</th><th>Type de média / Chambre</th>
-        <th>Orientation</th><th>Position sur PauseIA</th>
-        <th>Personnes</th><th>Interventions</th><th>Contenus</th><th>Lien</th>
+        {# Neuf colonnes dans une carte de 1 150 px : les trois compteurs
+           portent un libellé abrégé, sinon « Interventions » se coupe en
+           « INTERV / ENTION / S ». Le mot entier reste au survol. #}
+        <th>Nom</th><th>Type</th><th>Média / Chambre</th>
+        <th>Orientation</th><th>Position</th>
+        <th class="col-num" title="Personnes rattachées">Pers.</th>
+        <th class="col-num" title="Interventions">Interv.</th>
+        <th class="col-num" title="Contenus">Cont.</th><th>Lien</th>
       </tr>
     </thead>
     <tbody>
@@ -54,9 +70,9 @@
         <td>{{ o['media_type'] or o['chambre'] or o['religion'] or '' }}</td>
         <td>{{ o['orientation'] or '' }}</td>
         <td>{{ o['stance'] }}</td>
-        <td class="nowrap">{{ o['person_count'] }}</td>
-        <td class="nowrap">{{ o['intervention_count'] }}</td>
-        <td class="nowrap">{{ o['content_count'] }}</td>
+        <td class="col-num">{{ o['person_count'] }}</td>
+        <td class="col-num">{{ o['intervention_count'] }}</td>
+        <td class="col-num">{{ o['content_count'] }}</td>
         <td class="nowrap">{% if o['link'] | safe_link %}<a href="{{ o['link'] }}" target="_blank" rel="noopener noreferrer" title="Ouvrir le lien dans un nouvel onglet" onclick="event.stopPropagation()">↗ Ouvrir</a>{% endif %}</td>
       </tr>
       {% endfor %}

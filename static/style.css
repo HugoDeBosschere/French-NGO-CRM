@@ -223,15 +223,22 @@ table.meetings thead th {
   border-bottom: 1px solid var(--line);
 }
 table.meetings tbody td { padding: .8rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-/* Une adresse ou un objet sans espace force la colonne à sa largeur entière et
-   emportait toute la page en débordement latéral — mesuré à 320 px sur /mails :
-   133 px de défilement horizontal, alors même que .table-wrap défile déjà pour
-   son compte. `break-word` coupe ces chaînes-là, et seulement elles : avec
-   `anywhere`, le navigateur se croyait autorisé à réduire n'importe quelle
-   colonne à une lettre et découpait les noms propres (« Pernel / le / Fricot /
-   eaux ») jusque sur un écran de bureau. Le `min-width` laisse à l'algorithme
-   de colonnes de quoi respirer : en dessous, la carte défile, comme prévu. */
-table.meetings { min-width: 36rem; }
+/* Les tableaux tiennent dans l'écran, point. On a essayé l'inverse — laisser
+   l'algorithme de colonnes faire au mieux et donner au tableau une largeur
+   minimale, la carte défilant en dessous — et c'était impraticable : la barre
+   de défilement se trouve tout en bas d'un tableau de vingt mille pixels de
+   haut, et il faut la chercher puis faire des allers-retours pour lire une
+   seule ligne.
+
+   `table-layout: fixed` plus une largeur par colonne (voir le <colgroup> de
+   chaque gabarit) : la répartition est décidée d'avance, le texte revient à la
+   ligne dans sa cellule, et rien ne sort de l'écran. C'est aussi ce qui
+   empêche le navigateur d'écraser une colonne à une lettre — le défaut qui
+   découpait les noms propres en « Pernel / le / Fricot / eaux ».
+
+   `break-word` reste pour les chaînes sans espace : une adresse électronique
+   ou une URL plus large que sa colonne doit se couper plutôt que déborder. */
+table.meetings { table-layout: fixed; width: 100%; }
 table.meetings td,
 table.meetings th { overflow-wrap: break-word; }
 table.meetings tbody tr:last-child td { border-bottom: 0; }
@@ -1411,4 +1418,27 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   padding-left: .85rem;
   border-left: 3px solid var(--line);
   color: var(--muted);
+}
+
+/* Dans la file « à rattacher », le champ de recherche gardait sa largeur
+   minimale de 15 rem et poussait la colonne d'action hors du tableau — le
+   dernier endroit où une largeur fixe devait l'emporter sur la mise en page.
+   Il prend la place de sa colonne, ni plus ni moins. */
+.table-unlinked .picker { min-width: 0; width: 100%; }
+.table-unlinked .inline-form { flex-wrap: wrap; row-gap: .35rem; }
+
+/* Une étiquette dans une cellule : elle ne doit pas déborder sur la colonne
+   voisine. « Groupe politique » recouvrait « Sénat » à 1 024 px. */
+table.meetings .tag { max-width: 100%; white-space: normal; }
+
+/* Une colonne de compteur. Le remplissage par défaut — 1 rem de chaque côté —
+   mangeait 32 px sur une colonne qui en fait 70, si bien que « Interv. » se
+   coupait en « INTER / V. ». Moins de marge, alignée à droite comme un nombre,
+   et le libellé tient d'un seul tenant. */
+table.meetings th.col-num,
+table.meetings td.col-num {
+  padding-left: .35rem;
+  padding-right: .35rem;
+  text-align: right;
+  overflow-wrap: normal;
 }
