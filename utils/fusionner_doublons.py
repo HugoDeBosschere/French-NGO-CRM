@@ -92,25 +92,50 @@ def groupes_de_doublons(db):
 
 
 def densite(fiche):
-    """Combien de champs renseignés : à défaut d'autorité, la fiche la plus
-    complète est la meilleure base."""
+    """Combien de champs renseignés : à défaut d'autre critère, la fiche la
+    plus complète est la meilleure base."""
     return sum(1 for cle in fiche.keys()
                if cle != "id" and str(fiche[cle] or "").strip())
 
 
-def choisir_survivante(gens, officiels):
+def poids_historique(db, person_id):
+    """Combien d'échanges cette fiche porte.
+
+    Le critère décisif après la source officielle. La « densité » seule ne
+    suffit pas : elle compte tous les champs à égalité, si bien qu'une fiche
+    vide mais dotée d'un `stance` et d'un `created_at` pouvait l'emporter sur
+    celle qui portait trois courriels et l'adresse de la personne. C'est
+    arrivé sur Anne-Flore Gaspard — rien n'a été perdu, tout a été récupéré,
+    mais garder la fiche qui a l'histoire évite de déplacer des liens pour
+    rien et conserve l'identifiant que des signets peuvent viser.
+    """
+    total = 0
+    for table in LIENS_VITAUX:
+        try:
+            total += db.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE person_id = ?",
+                (person_id,)).fetchone()[0]
+        except sqlite3.Error:
+            pass
+    return total
+
+
+def choisir_survivante(db, gens, officiels):
     """La fiche qu'on garde.
 
     D'abord celle que la source officielle connaît — elle porte le portrait et
     la fiche parlementaire posés par sync_emails_from_elus, donc elle est
-    alignée sur l'open data. À égalité, la plus complète ; à égalité encore, la
-    plus ancienne, qui porte l'historique le plus long.
+    alignée sur l'open data. Ensuite celle qui porte le plus d'échanges, puis
+    la plus complète, puis la plus ancienne.
     """
     def rang(fiche):
         officielle = norm_name(fiche["name"]) in officiels and bool(
             (fiche["fiche_url"] or "").strip()
             if "fiche_url" in fiche.keys() else False)
-        return (0 if officielle else 1, -densite(fiche), fiche["id"])
+        return (0 if officielle else 1,
+                -poids_historique(db, fiche["id"]),
+                -densite(fiche),
+                fiche["id"])
     return sorted(gens, key=rang)[0]
 
 
@@ -141,7 +166,7 @@ def champs_fusionnes(survivante, autres):
 
 
 def fusionner_groupe(db, gens, officiels, dry_run):
-    survivante = choisir_survivante(gens, officiels)
+    survivante = choisir_survivante(db, gens, officiels)
     autres = [g for g in gens if g["id"] != survivante["id"]]
     perdants = [g["id"] for g in autres]
     marques = ",".join("?" * len(perdants))

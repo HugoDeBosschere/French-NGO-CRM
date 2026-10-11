@@ -144,6 +144,24 @@ class FusionTests(unittest.TestCase):
         self._lancer()
         self.assertEqual(self._ids("Anne Dupont"), [officielle])
 
+    def test_la_fiche_qui_porte_les_echanges_l_emporte_sur_la_plus_garnie(self):
+        # Le cas Anne-Flore Gaspard : une fiche par ailleurs mieux remplie
+        # l'emportait sur celle qui portait trois courriels et l'adresse de la
+        # personne. Rien n'était perdu, mais on déplaçait des liens pour rien
+        # et on jetait l'identifiant que des signets peuvent viser.
+        garnie = self._personne("Anne Dupont", contact_type="Journaliste",
+                                political_group="—", circonscription="—",
+                                created_at="2026-01-01")
+        avec_histoire = self._personne("Anne Dupont", email="anne@an.fr")
+        self.db.execute("INSERT INTO mails (id) VALUES (1), (2), (3)")
+        self.db.executemany("INSERT INTO mail_persons VALUES (?, ?)",
+                            [(1, avec_histoire), (2, avec_histoire),
+                             (3, avec_histoire)])
+        self.db.commit()
+        self._lancer()
+        self.assertEqual(self._ids("Anne Dupont"), [avec_histoire])
+        self.assertNotIn(garnie, self._ids("Anne Dupont"))
+
     def test_a_defaut_la_fiche_la_plus_complete(self):
         maigre = self._personne("Marc Olivier")
         riche = self._personne("Marc Olivier", email="m@o.fr",
