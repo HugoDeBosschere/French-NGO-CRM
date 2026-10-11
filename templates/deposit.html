@@ -50,13 +50,30 @@
     <input type="text" id="person_nom" name="person_nom" class="picker-input"
            list="people-list" autocomplete="off"
            placeholder="Nom de la personne…"
+           title="La fiche à laquelle rattacher ces courriels. Nécessaire si l'adresse de votre correspondant n'est pas encore connue du CRM."
            {{ 'disabled' if not importer }}>
     <p class="hint">À renseigner si l'adresse de votre correspondant n'a pas
       encore de fiche : sans ça, le courriel n'est pas enregistré, seule
       l'adresse part en file « à rattacher ».</p>
+
+    {# La conséquence était silencieuse : renseigner un nom apprenait l'adresse
+       et faisait entrer d'eux-mêmes tous les courriels suivants. C'est presque
+       toujours ce qu'on veut, mais ça se décide, ça ne se découvre pas. #}
+    <label class="check deposit-apprendre"
+           title="Coché : l'adresse de votre correspondant est retenue sur sa fiche, et ses courriels suivants entreront sans dépôt manuel. Décoché : seuls les fichiers déposés ici sont enregistrés.">
+      <input type="checkbox" name="apprendre" value="1" checked
+             {{ 'disabled' if not importer }}>
+      Enregistrer aussi, automatiquement, <strong>les prochains échanges</strong>
+      avec cette personne
+    </label>
+    <p class="hint">Son adresse est retenue : ses courriels futurs entreront
+      sans dépôt manuel. Décochez pour ne déposer que les fichiers ci-dessus,
+      par exemple un échange ponctuel ou une adresse privée dont vous ne
+      voulez pas suivre la suite.</p>
   </div>
 
-  <button class="btn btn-primary" type="submit" {{ 'disabled' if not importer }}>
+  <button class="btn btn-primary" type="submit" {{ 'disabled' if not importer }}
+          title="Enregistre les fichiers déposés dans le CRM, en passant par le même classement que l'import automatique.">
     Déposer</button>
 </form>
 

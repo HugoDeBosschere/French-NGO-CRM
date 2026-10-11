@@ -37,7 +37,10 @@ class DepositTests(unittest.TestCase):
         self.db = sqlite3.connect(str(app.DB_PATH))
         self.addCleanup(self.db.close)
         for table in ("mail_members", "mail_persons", "mail_bodies", "mails",
-                      "members", "persons", "civicrm_pending", "imported_mails"):
+                      "members", "persons", "civicrm_pending", "imported_mails",
+                      # `person_emails` manquait : les adresses apprises par
+                      # un test fuyaient dans le suivant.
+                      "person_emails"):
             try:
                 self.db.execute(f"DELETE FROM {table}")
             except sqlite3.Error:
@@ -54,14 +57,40 @@ class DepositTests(unittest.TestCase):
         with self.client.session_transaction() as sess:
             sess["authenticated"] = True
 
-    def _post(self, files):
+    def _post(self, files, **champs):
         data = {"courriels": [(io.BytesIO(raw), name) for name, raw in files]}
+        data.update(champs)
         return self.client.post("/echanges/deposer", data=data,
                                 content_type="multipart/form-data",
                                 follow_redirects=True)
 
     def _mails(self):
         return self.db.execute("SELECT subject FROM mails").fetchall()
+
+    def _alias(self):
+        return [r[0] for r in self.db.execute("SELECT email FROM person_emails")]
+
+    def test_rattacher_apprend_l_adresse_pour_la_suite_par_defaut(self):
+        # Le comportement par défaut, et le plus courant : on dit qui c'est,
+        # et ses courriels suivants entrent tout seuls.
+        self._post([("a.eml", eml("Morgane Tual <mtual@gmail.com>",
+                                  "maxime@pauseia.fr"))],
+                   person_nom="Morgane Tual", apprendre="1")
+        self.assertIn("mtual@gmail.com", self._alias())
+
+    def test_sans_la_case_le_courriel_entre_mais_la_suite_non(self):
+        # La conséquence était silencieuse : renseigner un nom apprenait
+        # l'adresse sans le dire. Elle se décide maintenant, et se refuse.
+        self._post([("a.eml", eml("Morgane Tual <perso@free.fr>",
+                                  "maxime@pauseia.fr"))],
+                   person_nom="Morgane Tual")
+        self.assertEqual(self._alias(), [])
+        self.assertEqual(len(self._mails()), 1)   # le dépôt a bien eu lieu
+
+    def test_la_case_est_cochee_par_defaut_dans_le_formulaire(self):
+        html = self.client.get("/echanges/deposer").get_data(as_text=True)
+        self.assertIn('name="apprendre"', html)
+        self.assertIn("les prochains échanges", html)
 
     def test_the_page_opens(self):
         self.assertEqual(self.client.get("/echanges/deposer").status_code, 200)

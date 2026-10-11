@@ -561,11 +561,12 @@ def queue_unknown_recipients(db, msg):
     pairs = []
     for header in RECIPIENT_HEADERS:
         pairs.extend(getaddresses(msg.get_all(header, [])))
+    contexte = (decoded(msg.get("Subject")), None, "citoyen")
     for display, address in pairs:
         address = (address or "").strip().lower()
         if not address or not maildomains.in_scope(address):
             continue
-        if enqueue(db, address, display, now):
+        if enqueue(db, address, decoded(display), now, contexte):
             queued += 1
     return queued
 

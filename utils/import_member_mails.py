@@ -110,9 +110,14 @@ def is_member(addr):
 
 
 def addr_pairs(msg, *headers):
-    """(display, address) pairs across the given headers, addresses lower-cased."""
+    """(display, address) pairs across the given headers, addresses lower-cased.
+
+    Le nom affiché est DÉCODÉ : tel qu'il arrive dans l'en-tête il est encodé
+    en RFC 2047 dès qu'il porte un accent, et la file « à rattacher » montrait
+    « =?UTF-8?Q?Timoth=C3=A9e_BARNAUD?= » au lieu du nom.
+    """
     pairs = getaddresses(sum((msg.get_all(h, []) for h in headers), []))
-    return [(d, a.lower()) for d, a in pairs if a]
+    return [(decoded(d), a.lower()) for d, a in pairs if a]
 
 
 def ensure_member_tables(db):
@@ -513,7 +518,14 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
                 out_of_scope += 1
                 continue
             hors_perimetre_mais_elus += 1
-        if enqueue(db, address, display, now):
+        # Le contexte qui manquait à la page « à rattacher » : sans lui, elle
+        # affichait une adresse et un compteur, et on demandait à quelqu'un
+        # « qui est-ce ? » sans rien lui donner pour répondre.
+        membre = next((d or a for d, a in (from_member or to_member)), None)
+        contexte = (decoded(msg.get("Subject")),
+                    membre,
+                    "sortant" if from_member else "entrant")
+        if enqueue(db, address, display, now, contexte):
             queued += 1
     return queued, out_of_scope, hors_perimetre_mais_elus
 
@@ -643,20 +655,37 @@ def apprendre_contrepartie(db, msg, person_id):
     (contact@, no-reply@) sont écartées, elles ne désignent personne.
     """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    vues = set()
+    vues, neuves = set(), []
     for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
         addr = (address or "").strip().lower()
         if not addr or addr in vues or is_member(addr) or is_generic(addr):
             continue
         vues.add(addr)
-        db.execute(
+        cur = db.execute(
             "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at)"
             " VALUES (?, ?, 'depot', ?)", (addr, person_id, now))
-    return len(vues)
+        if cur.rowcount:
+            neuves.append(addr)
+    # Les adresses RÉELLEMENT ajoutées, pas seulement vues : l'appelant peut
+    # vouloir les retirer ensuite (dépôt sans suite), et il ne doit alors
+    # défaire que son propre ajout — pas un alias appris il y a six mois.
+    return neuves
+
+
+def oublier(db, adresses):
+    """Retirer des alias qu'on vient d'ajouter.
+
+    « Déposer celui-ci, et rien de plus » : l'adresse a servi à attribuer le
+    courriel, elle ne doit pas faire entrer les suivants. On ne retire que ce
+    que ce dépôt a ajouté — un alias appris il y a six mois reste.
+    """
+    for adresse in adresses:
+        db.execute("DELETE FROM person_emails WHERE email = ? AND source = 'depot'",
+                   (adresse,))
 
 
 def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
-                       rattacher_a=None):
+                       rattacher_a=None, apprendre=True):
     """Traiter un courriel isolé, exactement comme l'import le ferait.
 
     Écrit pour le dépôt manuel (`/echanges/deposer`), qui doit passer par le
@@ -696,8 +725,13 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
         return "duplicate", decoded(msg.get("Subject")) or "(sans objet)"
 
     subject = decoded(msg.get("Subject")) or "(sans objet)"
+    # L'apprentissage est ce qui permet d'ATTRIBUER ce courriel : sans lui, le
+    # classifieur ne reconnaît pas l'adresse et le dépôt n'enregistre rien.
+    # On apprend donc toujours, puis on retire si l'utilisateurice a décoché —
+    # c'est le seul moyen d'offrir « déposer celui-ci, et rien de plus ».
+    apprises = []
     if rattacher_a:
-        apprendre_contrepartie(db, msg, int(rattacher_a))
+        apprises = apprendre_contrepartie(db, msg, int(rattacher_a))
     email_index = load_email_index_with_aliases(db)
     name_patterns = build_name_pattern_index(db)
     direction, matches, member, learn, low_conf = classify(
@@ -705,11 +739,13 @@ def handle_one_message(db, msg, auto_publish=True, enforce_scope=False,
     if direction:
         record(db, msg, direction, matches, member, learn, low_conf,
                dry_run=False, auto_publish=auto_publish)
+        oublier(db, apprises if not apprendre else [])
         return "imported", subject
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     queued, _ignored, _elus = queue_unknown_counterparts(
         db, msg, now, enforce_scope=enforce_scope)
+    oublier(db, apprises if not apprendre else [])
     return ("queued" if queued else "unmatched"), subject
 
 

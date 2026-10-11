@@ -12,33 +12,55 @@
 {{ import_banner(import_state) }}
 
 {% if ignored %}
-<p class="muted">Adresses écartées à la main : elles ne sont plus proposées au
-  rattachement et aucun script ne les réexamine.
-  <a href="{{ url_for('unlinked') }}">Revenir à la file</a></p>
+<p class="muted">Adresses écartées à la main. Elles ne vous sont plus
+  proposées. « Réexaminer » les remet dans la liste.
+  <a href="{{ url_for('unlinked') }}">Revenir à la liste</a></p>
 {% else %}
-<p class="muted">Des courriels ont été échangés avec ces adresses, mais
-  l'application n'a pas su à qui les rattacher : elles n'ont de fiche ni ici ni
-  dans CiviCRM. <strong>C'est ici qu'il faut chercher un échange qui n'apparaît
-  pas dans la liste.</strong> Dites de qui il s'agit et les courriels concernés
-  seront rattachés au prochain import.
-  <a href="{{ url_for('unlinked_ignored') }}">Voir les adresses ignorées</a></p>
+<div class="notice notice-aide">
+  <p><strong>À qui appartient cette adresse ?</strong> Des courriels ont été
+    échangés avec elle, mais aucune fiche ne la reconnaît. Tant que personne ne
+    répond, ils n'apparaissent pas dans le suivi des échanges.
+    <strong>C'est donc ici qu'il faut chercher un échange qui manque.</strong></p>
+  <p class="muted">Les courriels ne sont pas conservés. Seules l'adresse et
+    quelques informations de contexte le sont, en attendant votre réponse.</p>
+  <p>Trois réponses possibles :</p>
+  <ul class="aide-actions">
+    <li><strong>Rattacher</strong> à une fiche existante. Ses courriels,
+      passés et à venir, entrent dans le suivi au prochain import. Pas encore
+      de fiche ? <a href="{{ url_for('new_person') }}">Créez-la d'abord.</a></li>
+    <li><strong>Pas une personne à suivre</strong> : un robot, un prestataire,
+      une infolettre, un courriel privé. L'adresse quitte cette liste et on ne
+      vous reposera plus la question. Si cette personne obtient une fiche un
+      jour, ses courriels entreront normalement.</li>
+    <li><strong>Bloquer cette adresse</strong> : en plus de quitter la liste,
+      ses courriels ne seront <em>jamais</em> enregistrés automatiquement, même
+      si elle obtient une fiche. Pour une adresse qui écrit sans cesse et dont
+      on ne veut rien garder. Un dépôt manuel reste possible.</li>
+  </ul>
+  <p class="muted">Les deux dernières se défont depuis
+    <a href="{{ url_for('unlinked_ignored') }}">les adresses écartées</a>.</p>
+</div>
 {% endif %}
 
 {% if rows %}
 <div class="table-wrap">
   <table class="meetings table-unlinked">
     <colgroup>
-      <col style="width: 22%">
-      <col class="col-secondary" style="width: 14%">
-      <col style="width: 8%">
-      <col class="col-secondary" style="width: 10%">
-      <col style="width: 14%">
-      <col style="width: 32%">
+      <col style="width: 18%">
+      <col class="col-secondary" style="width: 12%">
+      <col style="width: 24%">
+      <col class="col-num" style="width: 5%">
+      <col class="col-secondary" style="width: 11%">
+      <col class="col-secondary" style="width: 11%">
+      <col style="width: 19%">
     </colgroup>
     <thead>
       <tr>
-        <th>Adresse</th><th class="col-secondary">Nom affiché</th><th>Courriels</th>
-        <th class="col-secondary">Dernier</th><th>État</th><th>Rattacher à</th>
+        <th>Adresse</th><th class="col-secondary">Nom affiché</th>
+        <th>Dernier échange</th>
+        <th class="col-num">Nb</th>
+        <th class="col-secondary">Date</th>
+        <th class="col-secondary">État</th><th>Qui est-ce ?</th>
       </tr>
     </thead>
     <tbody>
@@ -46,15 +68,32 @@
       <tr>
         <td class="addr-cell"><strong>{{ r['email'] }}</strong></td>
         <td class="col-secondary">{{ r['display'] or '' }}</td>
-        <td class="nowrap" data-label="Courriels">{{ r['seen_count'] }}</td>
+        {# L'objet du dernier courriel et le membre en face : de quoi
+           reconnaître un journaliste d'un démarchage sans ouvrir quoi que ce
+           soit. Le corps n'est pas conservé. #}
+        <td data-label="Dernier échange">
+          {% if r['last_subject'] %}
+            <span class="subject">{{ r['last_subject'] }}</span>
+          {% else %}
+            <span class="muted">Objet non conservé (échange antérieur)</span>
+          {% endif %}
+          {% if r['last_member'] %}
+          <span class="muted petite">
+            {%- if r['last_direction'] == 'sortant' %}écrit par {% elif r['last_direction'] == 'entrant' %}reçu par {% endif -%}
+            {{ r['last_member'] }}</span>
+          {% elif r['last_direction'] == 'citoyen' %}
+          <span class="muted petite">campagne citoyenne</span>
+          {% endif %}
+        </td>
+        <td class="col-num" data-label="Courriels">{{ r['seen_count'] }}</td>
         <td class="nowrap col-secondary">{{ r['last_seen'][:10] | fr_date }}</td>
-        <td class="nowrap" data-label="État">
+        <td class="nowrap col-secondary" data-label="État">
           {% if r['status'] == 'absent' %}
             <span class="muted" title="CiviCRM ne connaît pas cette adresse non plus">Inconnue de CiviCRM</span>
           {% elif r['status'] == 'ignored' %}
-            <span class="muted">Ignorée</span>
+            <span class="muted" title="Pas une personne à suivre. Si elle obtient une fiche un jour, ses courriels entreront normalement.">Écartée</span>
           {% elif r['status'] == 'refused' %}
-            <span class="muted" title="Plus jamais enregistrée automatiquement">Refusée</span>
+            <span class="muted" title="Bloquée : ses courriels ne sont jamais enregistrés automatiquement, même si elle obtient une fiche.">Bloquée</span>
           {% else %}
             <span class="muted">En attente</span>
           {% endif %}
@@ -64,7 +103,8 @@
           <form method="post" action="{{ url_for('unlinked_ignore') }}">
             <input type="hidden" name="email" value="{{ r['email'] }}">
             <input type="hidden" name="undo" value="1">
-            <button class="btn btn-ghost" type="submit">Réexaminer</button>
+            <button class="btn btn-ghost" type="submit"
+                    title="Remet cette adresse dans la file : elle sera de nouveau proposée au rattachement.">Réexaminer</button>
           </form>
           {% else %}
           {# Un champ relié au <datalist> commun, et non un <select> par ligne :
@@ -81,14 +121,15 @@
                    list="people-list" autocomplete="off"
                    placeholder="Nom de la personne…"
                    aria-label="Rattacher {{ r['email'] }} à">
-            <button class="btn" type="submit">Rattacher</button>
+            <button class="btn" type="submit"
+                    title="Ajoute cette adresse à la fiche choisie. Ses courriels, passés et à venir, entrent dans le suivi au prochain import.">Rattacher</button>
           </form>
           <form method="post" action="{{ url_for('unlinked_ignore') }}" class="inline-form">
             <input type="hidden" name="email" value="{{ r['email'] }}">
             <button class="btn btn-ghost" type="submit"
-                    title="Ni un élu, ni un journaliste : un robot, un prestataire, un courriel personnel">Ignorer</button>
+                    title="Un robot, un prestataire, une infolettre, un courriel privé. L'adresse quitte cette liste. Si cette personne obtient une fiche un jour, ses courriels entreront normalement.">Pas une personne à suivre</button>
             <button class="btn btn-ghost" type="submit" name="refuser" value="1"
-                    title="Ne plus jamais enregistrer les courriels de cette adresse. Un dépôt manuel reste possible.">Ne jamais enregistrer</button>
+                    title="Ses courriels ne seront jamais enregistrés automatiquement, même si elle obtient une fiche un jour. Un dépôt manuel reste possible.">Bloquer cette adresse</button>
           </form>
           {% endif %}
         </td>

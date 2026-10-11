@@ -34,6 +34,7 @@ import unicodedata
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from email.header import decode_header, make_header
 from functools import wraps
 from pathlib import Path
 
@@ -1408,6 +1409,13 @@ def _init_db_locked():
         );
         CREATE INDEX IF NOT EXISTS idx_civicrm_pending_status
             ON civicrm_pending(status);
+        -- De quoi décider. La file ne montrait qu'une adresse et un compteur :
+        -- on demandait à quelqu'un « qui est-ce ? » sans rien lui donner pour
+        -- répondre. L'objet du dernier courriel et le nom du membre en face
+        -- suffisent à reconnaître un journaliste d'un démarchage. Le CORPS
+        -- n'est pas conservé : la règle Workspace copie toute la
+        -- correspondance externe de l'association, et cette page est lisible
+        -- par toute l'équipe.
         CREATE TABLE IF NOT EXISTS person_emails (
             email      TEXT PRIMARY KEY,
             person_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
@@ -1533,6 +1541,33 @@ def _init_db_locked():
         db.execute("ALTER TABLE persons ADD COLUMN photo_url TEXT")
     if "fiche_url" not in person_cols:
         db.execute("ALTER TABLE persons ADD COLUMN fiche_url TEXT")
+    # De quoi décider dans la file « à rattacher » : l'objet du dernier
+    # courriel, le membre en face, et le sens. Voir la table ci-dessus.
+    attente_cols = [r[1] for r in db.execute(
+        "PRAGMA table_info(civicrm_pending)")]
+    if attente_cols:
+        for colonne in ("last_subject", "last_member", "last_direction"):
+            if colonne not in attente_cols:
+                db.execute(
+                    f"ALTER TABLE civicrm_pending ADD COLUMN {colonne} TEXT")
+        # Les noms affichés étaient enregistrés tels qu'ils arrivent dans
+        # l'en-tête, donc encodés en RFC 2047 dès qu'ils portent un accent :
+        # la file affichait « =?UTF-8?Q?Timoth=C3=A9e_BARNAUD?= ». On les
+        # décode une fois pour celles déjà en base ; les suivantes le sont à
+        # l'insertion.
+        encodes = db.execute(
+            "SELECT email, display FROM civicrm_pending "
+            "WHERE display LIKE '=?%?='").fetchall()
+        for ligne in encodes:
+            try:
+                clair = str(make_header(decode_header(ligne["display"]))).strip()
+            except Exception:                              # noqa: BLE001
+                continue
+            if clair and clair != ligne["display"]:
+                db.execute(
+                    "UPDATE civicrm_pending SET display = ? WHERE email = ?",
+                    (clair, ligne["email"]))
+
     mail_cols = [r[1] for r in db.execute("PRAGMA table_info(mails)")]
     if "follow_up_date" not in mail_cols:
         db.execute("ALTER TABLE mails ADD COLUMN follow_up_date TEXT")
@@ -5621,6 +5656,9 @@ def deposit():
                   "error")
             return redirect(url_for("deposit"))
     rattacher_a = int(rattacher_a) if rattacher_a.isdigit() else None
+    # Cochée par défaut dans le formulaire : rattacher une adresse à une fiche
+    # veut presque toujours dire « et la suite aussi ». Presque : voir la case.
+    apprendre = bool(request.form.get("apprendre"))
 
     results, counts = [], {"imported": 0, "queued": 0,
                            "duplicate": 0, "unmatched": 0, "rejected": 0}
@@ -5638,7 +5676,7 @@ def deposit():
         try:
             msg = email.message_from_bytes(raw)
             state, subject = importer.handle_one_message(
-                db, msg, rattacher_a=rattacher_a)
+                db, msg, rattacher_a=rattacher_a, apprendre=apprendre)
         except Exception as exc:                     # noqa: BLE001
             # Un .eml mal formé ne doit pas emporter les autres fichiers du même
             # dépôt, ni rendre une erreur 500 à quelqu'un qui a juste glissé le
@@ -5687,7 +5725,8 @@ def unlinked():
     try:
         rows = db.execute(
             """
-            SELECT email, display, first_seen, last_seen, seen_count, status
+            SELECT email, display, first_seen, last_seen, seen_count, status,
+                   last_subject, last_member, last_direction
               FROM civicrm_pending
              WHERE status IN (?, ?)
              ORDER BY seen_count DESC, last_seen DESC

@@ -145,7 +145,13 @@ def ensure_civicrm_tables(db):
             seen_count  INTEGER NOT NULL DEFAULT 1,
             status      TEXT NOT NULL DEFAULT 'pending',
             resolved_at TEXT,
-            person_id   INTEGER REFERENCES persons(id) ON DELETE SET NULL
+            person_id   INTEGER REFERENCES persons(id) ON DELETE SET NULL,
+            -- De quoi décider. Sans ces trois colonnes la page ne montre
+            -- qu'une adresse et un compteur : on demande « qui est-ce ? »
+            -- sans rien donner pour répondre. Le CORPS n'y est pas.
+            last_subject   TEXT,
+            last_member    TEXT,
+            last_direction TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_civicrm_pending_status
             ON civicrm_pending(status);
@@ -161,6 +167,12 @@ def ensure_civicrm_tables(db):
         );
         """
     )
+    # Les trois colonnes de contexte sur une base créée avant elles. La même
+    # migration existe dans app.py : le premier des deux qui tourne la fait.
+    colonnes = [r[1] for r in db.execute("PRAGMA table_info(civicrm_pending)")]
+    for colonne in ("last_subject", "last_member", "last_direction"):
+        if colonne not in colonnes:
+            db.execute(f"ALTER TABLE civicrm_pending ADD COLUMN {colonne} TEXT")
 
 
 def is_generic(address):
@@ -206,11 +218,18 @@ def is_bulk(msg):
     return bool(auto) and auto != "no"
 
 
-def enqueue(db, address, display, now):
+def enqueue(db, address, display, now, contexte=None):
     """Record an unmatched external address for the next CiviCRM lookup.
 
     Called by import_member_mails.py. Never raises: a queueing problem must not
     cost us the mail import itself.
+
+    `contexte` : (objet, membre, sens) du dernier courriel vu avec cette
+    adresse. Sans lui, la page « à rattacher » ne montre qu'une adresse et un
+    compteur, et il faut deviner de qui il s'agit — on demande à quelqu'un de
+    trancher sans rien lui donner pour trancher. Le CORPS n'est toujours pas
+    conservé : l'objet et le nom du membre en face suffisent à reconnaître un
+    journaliste d'un démarchage, sans recopier la correspondance.
     """
     address = clean_email(address)
     if not address or is_generic(address):
@@ -248,6 +267,9 @@ def enqueue(db, address, display, now):
     except sqlite3.Error:
         pass
     display = (display or "").strip() or None
+    objet, membre, sens = (contexte or (None, None, None))
+    objet = (objet or "").strip() or None
+    membre = (membre or "").strip() or None
     try:
         # `rowcount` can't tell an insert from an ON CONFLICT update — both report
         # one row — and the caller counts genuinely new addresses, so ask first.
@@ -258,18 +280,24 @@ def enqueue(db, address, display, now):
             db.execute(
                 """
                 UPDATE civicrm_pending
-                   SET last_seen  = ?,
-                       seen_count = seen_count + 1,
-                       display    = COALESCE(NULLIF(display, ''), ?)
+                   SET last_seen      = ?,
+                       seen_count     = seen_count + 1,
+                       display        = COALESCE(NULLIF(display, ''), ?),
+                       -- Le dernier vu, pas le premier : c'est l'échange le
+                       -- plus récent qui dit le mieux de quoi il s'agit.
+                       last_subject   = COALESCE(?, last_subject),
+                       last_member    = COALESCE(?, last_member),
+                       last_direction = COALESCE(?, last_direction)
                  WHERE email = ?
                 """,
-                (now, display, address),
+                (now, display, objet, membre, sens, address),
             )
             return False
         db.execute(
-            "INSERT INTO civicrm_pending (email, display, first_seen, last_seen) "
-            "VALUES (?, ?, ?, ?)",
-            (address, display, now, now),
+            "INSERT INTO civicrm_pending (email, display, first_seen, "
+            "last_seen, last_subject, last_member, last_direction) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (address, display, now, now, objet, membre, sens),
         )
         return True
     except sqlite3.Error:

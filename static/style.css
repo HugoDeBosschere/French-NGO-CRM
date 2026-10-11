@@ -1442,3 +1442,40 @@ table.meetings td.col-num {
   text-align: right;
   overflow-wrap: normal;
 }
+
+/* L'encadré d'aide de la file « à rattacher ». La page posait une question
+   sans dire laquelle, et proposait trois boutons sans dire ce qu'ils font. */
+/* `.notice` est une boîte en ligne (icône + texte) ; ici c'est un bloc
+   d'explication de plusieurs paragraphes, d'où le retour à display: block. */
+.notice-aide { display: block; margin-bottom: 1.25rem; padding: .9rem 1.1rem; }
+.notice-aide p { margin: 0 0 .5rem; }
+.notice-aide p:last-of-type { margin-bottom: 0; }
+.aide-actions { margin: .6rem 0 0; padding-left: 1.1rem; }
+.aide-actions li { margin-bottom: .35rem; }
+.aide-actions li:last-child { margin-bottom: 0; }
+.petite { display: block; font-size: .85em; margin-top: .15rem; }
+
+/* La colonne d'action de la file : trois décisions, dont une seule courante.
+   « Rattacher » reste un bouton plein ; les deux autres se rangent côte à
+   côte en dessous, plus discrètes, pour qu'on ne les clique pas par défaut. */
+.table-unlinked .inline-form + .inline-form {
+  gap: .5rem;
+  margin-top: .3rem;
+  justify-content: flex-start;
+}
+.table-unlinked .inline-form .btn-ghost {
+  flex: 0 1 auto;
+  font-size: .85rem;
+  padding: .3rem .5rem;
+}
+
+/* La case « enregistrer aussi les prochains échanges » porte une phrase, pas
+   un mot : en flex sans retour à la ligne, elle poussait la page de 55 px sur
+   un écran de 320 px. La case reste alignée en haut du texte, qui s'enroule. */
+.deposit-apprendre:not([hidden]) {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: .75rem;
+}
+.deposit-apprendre input { margin-top: .2rem; flex: 0 0 auto; }
+.deposit-apprendre > :not(input) { min-width: 0; }
