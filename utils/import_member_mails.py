@@ -49,7 +49,8 @@ from email.utils import getaddresses
 
 # Reuse the building blocks already validated in the campaign importer.
 from import_campaign_mails import (  # noqa: E402
-    body_text, decoded, ensure_state_table, get_last_uid, set_last_uid,
+    body_text, decoded, ensure_state_table, extract_body,
+    get_last_uid, set_last_uid,
     load_email_index, already_imported, fetch_uids, mail_date_iso, log,
 )
 # The set of domains belonging to organisations we follow — read from the data
@@ -284,30 +285,6 @@ def thread_key_of(msg):
         return own
     subj = _norm_subject(decoded(msg.get("Subject")))
     return f"subj:{subj}" if subj else None
-
-
-def extract_body(msg, limit=100000):
-    """Readable body text: prefer text/plain, else HTML with tags stripped."""
-    plain, html = [], []
-    for part in msg.walk():
-        ctype = part.get_content_type()
-        if ctype == "text/plain":
-            try:
-                plain.append(part.get_payload(decode=True).decode(
-                    part.get_content_charset() or "utf-8", "replace"))
-            except Exception:
-                pass
-        elif ctype == "text/html":
-            try:
-                html.append(part.get_payload(decode=True).decode(
-                    part.get_content_charset() or "utf-8", "replace"))
-            except Exception:
-                pass
-    text = "\n".join(plain).strip()
-    if not text and html:
-        text = re.sub(r"<[^>]+>", " ", "\n".join(html))
-        text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
-    return text[:limit]
 
 
 def remember_thread(db, message_id, person_ids):

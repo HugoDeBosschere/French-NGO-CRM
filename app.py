@@ -5113,7 +5113,13 @@ def delete_conversation():
 @login_required
 def mail_detail(mail_id):
     db = get_db()
-    mail = db.execute("SELECT * FROM mails WHERE id = ?", (mail_id,)).fetchone()
+    # Le corps vit dans `mail_bodies`, pas dans `summary` : pour un courriel
+    # citoyen, `summary` ne porte que l'étiquette « Mail d'un citoyen à … »,
+    # et la fiche n'affichait donc jamais le message lui-même.
+    mail = db.execute(
+        "SELECT x.*, b.body FROM mails x "
+        "LEFT JOIN mail_bodies b ON b.mail_id = x.id WHERE x.id = ?",
+        (mail_id,)).fetchone()
     if mail is None:
         abort(404)
     people = _persons_of(db, "mail_persons", "mail_id", mail_id)

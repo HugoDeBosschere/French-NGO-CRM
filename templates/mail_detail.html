@@ -83,7 +83,10 @@
 
   <div class="field">
     <label>Corps du texte</label>
-    <p class="prose">{{ valeur(x['summary']) }}</p>
+    {# Le vrai corps quand il est conservé ; sinon le résumé, qui pour un
+       courriel citoyen n'est que l'étiquette « Mail d'un citoyen à … ». #}
+    {% if x['body'] %}<pre class="mail-text">{{ x['body'] }}</pre>
+    {% else %}<p class="prose">{{ valeur(x['summary']) }}</p>{% endif %}
   </div>
 
   <div class="grid-2">

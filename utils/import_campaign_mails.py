@@ -150,6 +150,14 @@ def ensure_state_table(db):
             mailbox  TEXT PRIMARY KEY,
             last_uid INTEGER NOT NULL DEFAULT 0
         );
+        -- Le corps des courriels, à part de `mails`. Défini ici et pas dans
+        -- le pipeline membres parce que c'est lui qui dépend de ce module, et
+        -- que les deux en ont besoin : deux définitions du même schéma
+        -- finiraient par diverger.
+        CREATE TABLE IF NOT EXISTS mail_bodies (
+            mail_id INTEGER PRIMARY KEY REFERENCES mails(id) ON DELETE CASCADE,
+            body    TEXT NOT NULL
+        );
         -- Every message we have already handled, so we never stage it twice.
         CREATE TABLE IF NOT EXISTS imported_mails (
             message_id  TEXT PRIMARY KEY,
@@ -229,6 +237,30 @@ def body_text(msg):
     return "\n".join(chunks)
 
 
+def extract_body(msg, limit=100000):
+    """Readable body text: prefer text/plain, else HTML with tags stripped."""
+    plain, html = [], []
+    for part in msg.walk():
+        ctype = part.get_content_type()
+        if ctype == "text/plain":
+            try:
+                plain.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+        elif ctype == "text/html":
+            try:
+                html.append(part.get_payload(decode=True).decode(
+                    part.get_content_charset() or "utf-8", "replace"))
+            except Exception:
+                pass
+    text = "\n".join(plain).strip()
+    if not text and html:
+        text = re.sub(r"<[^>]+>", " ", "\n".join(html))
+        text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
+    return text[:limit]
+
+
 def match_recipients(msg, db, email_index, match_body=False):
     """Return the list of (person_id, name) this message is addressed to.
 
@@ -282,6 +314,66 @@ def mail_date_iso(msg):
     return datetime.now(timezone.utc).date().isoformat()
 
 
+# Un objet qui commence par « Re: » (ou Rép., Ref., AW:, RE:) dit qu'il y a eu
+# un aller-retour ; « TR: », « Fwd: », « Fw: » qu'on nous transfère quelque
+# chose. Dans les deux cas, ce qui arrive dans la boîte de campagne n'est plus
+# le premier envoi du citoyen à son élu·e, mais la suite de l'échange — le plus
+# souvent parce que l'élu·e a répondu.
+PREFIXE_REPONSE = re.compile(r"^\s*(re|r[ée]p|ref|aw)\s*(\[\d+\])?\s*:", re.I)
+PREFIXE_TRANSFERT = re.compile(r"^\s*(tr|fwd?|wg)\s*:", re.I)
+
+
+def destinataires_visibles(msg):
+    """Les adresses des en-têtes To / Cc, en minuscules.
+
+    Volontairement sans Bcc : une copie cachée ne figure pas dans le message
+    reçu, et c'est précisément ce silence qui nous renseigne.
+    """
+    pairs = getaddresses(sum((msg.get_all(h, []) for h in ("To", "Cc")), []))
+    return {(a or "").strip().lower() for _d, a in pairs if a}
+
+
+def etape_echange(subject, msg=None, adresses_elus=(), notre_adresse=None):
+    """« envoi » (le citoyen écrit à son élu·e) ou « reponse » (le fil revient).
+
+    Le pipeline citoyen ne voit qu'un côté : le citoyen met PauseIA en copie
+    cachée de ce qu'il envoie. Sans indice, un premier courriel et le même fil
+    trois semaines plus tard, une fois l'élu·e sorti du silence, se ressemblent
+    trait pour trait dans la liste.
+
+    Deux indices, du plus sûr au moins sûr :
+
+    1. À QUI c'est adressé. Si l'élu·e est dans To/Cc, le citoyen lui écrit et
+       nous met en copie cachée : premier envoi. Si c'est NOTRE adresse qui est
+       dans To/Cc et pas celle de l'élu·e, le citoyen s'adresse à nous — il
+       nous transmet quelque chose, le plus souvent la réponse obtenue. C'est
+       structurel : ça ne dépend ni de la langue ni du client de messagerie.
+    2. L'objet, à défaut. « Re: », « TR: », « Fwd: » disent qu'il y a eu un
+       aller-retour. Moins fiable — un citoyen peut se répondre à lui-même, et
+       certains clients ne préfixent rien.
+
+    Aucun des deux ne prouve que c'est l'élu·e qui a répondu. D'où un sens
+    corrigeable à la main sur la fiche, et le corps conservé à côté : c'est lui
+    qui tranche, et c'est un humain qui le lit.
+    """
+    if msg is not None:
+        visibles = destinataires_visibles(msg)
+        if visibles:
+            elus = {a.strip().lower() for a in adresses_elus if a}
+            nous = (notre_adresse or "").strip().lower()
+            if elus & visibles:
+                return "envoi"
+            if nous and nous in visibles:
+                return "reponse"
+
+    subject = subject or ""
+    if PREFIXE_TRANSFERT.match(subject):
+        return "transfert"
+    if PREFIXE_REPONSE.match(subject):
+        return "reponse"
+    return "envoi"
+
+
 def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
     """Record one mail (to all matched persons) and remember its Message-ID.
 
@@ -294,9 +386,44 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
     mail_date = mail_date_iso(msg)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     names = [name for _pid, name in matches]
-    # RGPD minimisation: keep the subject (campaign context) but NOT the citizen's
-    # identity — we record that the élu·e received a mail, its date and its object,
-    # not who sent it. The From header is deliberately never read or stored.
+    # Les adresses connues des élu·es destinataires : `persons.email` et les
+    # alias appris au fil des échanges. C'est leur présence (ou leur absence)
+    # dans To/Cc qui dit le sens.
+    marques = ",".join("?" * len(matches))
+    ids = [pid for pid, _name in matches]
+    adresses = set()
+    for table, col in (("persons", "email"), ("person_emails", "email")):
+        cle = "id" if table == "persons" else "person_id"
+        try:
+            for (addr,) in db.execute(
+                f"SELECT {col} FROM {table} WHERE {cle} IN ({marques}) "
+                f"AND {col} IS NOT NULL AND {col} != ''", ids):
+                adresses.add(addr.strip().lower())
+        except sqlite3.Error:
+            pass        # `person_emails` peut manquer sur une base ancienne
+    etape = etape_echange(subject, msg, adresses, os.environ.get("IMAP_USER"))
+    # « Envoyé » quand le citoyen écrit à son élu·e, « Reçu » quand le fil
+    # revient — une réponse ou un transfert. C'est une déduction, pas une
+    # certitude : un citoyen peut se répondre à lui-même. Elle est corrigeable
+    # à la main sur la fiche du courriel, et le corps conservé permet de
+    # trancher.
+    sens = "sent" if etape == "envoi" else "received"
+    # Le corps est conservé depuis octobre 2026. Il ne l'était pas : on gardait
+    # l'objet et le nom de l'élu·e, pas le message. En pratique la liste devenait
+    # illisible — impossible de distinguer un premier envoi d'un fil où l'élu·e
+    # avait fini par répondre — et la minimisation était illusoire, puisque le
+    # citoyen met lui-même PauseIA en copie cachée de ce qu'il écrit : c'est un
+    # acte délibéré de sa part, pas une captation.
+    #
+    # Ce que ça change, et qu'il faut savoir : le corps porte la signature du
+    # citoyen, donc son nom et parfois ses coordonnées, dans une page que lit
+    # toute personne ayant le mot de passe partagé. L'en-tête From reste, lui,
+    # ni lu ni stocké.
+    body = extract_body(msg)
+    # `summary` garde l'étiquette : c'est elle qui, dans la liste, dit d'un coup
+    # d'œil qu'il s'agit d'un mail citoyen, et c'est sur elle que repose la
+    # colonne « Origine » (voir _conversation_groups dans app.py). Le vrai corps
+    # vit à côté, dans `mail_bodies`, comme pour les courriels membres.
     summary = f"Mail d'un citoyen à {', '.join(names)} : « {subject} »"
 
     if dry_run:
@@ -311,14 +438,18 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
                 mail_date, direction, important, subject, summary, follow_up_date,
                 received_by, validated_by, document_stored_name,
                 document_orig_name, created_at
-            ) VALUES (?, 'sent', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            ) VALUES (?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
             """,
-            (mail_date, subject, summary, now),
+            (mail_date, sens, subject, summary, now),
         )
         db.executemany(
             "INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
             [(cur.lastrowid, pid) for pid, _name in matches],
         )
+        if body:
+            db.execute(
+                "INSERT OR REPLACE INTO mail_bodies (mail_id, body) VALUES (?, ?)",
+                (cur.lastrowid, body))
     else:
         db.execute(
             """
@@ -326,9 +457,10 @@ def stage_message(db, msg, uid, mailbox, matches, dry_run, auto_publish):
                 mail_date, direction, important, subject, summary, follow_up_date,
                 proposed_people, submitted_by, document_stored_name,
                 document_orig_name, created_at
-            ) VALUES (?, 'sent', 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
+            ) VALUES (?, ?, 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, subject, summary, ", ".join(names), IMPORT_SOURCE, now),
+            (mail_date, sens, subject, summary, ", ".join(names),
+             IMPORT_SOURCE, now),
         )
 
     if message_id:
