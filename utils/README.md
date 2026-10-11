@@ -525,7 +525,14 @@ ne rien faire.
 ```bash
 python3 utils/backfill_campagne_corps.py --dry-run          # ne rien écrire
 python3 utils/backfill_campagne_corps.py --sens             # + corriger Envoyé/Reçu
+python3 utils/backfill_campagne_corps.py --refaire          # + reprendre les corps déjà là
 ```
+
+`--refaire` sert quand l'extraction s'améliore : les premiers corps rattrapés
+l'ont été par une version qui remplaçait chaque balise HTML par une espace et
+ne décodait pas les entités. La source étant la même boîte, les repasser ne
+peut qu'améliorer, et le corps n'est modifiable nulle part dans l'interface,
+donc aucun travail humain n'est écrasé.
 
 Le rapport final dit combien de corps ont été retrouvés, combien de lignes
 n'ont plus de message dans la boîte (supprimé, ou objet/date qui ne

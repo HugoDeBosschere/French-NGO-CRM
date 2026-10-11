@@ -45,17 +45,26 @@ def cle(mail_date, subject, person_ids):
     return (mail_date, (subject or "").strip(), tuple(sorted(person_ids)))
 
 
-def lignes_sans_corps(db):
-    """{clé: [lignes]} — les courriels citoyens dont le corps manque."""
+def lignes_sans_corps(db, refaire=False):
+    """{clé: [lignes]} — les courriels citoyens dont le corps manque.
+
+    Avec `refaire`, ceux qui en ont un déjà sont repris aussi. Les 285 premiers
+    corps ont été extraits par une version qui remplaçait chaque balise HTML
+    par une espace et ne décodait pas les entités : ceux qui n'avaient qu'une
+    partie HTML sont arrivés d'un seul tenant, avec « &nbsp; » en clair. La
+    source est la même, donc les repasser ne peut qu'améliorer — et le corps
+    n'est modifiable nulle part dans l'interface, donc on n'écrase aucun
+    travail humain.
+    """
+    condition = "" if refaire else "b.mail_id IS NULL AND "
     par_cle = {}
     for ligne in db.execute(
-        """
+        f"""
         SELECT x.id, x.mail_date, x.subject, x.summary, x.direction,
                x.document_stored_name, x.validated_by, x.received_by
           FROM mails x
           LEFT JOIN mail_bodies b ON b.mail_id = x.id
-         WHERE b.mail_id IS NULL
-           AND x.summary LIKE ?
+         WHERE {condition}x.summary LIKE ?
          ORDER BY x.id
         """,
         (ETIQUETTE + "%",),
@@ -109,6 +118,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--db", default=os.environ.get("IMAP_DB_PATH", DEFAULT_DB))
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--refaire", action="store_true",
+                    help="reprendre aussi les corps déjà enregistrés, pour "
+                         "profiter d'une extraction HTML corrigée")
     ap.add_argument("--sens", action="store_true",
                     help="corriger aussi « Envoyé / Reçu » d'après les "
                          "destinataires (lignes intactes seulement)")
@@ -118,12 +130,13 @@ def main():
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA busy_timeout = 30000")
 
-    attente = lignes_sans_corps(db)
+    attente = lignes_sans_corps(db, args.refaire)
     total_lignes = sum(len(v) for v in attente.values())
     if not total_lignes:
-        log("Aucun courriel citoyen sans corps. Rien à faire.")
+        log("Aucun courriel citoyen à traiter. Rien à faire.")
         return
-    log(f"{total_lignes} courriel(s) citoyen(s) sans corps, "
+    quoi = "à (re)lire" if args.refaire else "sans corps"
+    log(f"{total_lignes} courriel(s) citoyen(s) {quoi}, "
         f"{len(attente)} clé(s) distincte(s).")
 
     email_index = load_email_index(db)

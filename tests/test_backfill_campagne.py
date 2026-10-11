@@ -135,3 +135,53 @@ class AppariementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefaireTests(unittest.TestCase):
+    """Reprendre les corps déjà enregistrés.
+
+    Les 285 premiers ont été extraits par une version qui remplaçait chaque
+    balise HTML par une espace et ne décodait pas les entités : ceux qui
+    n'avaient qu'une partie HTML sont arrivés d'un seul tenant. La source
+    étant la même, les repasser ne peut qu'améliorer.
+    """
+
+    def setUp(self):
+        self.chemin = tempfile.mkstemp(suffix=".db")[1]
+        self.addCleanup(os.unlink, self.chemin)
+        self.db = sqlite3.connect(self.chemin)
+        self.db.row_factory = sqlite3.Row
+        self.addCleanup(self.db.close)
+        self.db.executescript("""
+            CREATE TABLE mails (id INTEGER PRIMARY KEY, mail_date TEXT,
+              subject TEXT, summary TEXT, direction TEXT,
+              document_stored_name TEXT, validated_by INTEGER,
+              received_by INTEGER);
+            CREATE TABLE mail_persons (mail_id INTEGER, person_id INTEGER);
+            CREATE TABLE mail_bodies (mail_id INTEGER PRIMARY KEY, body TEXT);
+        """)
+        # 1 : corps déjà là. 2 : sans corps. 3 : pas un courriel citoyen.
+        for i, (resume, corps) in enumerate((
+                (ETIQ, "corps mal extrait &nbsp;"), (ETIQ, None),
+                ("Mail de Maxime à Anne", "autre pipeline")), start=1):
+            self.db.execute(
+                "INSERT INTO mails (id, mail_date, subject, summary, direction)"
+                " VALUES (?, '2026-10-08', 'Objet', ?, 'sent')", (i, resume))
+            if corps:
+                self.db.execute(
+                    "INSERT INTO mail_bodies VALUES (?, ?)", (i, corps))
+        self.db.commit()
+
+    def _ids(self, **kw):
+        attente = rattrapage.lignes_sans_corps(self.db, **kw)
+        return sorted(l["id"] for lot in attente.values() for l in lot)
+
+    def test_par_defaut_seuls_les_courriels_sans_corps(self):
+        self.assertEqual(self._ids(), [2])
+
+    def test_avec_refaire_ceux_qui_en_ont_un_aussi(self):
+        self.assertEqual(self._ids(refaire=True), [1, 2])
+
+    def test_les_courriels_des_membres_ne_sont_jamais_repris(self):
+        # Leur corps vient d'un autre pipeline, qui n'a pas ce défaut.
+        self.assertNotIn(3, self._ids(refaire=True))
