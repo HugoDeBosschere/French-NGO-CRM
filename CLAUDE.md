@@ -55,14 +55,18 @@ gardés par un test de présence de colonne.
 ## 2. Interface
 
 Nav (voir `templates/base.html`) : TODO · Fait · Répartition · Calendrier ·
-**Suivi des échanges** · Rencontres · Personnes · Courriels · Organisations ·
+**Suivi des échanges** · Rencontres · Personnes · Organisations ·
 Interventions · Contenus · Modération · Utilisateurices.
 
 - **Suivi des échanges** (`/echanges`) : vue unifiée type boîte mail (citoyens +
-  membres + élu·es), fils regroupés, sous-onglets *Échanges · Membres · Tous les
-  courriels*. Détail d'un fil = `conversation.html` (cartes expéditeur→destinataires).
-  Quatre sous-onglets depuis le chantier interface : *Échanges · Membres ·
-  **À rattacher** · Tous les courriels*.
+  membres + élu·es). Quatre sous-onglets : *Échanges · Membres ·
+  **À rattacher** · Déposer*. L'entrée « Courriels » du menu principal a
+  disparu, et le sous-onglet « Tous les courriels » avec elle : c'étaient
+  quatre portes vers deux **lectures** des mêmes courriels. Un interrupteur
+  sous les onglets passe de *Par conversation* (fils regroupés) à *Un par un*
+  (/mails, à plat, paginé) — chaque vue garde ses filtres, sa recherche et ses
+  actions. Détail d'un fil = `conversation.html` (cartes
+  expéditeur→destinataires), corps mis en forme par le filtre `corps_mail`.
   Les quatre pages portent un **bandeau de fraîcheur** (macro `import_banner`) :
   « Dernière synchronisation il y a 4 minutes » en vert, l'avertissement en
   orange au-delà de 30 min (trois créneaux manqués), en rouge si le dernier
@@ -130,12 +134,20 @@ Interventions · Contenus · Modération · Utilisateurices.
 
 ### b) Intégration des mails (récurrent, timers systemd)
 - **Citoyens → élu·es** : `import_campaign_mails.py` (BCC campagne). Voir
-  `AUTOMATISATION_MAILS_CAMPAGNE.md`. RGPD : identité citoyen jamais stockée —
+  `AUTOMATISATION_MAILS_CAMPAGNE.md`. L'en-tête `From` n'est ni lu ni stocké —
   et c'est ce qui explique la seule asymétrie restante avec le pipeline des
   membres : `queue_unknown_recipients()` ne met en file que les **destinataires**
   inconnus, jamais l'expéditeur, qui est le citoyen. Pour le reste les deux
   pipelines sont alignés : même index d'adresses (`person_emails` compris), même
   file `civicrm_pending`, même périmètre `maildomains.in_scope`.
+  Depuis octobre 2026 le **corps est conservé** (`mail_bodies`, jamais
+  `summary`, qui garde l'étiquette « Mail d'un citoyen à … » dont dépend la
+  colonne « Origine »). Le commentaire d'origine invoquait la minimisation
+  RGPD ; en pratique elle était illusoire, puisque c'est le citoyen lui-même
+  qui met PauseIA en copie cachée. Conséquence à connaître : le corps porte sa
+  signature. Le **sens** (Envoyé / Reçu) se déduit des destinataires visibles,
+  puis des préfixes d'objet — déduction corrigeable à la main.
+  Rattrapage des anciens courriels : `backfill_campagne_corps.py`.
 - **Membres ↔ élu·es** : `import_member_mails.py` (règle Gmail invisible →
   boîte d'audit IMAP). Matching robuste (adresse/alias/corps/fil/motif de nom),
   membres auto-créés. Voir `AUTOMATISATION_MAILS_MEMBRES.md`.
@@ -319,3 +331,7 @@ sudo docker exec website-meeting-app python3 /app/utils/<script>.py [--commit]
 | La file d'attente et la création des fiches | `utils/civicrm_lookup.py` |
 | Les domaines connus, les conventions d'adresses | `utils/maildomains.py`, `utils/mailpatterns.py`, `utils/learn_conventions.py` |
 | Timers / unités systemd | `utils/deploy/` |
+| Fusionner des fiches en double | `utils/fusionner_doublons.py` |
+| Retrouver le corps d'anciens courriels citoyens | `utils/backfill_campagne_corps.py` |
+| Portraits et fiches parlementaires | `utils/sync_emails_from_elus.py`, macro `personne_lien` |
+| Mise en forme du corps d'un courriel | filtre `corps_mail` dans `app.py` |

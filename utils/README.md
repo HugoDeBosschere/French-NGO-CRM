@@ -174,6 +174,71 @@ campaign-mail backfill so senator mails match.
 > tool falls back to their official contact form, and nothing can match them by
 > address. That is expected, not a bug.
 
+Le script remplit aussi **`photo_url` et `fiche_url`** : le portrait officiel
+et le lien vers la fiche de l'assemblée, les mêmes que ceux de l'outil
+« Écrire à mes élus ». Ils s'affichent partout où un nom de personne apparaît
+(listes, fil de conversation, fiches).
+
+Une URL déjà posée **est rafraîchie** si elle vient manifestement de la source
+officielle — le domaine est celui de l'Assemblée, du Sénat ou du Parlement
+européen. À chaque législature les portraits changent d'adresse, et les
+anciennes resteraient en base en affichant du vide. Tout le reste est réputé
+saisi à la main et reste intouchable. Le test porte sur l'hôte et non sur la
+fin de la chaîne, sinon `evil-assemblee-nationale.fr` passerait pour officiel.
+
+Un `elus.json` joignable mais presque vide (source refondue, fichier tronqué)
+sort **en erreur** plutôt que de rendre 0 sans rien écrire : sans ça, l'alerte
+systemd ne partirait jamais.
+
+Minuterie : `sync-elus.timer`, tous les jours à 05:55, avec `OnFailure`.
+C'était auparavant un `ExecStartPre` de l'import citoyen précédé d'un « - »,
+qui avalait son échec — la synchro pouvait s'arrêter des mois sans que
+personne l'apprenne.
+
+## 4 bis. Fusionner les fiches en double (`fusionner_doublons.py`)
+
+Les scripts d'insertion apparient par (nom normalisé, type de contact) : une
+même personne arrivée par deux chemins — import presse, open data
+parlementaire, CiviCRM — obtient deux fiches. Trois « Yannick Jadot » liées au
+même courriel, c'est ce qu'on a trouvé en production.
+
+**La garantie : aucun échange n'est perdu.** Chaque courriel, rencontre,
+intervention, contenu, organisation et adresse apprise de la fiche absorbée
+est rattaché à la fiche conservée AVANT toute suppression. Le script recompte,
+avant et après, les échanges ayant encore au moins une personne ; s'il en
+manquait un seul, il annule tout sans écrire. On compte les échanges et non
+les lignes de liaison : fusionner deux fiches liées au même courriel fait
+légitimement tomber deux lignes à une.
+
+Les tables à reprendre sont **découvertes dans le schéma** (`PRAGMA
+foreign_key_list`), pas listées en dur — une table ajoutée demain sera reprise
+sans que personne y pense. `thread_persons`, qui garde des identifiants en CSV
+hors clé étrangère, est repris à part : sinon une réponse serait attribuée à
+une fiche supprimée et retomberait dans « à rattacher ».
+
+La fiche conservée est celle que la source officielle connaît (elle porte la
+fiche parlementaire), à défaut celle qui porte le plus d'échanges, à défaut la
+plus complète, à défaut la plus ancienne. Elle récupère les champs vides des
+autres, jamais en remplacement ; les fonctions se cumulent.
+
+**Jamais fusionné automatiquement** : deux fiches sans nom (sinon toutes les
+fiches vides du CRM deviendraient une seule personne), et deux noms seulement
+ressemblants. `--approchants` signale « Flore » / « Flaure » ; un humain
+tranche, parce que fusionner deux personnes distinctes est la seule erreur
+irréparable de ce script. Pour corriger une coquille : renommer la fiche
+depuis `/people/<id>/edit`, le passage suivant fusionnera.
+
+```bash
+python3 utils/fusionner_doublons.py --db meetings.db --dry-run --approchants
+python3 utils/fusionner_doublons.py --db meetings.db
+```
+
+Minuterie : `fusion-doublons.timer`, tous les jours à 07:10, après la synchro
+CiviCRM qui en est la principale pourvoyeuse. C'est le **seul travail planifié
+qui supprime des lignes**, d'où une sauvegarde en `ExecStartPre` et une limite
+de 50 fiches par passage (`--max`) : au-delà, il s'arrête et alerte plutôt que
+de nettoyer en masse sans témoin.
+
 ## 6. Members' correspondence with élu·es (`import_member_mails.py`)
 
 Tracks the association's own members (@pauseia.fr) exchanging mail with élu·es —
@@ -404,12 +469,57 @@ separate from the app schema.
   matched case-insensitively against `persons.email`. One draft per matched
   person (a mail may target several élu·es).
 
-### RGPD
+### Ce qui est conservé (révisé en octobre 2026)
 
-Following the brief's minimisation principle, an imported record keeps only the
-**élu·e, the date and the mail's subject** — the citizen's identity is **never
-stored** (the `From` header is not read). The subject is retained for campaign
-context; drop it too if the association's policy calls for it.
+Jusqu'en octobre 2026, un enregistrement ne gardait que l'**élu·e, la date et
+l'objet** : « minimisation », disait le commentaire. En pratique la liste
+devenait illisible — impossible de distinguer un premier envoi d'un fil où
+l'élu·e avait fini par répondre — et la minimisation était illusoire, puisque
+c'est le citoyen lui-même qui met PauseIA en copie cachée de ce qu'il écrit :
+un acte délibéré de sa part, pas une captation.
+
+**Le corps est donc conservé**, dans `mail_bodies` et non dans `summary` —
+`summary` garde l'étiquette « Mail d'un citoyen à … », qui alimente la colonne
+« Origine » du suivi des échanges. Ce que ça implique et qu'il faut savoir : le
+corps porte la signature du citoyen, donc son nom et parfois ses coordonnées,
+dans une page que lit toute personne ayant le mot de passe partagé.
+
+L'en-tête `From` reste, lui, ni lu ni stocké.
+
+**Le sens de l'échange** (« Envoyé » / « Reçu ») se déduit de deux indices, du
+plus sûr au moins sûr : les destinataires visibles (l'élu·e dans `To`/`Cc` =
+premier envoi, nous dans `To`/`Cc` sans l'élu·e = le citoyen nous transmet
+quelque chose), puis les préfixes d'objet `Re:` / `TR:` / `Fwd:`. Aucun des
+deux ne prouve que c'est l'élu·e qui a répondu : le sens est corrigeable à la
+main sur la fiche du courriel.
+
+### Rattrapage des anciens corps (`backfill_campagne_corps.py`)
+
+Les courriels importés avant octobre 2026 n'ont pas de corps, et aucun import
+futur ne le leur donnera : la déduplication se fait sur le Message-ID, et le
+leur est déjà noté dans `imported_mails`. Un `--backfill` ordinaire les
+sauterait — précisément ceux qu'on veut enrichir.
+
+Ce script relit la boîte et rapproche chaque message de sa ligne par (date,
+objet, ensemble des élu·es destinataires) — `imported_mails` ne garde pas
+l'identifiant du courriel créé, il n'y a pas de lien direct.
+
+Les ambiguïtés sont assumées, pas devinées. Pour une campagne, date et objet
+sont souvent identiques d'un citoyen à l'autre. Quand plusieurs messages et
+plusieurs lignes partagent la même clé : si les lignes sont toutes intactes
+(aucune pièce jointe, aucune validation, résumé encore égal à l'étiquette),
+elles sont interchangeables et on attribue ; sinon on passe et on le dit.
+Attribuer les mots d'un citoyen au mauvais enregistrement serait pire que de
+ne rien faire.
+
+```bash
+python3 utils/backfill_campagne_corps.py --dry-run          # ne rien écrire
+python3 utils/backfill_campagne_corps.py --sens             # + corriger Envoyé/Reçu
+```
+
+Le rapport final dit combien de corps ont été retrouvés, combien de lignes
+n'ont plus de message dans la boîte (supprimé, ou objet/date qui ne
+correspondent plus) et combien ont été laissées de côté par prudence.
 
 > ⚠️ **Validate the `To:` test first.** If the Google Group rewrites the `To:`
 > header, the address fallback breaks — check `X-Original-To` / `Delivered-To`
