@@ -16,6 +16,12 @@
 # Le format JSON envoyé porte à la fois "content" (Discord) et "text" (Slack),
 # comme le fait déjà scripts/update-elus-server.sh côté site : un seul script
 # pour les deux destinations possibles.
+#
+# Un webhook Discord n'appartient à personne : plusieurs intégrations peuvent
+# poster dans le même salon avec la même URL, et c'est le cas ici — celle de
+# Pause IA sert déjà à autre chose. Sans "username", les alertes du CRM
+# arriveraient sous le nom de l'autre intégration et se confondraient avec
+# elle. Discord l'affiche à la place du nom du webhook ; Slack l'ignore.
 set -uo pipefail
 
 UNITE="${1:-inconnue}"
@@ -41,7 +47,8 @@ json_str() {
 
 if [[ -n "$ALERT_WEBHOOK" ]]; then
 	curl -s -m 15 -H 'Content-Type: application/json' \
-		-d "$(printf '{"content":%s,"text":%s}' "$(json_str "$MSG")" "$(json_str "$MSG")")" \
+		-d "$(printf '{"username":"Alertes CRM Pause IA","content":%s,"text":%s}' \
+			"$(json_str "$MSG")" "$(json_str "$MSG")")" \
 		"$ALERT_WEBHOOK" >/dev/null || echo "alerte.sh : envoi webhook échoué" >&2
 fi
 
