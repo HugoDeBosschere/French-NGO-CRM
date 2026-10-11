@@ -556,3 +556,37 @@
    qui n'avait pas fini de charger. Même gabarit, `Format` disait déjà
    « Non renseigné » : c'est cette version-là qui est juste. #}
 {% macro valeur(v) %}{% if v is not none and v != '' %}{{ v }}{% else %}<span class="muted">Non renseigné</span>{% endif %}{% endmacro %}
+
+{# Une personne, partout de la même façon : son portrait officiel, son nom
+   cliquable vers sa fiche CRM, et le lien vers sa fiche parlementaire.
+
+   Ces trois informations n'existaient que sur la fiche de la personne. Or
+   c'est dans les listes et dans un fil de conversation qu'on en a besoin :
+   savoir d'un coup d'œil à quel·le élu·e on écrit, et pouvoir aller vérifier
+   sa page officielle sans passer par deux clics intermédiaires.
+
+   La photo disparaît toute seule si l'URL casse (onerror), plutôt que de
+   laisser l'icône d'image brisée du navigateur : ces URL viennent de
+   l'Assemblée et du Sénat, et elles bougent. #}
+{% macro portrait(p, taille='mini') %}
+{%- if p['photo_url'] %}<img class="portrait-{{ taille }}" src="{{ p['photo_url'] }}"
+     alt="" loading="lazy" referrerpolicy="no-referrer">{% endif -%}
+{% endmacro %}
+
+{% macro personne_lien(p, avec_portrait=True) %}
+<span class="personne">
+  {%- if avec_portrait %}{{ portrait(p) }}{% endif -%}
+  <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+  {%- if p['fiche_url'] %}
+  <a class="fiche-off" href="{{ p['fiche_url'] }}" target="_blank" rel="noopener noreferrer"
+     onclick="event.stopPropagation()"
+     title="Fiche officielle de {{ p['name'] }} sur le site de l'assemblée concernée"
+     aria-label="Fiche parlementaire de {{ p['name'] }}">↗</a>
+  {%- endif %}
+</span>
+{% endmacro %}
+
+{# Plusieurs personnes à la suite, dans une cellule de tableau. #}
+{% macro personnes_liens(gens, avec_portrait=True) %}
+{%- for p in gens %}{{ personne_lien(p, avec_portrait) }}{% if not loop.last %} {% endif %}{% endfor -%}
+{% endmacro %}

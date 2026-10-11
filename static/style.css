@@ -1266,7 +1266,12 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
 .deposit-person .hint { margin-top: .35rem; }
 
 /* Portrait officiel et lien vers la fiche parlementaire (page personne). */
-.fiche-officielle { display: flex; align-items: center; gap: 1rem; }
+/* `wrap` : à 320 px, le portrait de 72 px et le bouton « Voir la fiche
+   parlementaire ↗ » côte à côte poussaient la page entière de 70 px vers la
+   droite. Mesuré une fois les photos présentes dans la base — sans elles, le
+   bloc ne s'affiche pas et le défaut restait invisible. */
+.fiche-officielle { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.fiche-officielle .btn { white-space: normal; }
 .fiche-officielle .portrait {
   inline-size: 72px; block-size: 72px;
   object-fit: cover; border-radius: 8px;
@@ -1352,3 +1357,27 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
    n'apparaît qu'au mouvement, donc l'indice ne peut pas reposer sur elle
    seule, mais autant qu'elle se voie quand elle existe. */
 .table-wrap { scrollbar-width: thin; }
+
+/* ---------- Une personne : portrait, nom, fiche officielle ---------- */
+.personne { display: inline-flex; align-items: center; gap: .35rem; }
+.personne + .personne { margin-left: .5rem; }
+.portrait-mini {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;   /* un portrait se cadre sur le visage */
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+/* La flèche vers l'assemblée : discrète, mais pas invisible — et une cible
+   d'au moins 24 px, sinon elle est intouchable au doigt. */
+.fiche-off {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .9em;
+  line-height: 1;
+  padding: .3rem;
+  margin: -.3rem;
+}
+.fiche-off:hover { color: var(--brand-ink); }

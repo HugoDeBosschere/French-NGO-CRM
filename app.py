@@ -2288,6 +2288,7 @@ def _persons_of(db, join_table, key_col, key_id):
     return db.execute(
         f"""
         SELECT p.id, p.name, p.contact_type, p.role, p.stance,
+               p.photo_url, p.fiche_url,
                (SELECT GROUP_CONCAT(o.name, ', ')
                   FROM person_organisations po
                   JOIN organisations o ON o.id = po.organisation_id
@@ -4875,6 +4876,7 @@ def mails():
     rows = rows[:MAILS_PER_PAGE]
     return render_template("mails.html", mails=rows, q=q, page=page,
                            has_next=has_next, first_index=offset + 1,
+                           gens=_people_by_mail(db, [r["id"] for r in rows]),
                            directions=MAIL_DIRECTIONS)
 
 
@@ -5193,6 +5195,33 @@ def member_detail(member_id):
 # Suivi des échanges: unified, thread-grouped view of all mails
 # --------------------------------------------------------------------------- #
 
+def _people_by_mail(db, mail_ids):
+    """{id de courriel: [personnes]} — avec le portrait et la fiche officielle.
+
+    Les requêtes de fil et de liste ne rapportaient que des noms concaténés par
+    GROUP_CONCAT : de quoi afficher « Laurent Lhardit », pas de quoi en faire un
+    lien, encore moins montrer son portrait. Une requête de plus, indexée sur
+    `mail_persons`, et les trois informations utiles suivent partout où un nom
+    d'élu·e s'affiche.
+    """
+    if not mail_ids:
+        return {}
+    marques = ",".join("?" * len(mail_ids))
+    par_mail = {}
+    for row in db.execute(
+        f"""
+        SELECT xp.mail_id, p.id, p.name, p.contact_type, p.photo_url, p.fiche_url
+          FROM mail_persons xp
+          JOIN persons p ON p.id = xp.person_id
+         WHERE xp.mail_id IN ({marques})
+         ORDER BY name_key(p.name)
+        """,
+        list(mail_ids),
+    ):
+        par_mail.setdefault(row["mail_id"], []).append(row)
+    return par_mail
+
+
 def _conversation_groups(db, mails):
     """Group a list of mail rows into conversations (by thread_key, else the mail
     itself). Each group carries a message count, latest date/subject, the élu·es
@@ -5207,11 +5236,15 @@ def _conversation_groups(db, mails):
     # The counterpart's own type, so the list can say "Journaliste" where it used
     # to say "élu·e" for everybody. Since the press CRM was merged in, half of
     # these conversations are with journalists.
-    for mid, name, ctype in db.execute(
-        f"SELECT xp.mail_id, p.name, p.contact_type FROM mail_persons xp "
-        f"JOIN persons p ON p.id = xp.person_id WHERE xp.mail_id IN ({qm})", ids):
-        elus.setdefault(mid, []).append(name)
-        kinds.setdefault(mid, set()).add(ctype)
+    #
+    # La ligne complète, et plus seulement le nom : la liste affiche désormais
+    # le portrait officiel, le nom cliquable vers la fiche CRM et le lien vers
+    # la fiche parlementaire. Voir _people_by_mail, même requête, même index.
+    gens = _people_by_mail(db, ids)
+    for mid, rows in gens.items():
+        for row in rows:
+            elus.setdefault(mid, []).append(row["name"])
+            kinds.setdefault(mid, set()).add(row["contact_type"])
     for mid, name in db.execute(
         f"SELECT mm.mail_id, COALESCE(m.name, m.email) FROM mail_members mm "
         f"JOIN members m ON m.id = mm.member_id WHERE mm.mail_id IN ({qm})", ids):
@@ -5232,7 +5265,10 @@ def _conversation_groups(db, mails):
                  # « Mail d'un citoyen à … » posée par le pipeline citoyen, et
                  # non l'objet. Voir le calcul de `type` plus bas.
                  "resumes": [],
-                 "elus": set(), "members": set(),
+                 # Les noms (pour la recherche et le repli) ET les fiches
+                 # elles-mêmes, dédoublonnées par identifiant : un fil de dix
+                 # messages avec la même élu·e ne l'affiche qu'une fois.
+                 "elus": set(), "gens": {}, "members": set(),
                  "has_doc": False, "directions": set()}
             groups[key] = g
             order.append(key)
@@ -5242,6 +5278,8 @@ def _conversation_groups(db, mails):
             g["last_date"] = m["mail_date"]
             g["subject"] = m["subject"] or m["summary"]
         g["elus"].update(elus.get(m["id"], []))
+        for row in gens.get(m["id"], []):
+            g["gens"].setdefault(row["id"], row)
         g["kinds"].update(kinds.get(m["id"], set()))
         g["members"].update(membs.get(m["id"], []))
         g["directions"].add(m["direction"])
@@ -5350,6 +5388,7 @@ def conversation(key=None):
     if not mails:
         abort(404)
     return render_template("conversation.html", mails=mails,
+                           gens=_people_by_mail(db, [x["id"] for x in mails]),
                            directions=MAIL_DIRECTIONS)
 
 

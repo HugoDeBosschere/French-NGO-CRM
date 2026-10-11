@@ -40,7 +40,7 @@
     <label>Personne{% if people|length > 1 %}s{% endif %} concernée{% if people|length > 1 %}s{% endif %}</label>
     <ul class="people-list">
       {% for p in people %}
-        <li><a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+        <li>{{ ui.personne_lien(p) }}
           {{ ui.contact_tag(p['contact_type']) }}</li>
       {% else %}<li class="muted">Aucune</li>{% endfor %}
     </ul>

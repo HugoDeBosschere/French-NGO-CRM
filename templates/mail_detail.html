@@ -33,7 +33,7 @@
       <ul class="people-list">
         {% for p in people %}
           <li>
-            <a href="{{ url_for('person_detail', person_id=p['id']) }}">{{ p['name'] }}</a>
+            {{ ui.personne_lien(p) }}
             {% if p['organisation_names'] %}<span class="tag">{{ p['organisation_names'] }}</span>{% endif %}
             {{ ui.contact_tag(p['contact_type']) }}
             <span class="muted">· {{ p['stance'] }}</span>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% from "_macros.html" import import_banner, pager, exchange_subtabs, vue_echanges  %}
 {% block title %}Courriels{% endblock %}
 {% block container_class %}container-wide{% endblock %}
@@ -41,7 +42,8 @@
           {% if x['important'] %}<span title="Important">⭐</span>{% endif %}
         </td>
         <td class="nowrap">{{ directions[x['direction']] }}</td>
-        <td><strong>{{ x['person_names'] or '' }}</strong></td>
+        <td>{% if gens.get(x['id']) %}{{ ui.personnes_liens(gens[x['id']]) }}
+            {%- else %}<strong>{{ x['person_names'] or '' }}</strong>{% endif %}</td>
         <td class="summary-cell">
           <span class="subject">
             {% if x['subject'] %}<strong>{{ x['subject'] }}</strong><br>{% endif %}

@@ -28,9 +28,9 @@
 {% if p['photo_url'] or p['fiche_url'] %}
 <div class="card fiche-officielle">
   {% if p['photo_url'] %}
+  {# Le repli si l'URL casse est posé une fois pour toutes dans rows.js. #}
   <img class="portrait" src="{{ p['photo_url'] }}" alt="Portrait de {{ p['name'] }}"
-       loading="lazy" referrerpolicy="no-referrer"
-       onerror="this.closest('.fiche-officielle').classList.add('sans-portrait'); this.remove();">
+       loading="lazy" referrerpolicy="no-referrer">
   {% endif %}
   <div>
     <p class="muted">Source officielle</p>

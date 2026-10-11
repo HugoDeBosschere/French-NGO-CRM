@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Conversation{% endblock %}
 {% block content %}
 {% set first = mails[0] %}
@@ -21,6 +22,10 @@
   {% for x in mails %}
   {% set from_names = x['membres'] if x['direction'] == 'sent' else x['elus'] %}
   {% set to_names   = x['elus'] if x['direction'] == 'sent' else x['membres'] %}
+  {# Les personnes du CRM impliquées dans ce message : portrait, fiche CRM et
+     fiche parlementaire. Côté « membres » il n'y a que des noms, ce sont des
+     comptes @pauseia.fr, pas des fiches. #}
+  {% set interlocuteurs = gens.get(x['id'], []) %}
   {% set sender = (from_names or ('Élu·e' if x['direction'] == 'received' else 'Citoyen·ne')) %}
   {# Older messages collapsed, the latest one open, like a mailbox thread. #}
   <details class="mail-msg mail-{{ x['direction'] }}" {{ 'open' if loop.last }}>
@@ -42,11 +47,19 @@
     <div class="mail-msg-body">
       <div class="mail-addr">
         <span class="mail-addr-label">De</span>
-        <span class="mail-addr-val">{{ from_names or '' }}</span>
+        <span class="mail-addr-val">
+          {%- if x['direction'] == 'received' and interlocuteurs -%}
+            {{ ui.personnes_liens(interlocuteurs) }}
+          {%- else -%}{{ from_names or '' }}{%- endif -%}
+        </span>
       </div>
       <div class="mail-addr">
         <span class="mail-addr-label">À</span>
-        <span class="mail-addr-val">{{ to_names or '' }}</span>
+        <span class="mail-addr-val">
+          {%- if x['direction'] != 'received' and interlocuteurs -%}
+            {{ ui.personnes_liens(interlocuteurs) }}
+          {%- else -%}{{ to_names or '' }}{%- endif -%}
+        </span>
       </div>
       {% if x['subject'] %}
       <div class="mail-addr">

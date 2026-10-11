@@ -115,3 +115,22 @@
     brancher();
   }
 })();
+
+/* Un portrait qui ne charge pas s'efface, plutôt que de laisser l'icône
+ * d'image brisée du navigateur. Ces URL viennent de l'Assemblée et du Sénat :
+ * elles bougent, et une liste de cinq cents lignes en afficherait cinq cents.
+ *
+ * Un seul écouteur en capture pour toute la page, et non un `onerror=` sur
+ * chaque balise : sur /echanges, cinq cents attributs identiques pesaient à eux
+ * seuls une bonne part du poids de la page. Le `error` d'une image ne remonte
+ * pas, d'où la capture.
+ */
+document.addEventListener("error", function (e) {
+  var el = e.target;
+  if (el && el.tagName === "IMG" && /\bportrait/.test(el.className)) {
+    // Sur la fiche d'une personne, le bloc se réduit au seul bouton.
+    var bloc = el.closest(".fiche-officielle");
+    if (bloc) { bloc.classList.add("sans-portrait"); }
+    el.remove();
+  }
+}, true);

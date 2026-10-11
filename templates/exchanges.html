@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% from "_macros.html" import import_banner, exchange_subtabs, vue_echanges  %}
 {% block title %}Suivi des échanges{% endblock %}
 {% block container_class %}container-wide{% endblock %}
@@ -77,7 +78,9 @@
           {% else %}{% endif %}
         </td>
         <td>
-          {{ c['elus']|join(', ') }}
+          {# Portrait, fiche CRM, fiche parlementaire — là où on en a besoin,
+             c'est-à-dire en lisant la liste, pas seulement sur la fiche. #}
+          {{ ui.personnes_liens(c['gens'].values()) }}
           {% if c['kind'] and c['kind'] != 'plusieurs' %}
           <span class="muted">({{ c['kind'] }})</span>
           {% endif %}
