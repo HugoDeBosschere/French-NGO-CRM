@@ -1,0 +1,12 @@
+[Unit]
+Description=Synchronisation quotidienne des élu·es depuis elus.json
+
+[Timer]
+# 05:55, juste avant l'import des courriels de campagne (06:00) et après la
+# mise à jour hebdomadaire des listes (lundi 05:30) : les nouveaux arrivants
+# ont ainsi leur adresse et leur portrait dès leur première journée.
+OnCalendar=*-*-* 05:55:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
