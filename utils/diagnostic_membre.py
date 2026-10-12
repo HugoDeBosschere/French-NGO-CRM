@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 
 import maildomains  # noqa: E402
 from import_member_mails import (  # noqa: E402
-    DEFAULT_DB, GROUP_ADDRESSES, MEMBER_DOMAIN, addr_pairs,
+    DEFAULT_DB, ENTETES_DESTINATAIRES, GROUP_ADDRESSES, MEMBER_DOMAIN, addr_pairs,
     build_name_pattern_index, classify, connect_imap, ensure_member_tables,
     is_member, is_official, load_email_index_with_aliases, parle_delus,
 )
@@ -254,9 +254,9 @@ def verdict_par_courriel(db, imap, uids):
                   + (", confiance faible : passerait en modération" if faible else ""))
             continue
         # Pas de direction : on dit lequel des deux côtés manque.
-        autres = [a for _d, a in addr_pairs(msg, "From", "To", "Cc")
+        autres = [a for _d, a in addr_pairs(msg, "From", *ENTETES_DESTINATAIRES)
                   if not is_member(a)]
-        membres = [a for _d, a in addr_pairs(msg, "From", "To", "Cc")
+        membres = [a for _d, a in addr_pairs(msg, "From", *ENTETES_DESTINATAIRES)
                    if is_member(a)]
         if not membres:
             print("    PAS IMPORTÉ — aucun membre PauseIA identifié dans les")
