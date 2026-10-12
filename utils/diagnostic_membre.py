@@ -150,17 +150,36 @@ def maillon_5(db, adresse):
     print("  une fois l'adresse rattachée, les courriels suivants entrent seuls.")
 
 
-def maillon_1(adresse, limite):
+MAILBOX = os.environ.get("MEMBER_IMAP_MAILBOX", "INBOX")
+
+
+def ouvrir_boite():
+    """Connexion IMAP AVEC la boîte sélectionnée.
+
+    `connect_imap()` authentifie sans sélectionner : un SEARCH juste après
+    échoue par « command SEARCH illegal in state AUTH ». L'import appelle
+    SELECT de son côté, dans sa boucle ; ici il manquait.
+    """
+    imap = connect_imap()
+    statut, reponse = imap.select(MAILBOX, readonly=True)
+    if statut != "OK":
+        raise RuntimeError(f"boîte {MAILBOX!r} introuvable : {reponse}")
+    return imap
+
+
+def maillon_1(adresse, limite, imap=None):
     """La boîte d'audit contient-elle ses courriels, et qu'en ferait l'import ?"""
     titre("1. La boîte d'audit reçoit-elle ses courriels ?")
+    propre = imap is None
     try:
-        imap = connect_imap()
+        imap = imap or ouvrir_boite()
     except Exception as exc:                          # noqa: BLE001
         print(f"  Connexion IMAP impossible : {type(exc).__name__}: {exc}")
         print("  Sans elle, impossible de dire si la règle Workspace copie bien")
         print("  ses courriels. Vérifiez les variables MEMBER_IMAP_*.")
         return []
     try:
+        print(f"  Boîte lue : {MAILBOX} (en lecture seule)")
         statut, donnees = imap.search(None, "OR", f'FROM "{adresse}"',
                                       f'TO "{adresse}"')
         uids = donnees[0].split() if statut == "OK" else []
@@ -172,10 +191,11 @@ def maillon_1(adresse, limite):
             print("  Applications > Gmail > Conformité du contenu.")
         return uids[-limite:]
     finally:
-        try:
-            imap.logout()
-        except Exception:                             # noqa: BLE001
-            pass
+        if propre:
+            try:
+                imap.logout()
+            except Exception:                         # noqa: BLE001
+                pass
 
 
 def verdict_par_courriel(db, imap, uids):
@@ -253,16 +273,24 @@ def main():
     maillon_4(db, adresse)
     maillon_5(db, adresse)
     if args.imap:
-        uids = maillon_1(adresse, args.max)
-        if uids:
-            imap = connect_imap()
-            try:
+        # Une seule connexion pour la recherche et les verdicts : en ouvrir
+        # deux faisait manquer le SELECT à la seconde, et Gmail limite les
+        # connexions simultanées.
+        try:
+            imap = ouvrir_boite()
+        except Exception as exc:                      # noqa: BLE001
+            print(f"\n  Connexion IMAP impossible : {type(exc).__name__}: {exc}")
+            print("  Vérifiez les variables MEMBER_IMAP_*.")
+            return
+        try:
+            uids = maillon_1(adresse, args.max, imap=imap)
+            if uids:
                 verdict_par_courriel(db, imap, uids)
-            finally:
-                try:
-                    imap.logout()
-                except Exception:                     # noqa: BLE001
-                    pass
+        finally:
+            try:
+                imap.logout()
+            except Exception:                         # noqa: BLE001
+                pass
     else:
         print("\n(Relancez avec --imap pour interroger la boîte d'audit, "
               "le seul maillon que la base ne connaît pas.)")

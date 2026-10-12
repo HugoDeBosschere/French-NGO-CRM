@@ -126,5 +126,77 @@ class MaillonsTests(unittest.TestCase):
         self.assertIn("Aucune", texte)
 
 
+class BoiteTests(unittest.TestCase):
+    """Un IMAP qui se comporte comme imaplib : pas de SEARCH avant SELECT.
+
+    La première version appelait `connect_imap()`, qui authentifie sans
+    sélectionner, et tombait sur « command SEARCH illegal in state AUTH, only
+    allowed in states SELECTED » — dès le premier lancement réel, sur le seul
+    maillon que la base ne peut pas raconter.
+    """
+
+    class FauxImap:
+        def __init__(self):
+            self.etat = "AUTH"
+            self.ferme = False
+
+        def select(self, boite, readonly=False):
+            self.etat = "SELECTED"
+            return "OK", [b"2"]
+
+        def search(self, charset, *criteres):
+            if self.etat != "SELECTED":
+                raise AssertionError(
+                    "command SEARCH illegal in state AUTH, "
+                    "only allowed in states SELECTED")
+            return "OK", [b"1 2"]
+
+        def logout(self):
+            self.ferme = True
+
+    def setUp(self):
+        self.faux = self.FauxImap()
+        self._vrai = dm.connect_imap
+        dm.connect_imap = lambda: self.faux
+        self.addCleanup(setattr, dm, "connect_imap", self._vrai)
+
+    def test_la_boite_est_selectionnee_avant_toute_recherche(self):
+        flux = io.StringIO()
+        with redirect_stdout(flux):
+            uids = dm.maillon_1("elie@pauseia.fr", 10)
+        self.assertEqual(uids, [b"1", b"2"])
+        self.assertIn("lecture seule", flux.getvalue())
+
+    def test_la_boite_est_ouverte_en_lecture_seule(self):
+        appels = []
+        vrai_select = self.faux.select
+
+        def select(boite, readonly=False):
+            appels.append(readonly)
+            return vrai_select(boite, readonly)
+
+        self.faux.select = select
+        with redirect_stdout(io.StringIO()):
+            dm.maillon_1("elie@pauseia.fr", 10)
+        self.assertEqual(appels, [True])
+
+    def test_une_boite_introuvable_est_dite_et_nefait_pas_tomber_le_script(self):
+        self.faux.select = lambda boite, readonly=False: ("NO", [b"nope"])
+        flux = io.StringIO()
+        with redirect_stdout(flux):
+            uids = dm.maillon_1("elie@pauseia.fr", 10)
+        self.assertEqual(uids, [])
+        self.assertIn("MEMBER_IMAP_", flux.getvalue())
+
+    def test_une_connexion_pretee_nest_pas_fermee_par_le_maillon(self):
+        # main() ouvre UNE connexion, déjà sélectionnée, pour la recherche
+        # et les verdicts : le maillon ne doit ni la resélectionner ni la
+        # fermer sous les pieds de l'appelant.
+        self.faux.select("INBOX", readonly=True)
+        with redirect_stdout(io.StringIO()):
+            dm.maillon_1("elie@pauseia.fr", 10, imap=self.faux)
+        self.assertFalse(self.faux.ferme)
+
+
 if __name__ == "__main__":
     unittest.main()
