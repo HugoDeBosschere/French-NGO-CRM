@@ -470,8 +470,14 @@ def parle_delus(msg):
     return bool(MOTS_ELUS.search(corps))
 
 
-def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
+def queue_unknown_counterparts(db, msg, now, enforce_scope=True, dry_run=False):
     """Queue the outside address of a member mail we failed to match.
+
+    `dry_run=True` compte sans écrire. Sans ce mode, l'essai à blanc sautait
+    l'appel entier et annonçait donc toujours « 0 adresse en file, 0 hors
+    périmètre » — précisément les trois chiffres qu'on regarde pour juger si un
+    élargissement du filtre va faire du bruit. Le 12/10/2026, un essai à blanc
+    a annoncé 0 là où le vrai passage en a mis 17 en file.
 
     Only mails with a member on exactly one side are of interest: those are
     someone from PauseIA writing to, or hearing from, a person we have no fiche
@@ -538,7 +544,12 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
         contexte = (decoded(msg.get("Subject")),
                     membre,
                     "sortant" if from_member else "entrant")
-        if enqueue(db, address, display, now, contexte):
+        if dry_run:
+            # On compte l'adresse comme elle le serait, sans l'écrire. Le
+            # décompte peut dépasser d'un cheveu le vrai passage, qui ne
+            # compte pas deux fois une adresse déjà en file.
+            queued += 1
+        elif enqueue(db, address, display, now, contexte):
             queued += 1
     return queued, out_of_scope, hors_perimetre_mais_elus
 
@@ -845,12 +856,12 @@ def main():
                         imported += 1
                     else:
                         skipped += 1
-                        if not args.dry_run:
-                            new_queued, ignored, par_elus = \
-                                queue_unknown_counterparts(db, msg, now)
-                            queued += new_queued
-                            out_of_scope += ignored
-                            via_elus += par_elus
+                        new_queued, ignored, par_elus = \
+                            queue_unknown_counterparts(
+                                db, msg, now, dry_run=args.dry_run)
+                        queued += new_queued
+                        out_of_scope += ignored
+                        via_elus += par_elus
                         if args.verbose:
                             log(f"  [skip] {decoded(msg.get('Subject'))!r}")
             max_uid = max(max_uid, uid)
