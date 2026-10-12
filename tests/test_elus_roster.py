@@ -97,6 +97,21 @@ class CoherenceAvecLApp(unittest.TestCase):
         import insert_senateurices as isen
         er.verifier_groupes("Sénat", isen.GROUPE_TO_GROUP)
 
+    def test_les_groupes_nes_du_renouvellement_2026_sont_connus(self):
+        # Le 12/10/2026, la synchro du Sénat a échoué sur 78 sénateur·ices :
+        # « Libellés de groupe inconnus (78) » — UCI (l'Union Centriste
+        # renommée « Union centriste et indépendants ») et UNT (le premier
+        # groupe RN-UDR, né du renouvellement de septembre 2026).
+        import insert_senateurices as isen
+        for sigle in ("UCI", "UNT"):
+            groupe, anomalie = er.resoudre_groupe(
+                sigle, isen.GROUPE_TO_GROUP, "Sénat"
+            )
+            self.assertIsNone(anomalie, sigle)
+            self.assertNotEqual(groupe, er.GROUPE_ATTENTE["Sénat"], sigle)
+        # L'ancien libellé reste reconnu : des fiches y sont rattachées.
+        self.assertIn("UC", isen.GROUPE_TO_GROUP)
+
 
 if __name__ == "__main__":
     unittest.main()

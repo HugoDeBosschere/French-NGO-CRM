@@ -50,7 +50,9 @@ GROUPE_ATTENTE_SENAT = GROUPE_ATTENTE["Sénat"]
 GROUPE_TO_GROUP = {
     "Les Républicains": "Les Républicains (Sénat)",
     "SER": "Socialiste, Écologiste et Républicain (Sénat)",
-    "UC": "Union Centriste (Sénat)",
+    "UC": "Union Centriste (Sénat)",          # libellé d'avant sept. 2026
+    "UCI": "Union Centriste et Indépendants (UCI)",
+    "UNT": "Union Nationale pour les Territoires (UNT)",
     "RDPI": "Rassemblement des démocrates, progressistes et indépendants (RDPI)",
     "CRCE-K": "Communiste, Républicain, Citoyen et Écologiste (CRCE-K)",
     "Les Indépendants": "Les Indépendants – République et Territoires",

@@ -112,6 +112,12 @@ POLITICAL_GROUPS = {
         "Les Républicains (Sénat)",
         "Socialiste, Écologiste et Républicain (Sénat)",
         "Union Centriste (Sénat)",
+        # Renouvellement de septembre 2026 : l'Union Centriste est devenue
+        # « Union centriste et indépendants » (libellé UCI à la source) et le RN
+        # avec l'UDR ont formé leur premier groupe, l'UNT. L'ancien libellé est
+        # conservé : des fiches y sont rattachées, et l'historique compte.
+        "Union Centriste et Indépendants (UCI)",
+        "Union Nationale pour les Territoires (UNT)",
         "Rassemblement des démocrates, progressistes et indépendants (RDPI)",
         "Communiste, Républicain, Citoyen et Écologiste (CRCE-K)",
         "Les Indépendants – République et Territoires",
