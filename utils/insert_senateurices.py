@@ -108,6 +108,32 @@ def senat_email(prenom, nom):
     return f"{initials}.{family}@senat.fr"
 
 
+# Le Sénat ne publie AUCUNE adresse dans son API (champs disponibles :
+# groupe, circonscription, matricule, url, urlAvatar, twitter, facebook…), donc
+# l'adresse est déduite d'une convention. Elle est juste dans la quasi-totalité
+# des cas, mais elle reste une déduction : on l'écrit dans `person_emails` avec
+# cette provenance, pour que la fiche puisse le dire au lieu de présenter une
+# adresse déduite comme un fait vérifié.
+SOURCE_CONVENTION = "convention-senat"
+
+
+def noter_provenance(db, pid, email, now):
+    """Mémorise d'où vient l'adresse, sans jamais écraser une meilleure source.
+
+    `INSERT OR IGNORE` est le fond de l'affaire : si quelqu'un a confirmé
+    l'adresse à la main ou si elle a été apprise d'un échange réel, cette
+    provenance-là est meilleure et la synchro hebdomadaire ne doit pas la
+    rétrograder en « déduite » tous les lundis.
+    """
+    if not email:
+        return
+    db.execute(
+        "INSERT OR IGNORE INTO person_emails (email, person_id, source, created_at)"
+        " VALUES (?, ?, ?, ?)",
+        (email, pid, SOURCE_CONVENTION, now),
+    )
+
+
 def main():
     verifier_groupes("Sénat", GROUPE_TO_GROUP)
     roles_order = app_constant("POLITICAL_ROLES")
@@ -181,6 +207,9 @@ def main():
                     (fusion, groupe_final, circo, email, pid),
                 )
                 link_group(db, pid, group, "Sénat")
+                if (db.execute("SELECT email FROM persons WHERE id = ?",
+                               (pid,)).fetchone()[0] or "") == email:
+                    noter_provenance(db, pid, email, now)
                 promus.append(f"{name} : {role_actuel or '—'} -> {fusion}")
             else:
                 skipped += 1
@@ -191,6 +220,11 @@ def main():
                     "AND (email IS NULL OR email = '')",
                     (email, name, f"%{ROLE}%"),
                 ).rowcount
+                # Même quand l'adresse était déjà là : la provenance manquait
+                # pour toutes les fiches importées avant cette version.
+                if (db.execute("SELECT email FROM persons WHERE id = ?",
+                               (pid,)).fetchone()[0] or "") == email:
+                    noter_provenance(db, pid, email, now)
             continue
         cur = db.execute(
             """
@@ -204,6 +238,7 @@ def main():
         # The fiche's groupe politique is an organisation now, not just this
         # column: link it so the person shows their group straight away.
         link_group(db, cur.lastrowid, group, "Sénat")
+        noter_provenance(db, cur.lastrowid, email, now)
         inserted += 1
         existing[name] = (cur.lastrowid, ROLE)
 
