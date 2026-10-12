@@ -239,3 +239,6 @@ meetings.db
 *.bak-*
 *.bak-*.tar.gz
 uploads/
+
+# Législature de l'Assemblée découverte au vol par sync_officials.py
+an_legislature.json

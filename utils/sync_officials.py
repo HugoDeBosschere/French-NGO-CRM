@@ -21,7 +21,8 @@ systemd run surfaces the problem while still applying the chambers that worked.
 Design notes:
 - No third-party dependency (urllib + zipfile from the stdlib).
 - The AN legislature number is in the dump URL and changes after a general
-  election; override it with AN_LEGISLATURE when that happens.
+  election. It is discovered at run time (see legislature_an) so a dissolution
+  does not stall the sync; AN_LEGISLATURE still forces a value by hand.
 - The unzipped AN dump is large; it is removed after use to spare container disk.
 """
 import json
@@ -30,6 +31,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -50,12 +52,106 @@ TIMEOUT = 120
 # "ministre", "Ministre, Député·e" matches both — all covered.
 MANAGED_ROLE_TOKENS = ("député", "sénateur", "ministre", "président")
 
-AN_LEGISLATURE = os.environ.get("AN_LEGISLATURE", "17")
-AN_ZIP_URL = (
-    f"https://data.assemblee-nationale.fr/static/openData/repository/"
-    f"{AN_LEGISLATURE}/amo/deputes_actifs_mandats_actifs_organes/"
-    f"AMO10_deputes_actifs_mandats_actifs_organes.json.zip"
-)
+# --- numéro de législature de l'Assemblée -----------------------------------
+# L'URL du dump contient le numéro de législature, qui change à chaque
+# dissolution ou élection générale. En dur, il condamne la synchro à échouer
+# (404) jusqu'à ce que quelqu'un s'en aperçoive et pose la variable. On va donc
+# le chercher : au lancement, on demande à la source si la législature suivante
+# existe déjà, et on l'adopte si oui.
+AN_LEGISLATURE_PLANCHER = 17  # la plus ancienne qu'on ait jamais vue publiée
+# À côté de la base, pas dans actual_dataset/ : ce dossier est suivi par git et
+# réécrit à chaque déploiement, alors que meetings.db survit — c'est le seul
+# endroit du dépôt dont on sache qu'il persiste. Perdre ce fichier n'est de
+# toute façon pas grave : la recherche repartirait du plancher et readopterait
+# la législature publiée au passage suivant.
+AN_LEGISLATURE_ETAT = os.path.join(ROOT, "an_legislature.json")
+
+
+def an_zip_url(legislature):
+    return (
+        f"https://data.assemblee-nationale.fr/static/openData/repository/"
+        f"{legislature}/amo/deputes_actifs_mandats_actifs_organes/"
+        f"AMO10_deputes_actifs_mandats_actifs_organes.json.zip"
+    )
+
+
+def _existe(url):
+    """L'URL est-elle publiée ? Distingue « absente » de « injoignable ».
+
+    Un 404 est une réponse : cette législature n'existe pas (encore). Tout le
+    reste — panne, coupure réseau, 500 — n'en est pas une, et doit remonter :
+    confondre les deux ferait retomber sur la législature précédente le jour
+    d'une panne passagère, donc réimporter 577 ancien·nes député·es comme s'ils
+    siégeaient.
+    """
+    requete = urllib.request.Request(
+        url, method="HEAD", headers={"User-Agent": "pauseia-crm-sync"}
+    )
+    try:
+        urllib.request.urlopen(requete, timeout=TIMEOUT).close()
+        return True
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return False
+        if err.code in (403, 405, 501):
+            # Le serveur refuse la méthode HEAD : on redemande en GET sans lire
+            # le corps (urllib ouvre le flux sans le télécharger).
+            requete = urllib.request.Request(
+                url, headers={"User-Agent": "pauseia-crm-sync"}
+            )
+            try:
+                urllib.request.urlopen(requete, timeout=TIMEOUT).close()
+                return True
+            except urllib.error.HTTPError as err2:
+                if err2.code == 404:
+                    return False
+                raise
+        raise
+
+
+def _plancher_connu():
+    """La plus haute législature déjà utilisée avec succès.
+
+    Mémorisée pour ne JAMAIS redescendre : une fois la 18ᵉ publiée et importée,
+    un 404 passager sur son dump ne doit pas faire réimporter la 17ᵉ.
+    """
+    try:
+        with open(AN_LEGISLATURE_ETAT, encoding="utf-8") as f:
+            return max(AN_LEGISLATURE_PLANCHER, int(json.load(f)["legislature"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return AN_LEGISLATURE_PLANCHER
+
+
+def _retenir_plancher(legislature):
+    os.makedirs(os.path.dirname(AN_LEGISLATURE_ETAT), exist_ok=True)
+    with open(AN_LEGISLATURE_ETAT, "w", encoding="utf-8") as f:
+        json.dump({"legislature": int(legislature)}, f)
+
+
+def legislature_an(existe=None, journaliser=True):
+    """Le numéro de législature à utiliser, et son URL.
+
+    AN_LEGISLATURE, si elle est posée, gagne et coupe toute recherche : c'est
+    la porte de sortie manuelle, elle doit rester prévisible.
+    """
+    forcee = os.environ.get("AN_LEGISLATURE")
+    if forcee:
+        if journaliser:
+            log(f"  législature {forcee} (forcée par AN_LEGISLATURE)")
+        return int(forcee)
+
+    existe = existe or _existe
+    plancher = _plancher_connu()
+    suivante = plancher + 1
+    if existe(an_zip_url(suivante)):
+        if journaliser:
+            log(f"  législature {suivante} : nouveau dump publié, on l'adopte")
+        _retenir_plancher(suivante)
+        return suivante
+    if journaliser:
+        log(f"  législature {plancher}")
+    return plancher
+
 SENAT_URL = "https://www.senat.fr/api-senat/senateurs.json"
 SENAT_OUT = os.path.join(DATASET, "senateurices_actifs.json")
 
@@ -80,7 +176,7 @@ def run_script(name):
 def sync_deputes():
     zip_path = os.path.join(ROOT, "_amo10.zip")
     try:
-        download(AN_ZIP_URL, zip_path)
+        download(an_zip_url(legislature_an()), zip_path)
         # The dump extracts a top-level json/ (acteur/, organe/, …); start clean
         # so a removed deputy's stale file can't linger.
         if os.path.isdir(JSON_DIR):
