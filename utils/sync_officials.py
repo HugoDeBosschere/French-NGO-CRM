@@ -210,6 +210,28 @@ def main():
         db.close()
 
 
+def signaler_echecs(failures, run):
+    """Récapitule les causes à la FIN du journal, puis sort en erreur.
+
+    L'alerte Discord ne garde que la queue du journal (voir
+    utils/deploy/alerte.sh). Or la cause d'un échec de chambre n'était
+    imprimée qu'à l'endroit de l'échec, des centaines de lignes plus haut :
+    le 12/10/2026, l'alerte nommait les deux chambres en échec (Assemblée
+    nationale, Sénat) sans dire pourquoi. On la réécrit donc en dernier, et
+    on la conserve dans `import_runs.detail`.
+    """
+    log("\nCause de chaque échec :")
+    for label, message in failures:
+        log(f"  - {label} : {message}")
+    run.detail = "Chambres en échec : " + "; ".join(
+        f"{label} ({message})" for label, message in failures
+    )
+    raise SystemExit(
+        "Chambers that failed (left untouched, others applied): "
+        + ", ".join(label for label, _ in failures)
+    )
+
+
 def _main(run):
     os.makedirs(DATASET, exist_ok=True)  # every extract writes its JSON here
     chambers = [
@@ -225,18 +247,14 @@ def _main(run):
             fn()
             log(f"=== {label}: OK ===")
         except Exception as exc:  # isolate: one chamber must not sink the others
-            failures.append(label)
+            failures.append((label, f"{type(exc).__name__}: {exc}"))
             log(f"!!! {label}: FAILED — {type(exc).__name__}: {exc}")
 
     if failures:
         # Skip reconciliation: without every list the union is incomplete and
         # would retire people who are actually still in office.
         log("\nin_office reconciliation skipped (a chamber failed).")
-        run.detail = "Chambres en échec : " + ", ".join(failures)
-        raise SystemExit(
-            "Chambers that failed (left untouched, others applied): "
-            + ", ".join(failures)
-        )
+        signaler_echecs(failures, run)
 
     reconcile_in_office()
     run.detail = f"{len(chambers)} chambres rafraîchies."
