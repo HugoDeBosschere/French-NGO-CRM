@@ -141,3 +141,77 @@ class ExisteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TelechargementTests(unittest.TestCase):
+    """Une panne de trente secondes ne doit pas coûter une semaine.
+
+    Le 12/10/2026, le dump de l'Assemblée est passé à 18 h 08 et a répondu
+    « HTTP Error 503: Backend fetch failed » à 18 h 09. Le script abandonnait
+    au premier refus.
+    """
+
+    def setUp(self):
+        self.dossier = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dossier.cleanup)
+        self.dest = os.path.join(self.dossier.name, "dump.zip")
+        self.attentes = []
+        self._vrai = so.urllib.request.urlopen
+        self.addCleanup(setattr, so.urllib.request, "urlopen", self._vrai)
+
+    class Flux:
+        def __init__(self, contenu=b"zip"):
+            self.contenu = contenu
+
+        def read(self, *a):
+            contenu, self.contenu = self.contenu, b""
+            return contenu
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _reponses(self, *suite):
+        restantes = list(suite)
+
+        def faux(requete, timeout=None):
+            reponse = restantes.pop(0)
+            if isinstance(reponse, Exception):
+                raise reponse
+            return reponse
+
+        so.urllib.request.urlopen = faux
+
+    def test_un_503_passager_est_reessaye_et_le_fichier_arrive(self):
+        self._reponses(http_error(503), self.Flux(b"zip"))
+        so.download("https://exemple/dump.zip", self.dest,
+                    dormir=self.attentes.append)
+        with open(self.dest, "rb") as f:
+            self.assertEqual(f.read(), b"zip")
+        self.assertEqual(self.attentes, [5])
+
+    def test_trois_echecs_remontent_lerreur(self):
+        self._reponses(http_error(503), http_error(503), http_error(502))
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            so.download("https://exemple/dump.zip", self.dest,
+                        dormir=self.attentes.append)
+        self.assertEqual(ctx.exception.code, 502)
+        self.assertEqual(self.attentes, [5, 20])
+
+    def test_un_404_nest_pas_reessaye(self):
+        # Il ne changera pas dans vingt secondes : réessayer ne fait que
+        # retarder l'alerte.
+        self._reponses(http_error(404))
+        with self.assertRaises(urllib.error.HTTPError):
+            so.download("https://exemple/dump.zip", self.dest,
+                        dormir=self.attentes.append)
+        self.assertEqual(self.attentes, [])
+
+    def test_une_coupure_reseau_est_reessayee(self):
+        self._reponses(TimeoutError("timed out"), self.Flux(b"zip"))
+        so.download("https://exemple/dump.zip", self.dest,
+                    dormir=self.attentes.append)
+        with open(self.dest, "rb") as f:
+            self.assertEqual(f.read(), b"zip")

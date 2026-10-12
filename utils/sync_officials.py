@@ -31,6 +31,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -160,11 +161,42 @@ def log(msg):
     print(msg, flush=True)
 
 
-def download(url, dest):
+# Les sources officielles répondent par intermittence. Constaté le 12/10/2026 :
+# le dump de l'Assemblée est passé à 18 h 08 et a répondu « HTTP Error 503:
+# Backend fetch failed » à 18 h 09. Abandonner au premier refus, c'est perdre
+# une semaine de mise à jour pour une panne de trente secondes.
+ESSAIS = 3
+ATTENTES = (5, 20)  # secondes avant le 2ᵉ puis le 3ᵉ essai
+
+
+def _reessayable(exc):
+    """Vrai si réessayer a une chance de servir.
+
+    Un 404 ou un 403 ne changera pas dans vingt secondes : réessayer ne fait
+    qu'ajouter du bruit et retarder l'alerte. Un 5xx, un timeout ou une coupure
+    réseau, si.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, OSError))
+
+
+def download(url, dest, dormir=time.sleep):
     log(f"  ↓ {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "pauseia-crm-sync"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f)
+    for essai in range(1, ESSAIS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r, \
+                    open(dest, "wb") as f:
+                shutil.copyfileobj(r, f)
+            return
+        except Exception as exc:                      # noqa: BLE001
+            if essai == ESSAIS or not _reessayable(exc):
+                raise
+            attente = ATTENTES[essai - 1]
+            log(f"    {type(exc).__name__}: {exc} — nouvel essai dans "
+                f"{attente} s ({essai}/{ESSAIS})")
+            dormir(attente)
 
 
 def run_script(name):
