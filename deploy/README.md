@@ -57,5 +57,11 @@ Un `FETCH_HEAD` laisse le dépôt en HEAD détaché et ne dit pas d'où il vient
 
 ## Ce qui n'est pas ici
 
-Le `Dockerfile` et le fichier de secrets. Le premier est à verser depuis le
-serveur (il n'a jamais été dans le dépôt) ; le second ne doit jamais l'être.
+Le fichier de secrets, `/opt/volunteer-apps/secrets/website-meeting.env`, et
+il ne doit jamais l'être. Seul son chemin apparaît, dans le compose.
+
+## Ces copies ne sont pas la source
+
+`Dockerfile` et `docker-compose.yml` sont des copies de référence : c'est le
+serveur qui exécute les siennes. Modifier l'une sans l'autre les ferait
+diverger de nouveau — exactement la panne que ce dossier documente.

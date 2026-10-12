@@ -198,6 +198,33 @@ def maillon_1(adresse, limite, imap=None):
                 pass
 
 
+# Là où un destinataire en copie cachée peut malgré tout être nommé. Un relais
+# ajoute souvent l'adresse de l'enveloppe en en-tête : si l'une de celles-ci
+# porte l'élu·e, l'import pourrait le retrouver au lieu d'abandonner.
+ENTETES_ENVELOPPE = (
+    "Delivered-To", "X-Original-To", "X-Gm-Original-To", "X-Envelope-To",
+    "Envelope-To", "X-Forwarded-To", "Resent-To", "Bcc", "X-Rcpt-To",
+)
+
+
+def enveloppe(msg):
+    """Imprime les en-têtes qui pourraient encore nommer le destinataire."""
+    trouves = []
+    for nom in ENTETES_ENVELOPPE:
+        for valeur in msg.get_all(nom, []):
+            valeur = (valeur or "").strip()
+            if valeur:
+                trouves.append((nom, valeur))
+    if not trouves:
+        print("    Aucun en-tête d'enveloppe non plus : le destinataire est")
+        print("    définitivement absent du message. Seul un dépôt manuel, ou")
+        print("    un envoi en clair plutôt qu'en copie cachée, le récupérera.")
+        return
+    print("    En-têtes d'enveloppe présents — l'élu·e y est peut-être :")
+    for nom, valeur in trouves:
+        print(f"      {nom}: {valeur}")
+
+
 def verdict_par_courriel(db, imap, uids):
     """Ce que l'import ferait, aujourd'hui, de chacun de ces courriels."""
     import email as emaillib
@@ -236,6 +263,15 @@ def verdict_par_courriel(db, imap, uids):
             print("    en-têtes. Si le membre était en Cci, c'est normal : un")
             print("    Cci n'apparaît pas dans le courriel reçu.")
             continue
+        if not autres:
+            # Le cas que l'affichage précédent cachait derrière une liste vide.
+            print("    PAS IMPORTÉ — AUCUNE adresse externe dans les en-têtes :")
+            print("    De, À et Copie ne contiennent que des adresses PauseIA.")
+            print("    L'élu·e était donc en COPIE CACHÉE, ou destinataire de")
+            print("    l'enveloppe seulement. Rien dans le message ne le nomme,")
+            print("    donc rien ne peut le rattacher.")
+            enveloppe(msg)
+            continue
         print("    PAS IMPORTÉ — aucune fiche ne porte l'adresse de l'autre côté :")
         for a in autres[:5]:
             marques = []
@@ -244,7 +280,7 @@ def verdict_par_courriel(db, imap, uids):
             if maildomains.in_scope(a):
                 marques.append("dans le périmètre")
             print(f"      {a}" + (f"   ({', '.join(marques)})" if marques else ""))
-        if autres and not any(maildomains.in_scope(a) for a in autres):
+        if not any(maildomains.in_scope(a) for a in autres):
             print("    Hors périmètre : n'entrerait que si le corps parle")
             print(f"    d'élu·es — ici, {'oui' if parle_delus(msg) else 'non'}.")
 

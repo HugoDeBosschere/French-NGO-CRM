@@ -198,5 +198,45 @@ class BoiteTests(unittest.TestCase):
         self.assertFalse(self.faux.ferme)
 
 
+class EnveloppeTests(unittest.TestCase):
+    """Une liste vide ne dit rien ; « l'élu·e était en copie cachée » dit tout.
+
+    Le premier lancement réel a produit sept fois « aucune fiche ne porte
+    l'adresse de l'autre côté : » suivi de RIEN. La liste était vide parce que
+    De, À et Copie ne contenaient que des adresses PauseIA : l'élu·e était en
+    copie cachée. L'affichage cachait la seule information utile.
+    """
+
+    @staticmethod
+    def _message(entetes):
+        import email                                  # noqa: PLC0415
+        msg = email.message.Message()
+        for nom, valeur in entetes:
+            msg[nom] = valeur
+        return msg
+
+    def _sortie(self, msg):
+        flux = io.StringIO()
+        with redirect_stdout(flux):
+            dm.enveloppe(msg)
+        return flux.getvalue()
+
+    def test_un_en_tete_denveloppe_est_montre(self):
+        texte = self._sortie(self._message(
+            [("Delivered-To", "suivi-membres@pauseia.fr"),
+             ("X-Gm-Original-To", "jean.dupont@assemblee-nationale.fr")]))
+        self.assertIn("jean.dupont@assemblee-nationale.fr", texte)
+        self.assertIn("X-Gm-Original-To", texte)
+
+    def test_sans_en_tete_denveloppe_on_le_dit_sans_detour(self):
+        texte = self._sortie(self._message([("Subject", "Contact")]))
+        self.assertIn("définitivement absent", texte)
+        self.assertIn("dépôt manuel", texte)
+
+    def test_un_en_tete_vide_ne_compte_pas(self):
+        texte = self._sortie(self._message([("Bcc", "   ")]))
+        self.assertIn("définitivement absent", texte)
+
+
 if __name__ == "__main__":
     unittest.main()
