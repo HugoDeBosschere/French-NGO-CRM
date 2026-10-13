@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 
@@ -44,8 +45,18 @@ BASE = "https://www.senat.fr"
 TIMEOUT = 30
 PAUSE = 0.3  # on reste poli : 348 pages, pas de rafale
 ADRESSE = re.compile(r"[\w.+-]+@senat\.fr", re.I)
-# Les adresses de service, qui ne sont pas celles d'un·e sénateur·ice.
-GENERIQUES = {"webmaster@senat.fr", "contact@senat.fr", "presse@senat.fr"}
+
+# Une page de sénateur·ice publie plusieurs adresses @senat.fr, et une seule est
+# la sienne. Les autres sont des boîtes de service : « anciens-senateurs@ »,
+# « notices-senateurs@ », le webmestre… La première version de ce script ne
+# filtrait que trois noms connus, et a donc annoncé 81 « divergences » en
+# proposant de donner `anciens-senateurs@senat.fr` comme adresse personnelle à
+# soixante-dix sénateur·ices. Appliquée, cette correction aurait fait écrire
+# tout le monde à la même boîte d'archives.
+#
+# Le test n'est donc plus une liste de noms à exclure — il en manquera toujours
+# un — mais une règle positive : une adresse n'est celle de la personne que si
+# sa partie locale contient son nom de famille. Voir porte_le_nom().
 
 
 def page(url):
@@ -56,13 +67,37 @@ def page(url):
         return r.read().decode("utf-8", "replace")
 
 
-def adresses_publiees(html):
-    """Les adresses @senat.fr d'une page, hors adresses de service."""
+def _reduire(texte):
+    """Minuscules, sans accents, sans séparateurs : « de La Provôté » -> delaprovote."""
+    sans_accents = "".join(
+        c for c in unicodedata.normalize("NFD", texte or "")
+        if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"[^a-z0-9]", "", sans_accents.lower())
+
+
+def porte_le_nom(adresse, nom_de_famille):
+    """L'adresse peut-elle être celle de cette personne ?
+
+    Règle positive, et volontairement généreuse : la partie locale doit contenir
+    le nom de famille, séparateurs et accents ôtés. « cedric.perrin » pour
+    Perrin, « s.delaprovote » pour de La Provôté, « mp.monier » pour Monier.
+    « anciens-senateurs » ne contient aucun nom et sort donc tout seul, sans
+    qu'on ait à deviner la liste des boîtes de service.
+    """
+    local = _reduire(adresse.split("@", 1)[0])
+    famille = _reduire(nom_de_famille)
+    return bool(famille) and famille in local
+
+
+def adresses_publiees(html, nom_de_famille):
+    """Les adresses @senat.fr de la page qui peuvent être celles de la personne."""
     trouvees = []
     for brute in ADRESSE.findall(html):
         propre = brute.lower()
-        if propre not in GENERIQUES and propre not in trouvees:
-            trouvees.append(propre)
+        if propre in trouvees or not porte_le_nom(propre, nom_de_famille):
+            continue
+        trouvees.append(propre)
     return trouvees
 
 
@@ -75,7 +110,7 @@ def verifier(senateurices, lire=page, pause=PAUSE):
         chemin = s.get("url") or ""
         url = chemin if chemin.startswith("http") else BASE + chemin
         try:
-            publiees = adresses_publiees(lire(url))
+            publiees = adresses_publiees(lire(url), s["nom"])
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             injoignables.append((nom, f"{type(exc).__name__}: {exc}"))
             continue
@@ -119,7 +154,8 @@ def rapport(conformes, divergentes, muettes, injoignables):
         )
     if muettes:
         lignes.append(
-            f"\n{len(muettes)} sénateur·ice(s) ne publient aucune adresse : la "
+            f"\n{len(muettes)} sénateur·ice(s) ne publient aucune adresse à leur "
+            "nom (leur page ne porte que des boîtes de service) : la "
             "déduction reste le seul recours, et peut rebondir. Exemples : "
             + ", ".join(nom for nom, _ in muettes[:5])
             + (" …" if len(muettes) > 5 else "")

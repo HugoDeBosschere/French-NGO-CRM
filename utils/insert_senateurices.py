@@ -69,6 +69,11 @@ GROUPE_TO_GROUP = {
 # reports a new pair.
 EMAIL_OVERRIDES = {
     "Pauline Martin": "pauline.martin@senat.fr",
+    # Relevées sur senat.fr le 13/10/2026 par utils/verifier_emails_senat.py :
+    # ces trois-là publient une adresse que la convention ne produit pas.
+    "Cédric Perrin": "cedric.perrin@senat.fr",
+    "Marie Mercier": "marie.mercier@senat.fr",
+    "Sonia de La Provôté": "s.delaprovote@senat.fr",
 }
 
 

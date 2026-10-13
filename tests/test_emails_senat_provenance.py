@@ -58,6 +58,41 @@ class ProvenanceTests(unittest.TestCase):
         )
 
 
+class BoitesDeServiceTests(unittest.TestCase):
+    """Une page de sénateur·ice publie plusieurs adresses @senat.fr.
+
+    La première version du script ne filtrait que trois noms de boîtes connus.
+    Lancée sur les 348 pages, elle a annoncé 81 « divergences » en proposant de
+    donner `anciens-senateurs@senat.fr` comme adresse personnelle à soixante-dix
+    sénateur·ices. Appliquée, elle aurait fait écrire tout le monde à la même
+    boîte d'archives. Le filtre est maintenant une règle positive.
+    """
+
+    def test_une_boite_darchives_nest_jamais_retenue(self):
+        for boite in ("anciens-senateurs@senat.fr", "notices-senateurs@senat.fr",
+                      "webmaster@senat.fr", "questions-ecrites@senat.fr"):
+            self.assertFalse(ver.porte_le_nom(boite, "Patriat"), boite)
+
+    def test_ladresse_personnelle_est_retenue(self):
+        self.assertTrue(ver.porte_le_nom("f.patriat@senat.fr", "Patriat"))
+
+    def test_un_prenom_complet_est_retenu(self):
+        # Vu en production : Cédric Perrin publie cedric.perrin@senat.fr.
+        self.assertTrue(ver.porte_le_nom("cedric.perrin@senat.fr", "Perrin"))
+
+    def test_une_particule_et_des_accents_ne_genent_pas(self):
+        # Sonia de La Provôté publie s.delaprovote@senat.fr.
+        self.assertTrue(
+            ver.porte_le_nom("s.delaprovote@senat.fr", "de La Provôté"))
+
+    def test_le_nom_dun_autre_senateur_nest_pas_retenu(self):
+        self.assertFalse(ver.porte_le_nom("f.patriat@senat.fr", "Cabanel"))
+
+    def test_une_page_sans_adresse_au_nom_est_muette(self):
+        html = "contact : anciens-senateurs@senat.fr et webmaster@senat.fr"
+        self.assertEqual(ver.adresses_publiees(html, "Patriat"), [])
+
+
 class VerificationTests(unittest.TestCase):
     GENS = [{"prenom": "François", "nom": "Patriat", "url": "/senateur/p.html"}]
 
@@ -79,7 +114,8 @@ class VerificationTests(unittest.TestCase):
                       ver.rapport([], divergentes, [], []))
 
     def test_une_adresse_de_service_ne_compte_pas_comme_publiee(self):
-        pages = {"https://www.senat.fr/senateur/p.html": "webmaster@senat.fr"}
+        pages = {"https://www.senat.fr/senateur/p.html":
+                 "anciens-senateurs@senat.fr et webmaster@senat.fr"}
         conformes, divergentes, muettes, _ = ver.verifier(
             self.GENS, lire=pages.get, pause=0
         )
