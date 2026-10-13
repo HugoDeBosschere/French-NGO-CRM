@@ -20,7 +20,8 @@ SCRIPT = os.path.join(ROOT, "utils", "fusionner_doublons.py")
 
 SCHEMA = """
 CREATE TABLE persons (
-    id INTEGER PRIMARY KEY, name TEXT, contact_type TEXT, role TEXT,
+    id INTEGER PRIMARY KEY, name TEXT,
+    contact_type TEXT NOT NULL DEFAULT 'Politique', role TEXT,
     political_group TEXT, email TEXT, circonscription TEXT,
     photo_url TEXT, fiche_url TEXT, created_at TEXT);
 CREATE TABLE mails (id INTEGER PRIMARY KEY, subject TEXT);
@@ -149,8 +150,11 @@ class FusionTests(unittest.TestCase):
         # l'emportait sur celle qui portait trois courriels et l'adresse de la
         # personne. Rien n'était perdu, mais on déplaçait des liens pour rien
         # et on jetait l'identifiant que des signets peuvent viser.
-        garnie = self._personne("Anne Dupont", contact_type="Journaliste",
-                                political_group="—", circonscription="—",
+        # Même type de contact que l'autre : deux fiches de types différents
+        # ne sont plus jamais fusionnées (homonymes), et ce test-ci porte sur
+        # le choix de la survivante, pas sur l'appariement.
+        garnie = self._personne("Anne Dupont", political_group="—",
+                                circonscription="—", photo_url="p.jpg",
                                 created_at="2026-01-01")
         avec_histoire = self._personne("Anne Dupont", email="anne@an.fr")
         self.db.execute("INSERT INTO mails (id) VALUES (1), (2), (3)")
@@ -161,6 +165,48 @@ class FusionTests(unittest.TestCase):
         self._lancer()
         self.assertEqual(self._ids("Anne Dupont"), [avec_histoire])
         self.assertNotIn(garnie, self._ids("Anne Dupont"))
+
+    def test_deux_homonymes_de_types_differents_ne_sont_jamais_fusionnes(self):
+        """« Laurent Alexandre », chroniqueur, et un·e député·e du même nom.
+
+        Signalé le 13/10/2026 : l'import des député·es, qui rapprochait sur le
+        seul nom, avait ajouté le mandat au chroniqueur. Les imports ne
+        rapprochent plus que les fiches « Politique » — mais sans la même règle
+        ici, la fusion du lendemain matin aurait recollé les deux fiches et
+        ramené le bug, en silence et cette fois en perdant des données.
+        """
+        chroniqueur = self._personne("Laurent Alexandre",
+                                     contact_type="Journaliste",
+                                     role="Chroniqueur·euse")
+        depute = self._personne("Laurent Alexandre", role="Député·e")
+        self._lancer()
+        self.assertEqual(self._ids("Laurent Alexandre"),
+                         sorted([chroniqueur, depute]))
+
+    def test_les_homonymes_entre_types_sont_signales_et_non_tus(self):
+        # Parfois c'est un·e élu·e classé·e par erreur : un humain doit le
+        # voir pour reclasser, sinon les deux fiches ne se rejoindront jamais.
+        self._personne("Laurent Alexandre", contact_type="Journaliste")
+        self._personne("Laurent Alexandre")
+        sys.path.insert(0, os.path.dirname(SCRIPT))
+        import fusionner_doublons                     # noqa: PLC0415
+        self.db.row_factory = sqlite3.Row
+        croises = fusionner_doublons.homonymes_entre_types(self.db)
+        self.assertEqual(len(croises), 1)
+        nom, fiches = croises[0]
+        self.assertEqual(nom, "Laurent Alexandre")
+        self.assertEqual({t for t, _i, _r in fiches},
+                         {"Journaliste", "Politique"})
+
+    def test_un_vrai_doublon_du_meme_type_est_toujours_fusionne(self):
+        # La règle ne doit pas tout bloquer : deux fiches « Politique » du
+        # même nom restent un doublon à fusionner.
+        premier = self._personne("Anne Dupont")
+        second = self._personne("Anne Dupont", email="anne@an.fr")
+        self._lancer()
+        restants = self._ids("Anne Dupont")
+        self.assertEqual(len(restants), 1)
+        self.assertIn(restants[0], (premier, second))
 
     def test_a_defaut_la_fiche_la_plus_complete(self):
         maigre = self._personne("Marc Olivier")

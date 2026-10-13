@@ -92,8 +92,15 @@ def main():
     db.execute("PRAGMA busy_timeout = 30000")
     db.execute("PRAGMA foreign_keys = ON")
 
+    # Uniquement les fiches de type « Politique ». Sans ce filtre, le
+    # rapprochement se fait sur le seul nom, et un homonyme d'un autre type
+    # reçoit le mandat : « Laurent Alexandre », chroniqueur, s'est vu ajouter
+    # « Député·e ». Signalé le 13/10/2026. Les fiches importées ont ce type par
+    # défaut (persons.contact_type NOT NULL DEFAULT 'Politique'), donc le
+    # filtre ne casse pas l'idempotence des imports précédents.
     existing = {
-        r[0]: (r[1], r[2]) for r in db.execute("SELECT name, id, role FROM persons")
+        r[0]: (r[1], r[2]) for r in db.execute(
+            "SELECT name, id, role FROM persons WHERE contact_type = 'Politique'")
     }
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 

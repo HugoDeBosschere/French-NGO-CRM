@@ -81,14 +81,51 @@ def compter_liens(db):
 
 
 def groupes_de_doublons(db):
-    """[(nom normalisé, [fiches])] pour les noms portés par plusieurs fiches."""
-    par_nom = {}
+    """[(clé, [fiches])] pour les fiches à fusionner — JAMAIS entre deux types.
+
+    Le type de contact fait partie de la clé, et ce n'est pas un détail : un
+    chroniqueur et un·e député·e peuvent porter le même nom sans être la même
+    personne (« Laurent Alexandre », signalé le 13/10/2026). Les fusionner
+    mélangerait les échanges de deux personnes, ce qu'aucune relecture ne
+    rattraperait ensuite.
+
+    C'est aussi ce qui rend durable le correctif des imports : ceux-ci ne
+    rapprochent plus que les fiches « Politique », mais sans la même règle ici,
+    la fusion du lendemain matin aurait recollé les deux fiches et ramené le
+    bug — en silence, et cette fois en perdant des données.
+
+    Les homonymes de types différents sont signalés plutôt que tus : voir
+    homonymes_entre_types().
+    """
+    par_cle = {}
     for ligne in db.execute("SELECT * FROM persons ORDER BY id"):
         nom = (ligne["name"] or "").strip()
         if not nom:
             continue          # une fiche sans nom n'est pas un doublon : voir --rapport
-        par_nom.setdefault(norm_name(nom), []).append(ligne)
-    return [(cle, gens) for cle, gens in par_nom.items() if len(gens) > 1]
+        par_cle.setdefault((norm_name(nom), ligne["contact_type"]), []).append(ligne)
+    return [(cle, gens) for cle, gens in par_cle.items() if len(gens) > 1]
+
+
+def homonymes_entre_types(db):
+    """[(nom, [(type, id)])] : mêmes noms, types différents. Jamais fusionnés.
+
+    Deux personnes distinctes, le plus souvent — mais parfois un·e élu·e classé
+    par erreur en « Journaliste », qu'un humain doit alors reclasser pour que
+    les deux fiches se rejoignent. On le dit, on ne le décide pas.
+    """
+    par_nom = {}
+    for ligne in db.execute(
+            "SELECT id, name, contact_type, role FROM persons ORDER BY id"):
+        nom = (ligne["name"] or "").strip()
+        if nom:
+            par_nom.setdefault(norm_name(nom), []).append(ligne)
+    sortie = []
+    for gens in par_nom.values():
+        types = {l["contact_type"] for l in gens}
+        if len(types) > 1:
+            sortie.append((gens[0]["name"],
+                           [(l["contact_type"], l["id"], l["role"]) for l in gens]))
+    return sorted(sortie)
 
 
 def densite(fiche):
@@ -309,6 +346,18 @@ def main():
     if sans_nom:
         log(f"\n{sans_nom} fiche(s) sans nom — à regarder à la main, elles ne "
             f"peuvent pas être appariées.")
+
+    croises = homonymes_entre_types(db)
+    if croises:
+        log(f"\n{len(croises)} homonyme(s) de types différents, JAMAIS "
+            f"fusionné(s) — deux personnes distinctes le plus souvent, ou "
+            f"un·e élu·e classé·e par erreur dans un autre type :")
+        for nom, fiches in croises[:20]:
+            details = ", ".join(
+                f"#{pid} {typ} ({role or 'sans rôle'})" for typ, pid, role in fiches)
+            log(f"  « {nom} » : {details}")
+        if len(croises) > 20:
+            log(f"  … et {len(croises) - 20} autres.")
 
     if args.approchants:
         paires = noms_approchants(db)

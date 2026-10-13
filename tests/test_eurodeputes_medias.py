@@ -132,7 +132,8 @@ class InsertionCompleteTests(unittest.TestCase):
 
         db = sqlite3.connect(self.db_path)
         db.executescript("""
-            CREATE TABLE persons (id INTEGER PRIMARY KEY, name TEXT, role TEXT,
+            CREATE TABLE persons (id INTEGER PRIMARY KEY, name TEXT,
+              contact_type TEXT NOT NULL DEFAULT 'Politique', role TEXT,
               political_group TEXT, stance TEXT, first_contacted TEXT,
               notes TEXT, circonscription TEXT, email TEXT, added_by INTEGER,
               validated_by INTEGER, created_at TEXT, photo_url TEXT,
