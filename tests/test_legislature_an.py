@@ -70,11 +70,40 @@ class LegislatureTests(unittest.TestCase):
             so.legislature_an(self._publiees(17), journaliser=False), 18
         )
 
-    def test_une_panne_nest_pas_une_absence(self):
+    def test_un_sondage_en_panne_ne_fait_pas_tomber_la_chambre(self):
+        """Le vrai incident du 13/10/2026, celui que ce code a causé.
+
+        L'URL de la 18ᵉ législature, inexistante, a reçu « HTTP Error 503:
+        Backend fetch failed » du cache de l'Assemblée au lieu d'un 404. La
+        première version remontait l'erreur, et le dump de la 17ᵉ —
+        disponible, vérifié au curl la minute suivante — n'était même pas
+        téléchargé. On garde le plancher et on continue.
+        """
         def existe(url):
             raise http_error(503)
-        with self.assertRaises(urllib.error.HTTPError):
-            so.legislature_an(existe, journaliser=False)
+        self.assertEqual(so.legislature_an(existe, journaliser=False), 17)
+
+    def test_un_sondage_en_panne_ne_redescend_pas_sous_le_plancher(self):
+        # La protection qui compte reste assurée : après l'adoption de la 18ᵉ,
+        # un sondage en panne garde la 18ᵉ, jamais la 17ᵉ.
+        so._retenir_plancher(18)
+
+        def existe(url):
+            raise TimeoutError("timed out")
+        self.assertEqual(so.legislature_an(existe, journaliser=False), 18)
+
+    def test_le_sondage_en_panne_est_dit_dans_le_journal(self):
+        import io                                     # noqa: PLC0415
+        from contextlib import redirect_stdout        # noqa: PLC0415
+
+        def existe(url):
+            raise http_error(503)
+        flux = io.StringIO()
+        with redirect_stdout(flux):
+            so.legislature_an(existe)
+        texte = flux.getvalue()
+        self.assertIn("503", texte)
+        self.assertIn("on garde 17", texte)
 
     def test_un_etat_illisible_ne_bloque_pas(self):
         with open(so.AN_LEGISLATURE_ETAT, "w", encoding="utf-8") as f:

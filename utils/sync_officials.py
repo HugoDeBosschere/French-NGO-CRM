@@ -144,7 +144,25 @@ def legislature_an(existe=None, journaliser=True):
     existe = existe or _existe
     plancher = _plancher_connu()
     suivante = plancher + 1
-    if existe(an_zip_url(suivante)):
+    try:
+        publiee = existe(an_zip_url(suivante))
+    except Exception as exc:                          # noqa: BLE001
+        # Le sondage ne doit JAMAIS faire tomber la chambre. Le 13/10/2026 il
+        # l'a fait : l'URL de la 18ᵉ législature, qui n'existe pas, a reçu un
+        # « HTTP Error 503: Backend fetch failed » du cache de l'Assemblée au
+        # lieu d'un 404 — et le téléchargement du dump de la 17ᵉ, parfaitement
+        # disponible, n'a même pas été tenté.
+        #
+        # L'erreur de conception : j'avais traité « une panne n'est pas une
+        # absence » comme une raison d'échouer. Elle est une raison de ne pas
+        # ADOPTER une nouvelle législature, ce qui est le statu quo. Ce qu'il
+        # fallait protéger — ne jamais redescendre sous la législature déjà
+        # utilisée — l'est par le plancher, pas par cette exception.
+        if journaliser:
+            log(f"  sondage de la législature {suivante} impossible "
+                f"({type(exc).__name__}: {exc}) — on garde {plancher}")
+        return plancher
+    if publiee:
         if journaliser:
             log(f"  législature {suivante} : nouveau dump publié, on l'adopte")
         _retenir_plancher(suivante)
