@@ -20,9 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.11 est la version du conteneur ; 3.12 signale à l'avance ce qu'une
-        # mise à jour de l'image casserait.
-        python: ["3.11", "3.12"]
+        # 3.12 est la version du conteneur (voir deploy/Dockerfile,
+        # python:3.12-slim) ; 3.13 signale à l'avance ce qu'une mise à jour de
+        # l'image casserait. La matrice testait 3.11 et 3.12, soit la version
+        # précédente et l'actuelle : elle regardait en arrière. Garder la
+        # version du conteneur ET la suivante est ce qui attrape une incompa-
+        # tibilité avant la montée de version, pas après.
+        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
