@@ -1,0 +1,46 @@
+# Copie de référence du fichier en service sur le serveur
+# (/opt/volunteer-apps/apps/website-meeting/docker-compose.yml).
+#
+# Versionnée parce qu'elle ne l'était pas : la configuration de déploiement
+# n'existait que sur cette machine, donc personne ne pouvait la relire, et une
+# réinstallation repartait de zéro en redécouvrant les mêmes pièges.
+#
+# Les secrets ne sont PAS ici : seul le chemin du fichier qui les porte l'est.
+#
+# `version:` est obsolète et ignoré par Docker Compose v2 — conservé tel quel
+# pour que cette copie reste fidèle à ce qui tourne. À retirer des deux côtés
+# ensemble, pas d'un seul.
+version: '3.8'
+
+services:
+  website-meeting:
+    build: .
+    container_name: website-meeting-app
+    restart: unless-stopped
+
+    env_file:
+      - /opt/volunteer-apps/secrets/website-meeting.env
+
+    environment:
+      FLASK_ENV: production
+
+    # Seuls la base et les pièces jointes survivent au conteneur. Tout le code
+    # vient de l'image — voir deploy/README.md, « Le code voyage en un seul
+    # morceau ».
+    volumes:
+      - /opt/volunteer-apps/data/website-meeting-data/meetings.db:/app/meetings.db
+      - /opt/volunteer-apps/data/website-meeting-data/uploads:/app/uploads
+
+    networks:
+      - web
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.website-meeting.rule=Host(`meetings.pauseia.fr`)"
+      - "traefik.http.routers.website-meeting.entrypoints=websecure"
+      - "traefik.http.routers.website-meeting.tls.certresolver=lets-encrypt"
+      - "traefik.http.services.website-meeting.loadbalancer.server.port=5000"
+
+networks:
+  web:
+    external: true

@@ -21,7 +21,8 @@ systemd run surfaces the problem while still applying the chambers that worked.
 Design notes:
 - No third-party dependency (urllib + zipfile from the stdlib).
 - The AN legislature number is in the dump URL and changes after a general
-  election; override it with AN_LEGISLATURE when that happens.
+  election. It is discovered at run time (see legislature_an) so a dissolution
+  does not stall the sync; AN_LEGISLATURE still forces a value by hand.
 - The unzipped AN dump is large; it is removed after use to spare container disk.
 """
 import json
@@ -30,6 +31,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -50,12 +53,124 @@ TIMEOUT = 120
 # "ministre", "Ministre, Député·e" matches both — all covered.
 MANAGED_ROLE_TOKENS = ("député", "sénateur", "ministre", "président")
 
-AN_LEGISLATURE = os.environ.get("AN_LEGISLATURE", "17")
-AN_ZIP_URL = (
-    f"https://data.assemblee-nationale.fr/static/openData/repository/"
-    f"{AN_LEGISLATURE}/amo/deputes_actifs_mandats_actifs_organes/"
-    f"AMO10_deputes_actifs_mandats_actifs_organes.json.zip"
-)
+# --- numéro de législature de l'Assemblée -----------------------------------
+# L'URL du dump contient le numéro de législature, qui change à chaque
+# dissolution ou élection générale. En dur, il condamne la synchro à échouer
+# (404) jusqu'à ce que quelqu'un s'en aperçoive et pose la variable. On va donc
+# le chercher : au lancement, on demande à la source si la législature suivante
+# existe déjà, et on l'adopte si oui.
+AN_LEGISLATURE_PLANCHER = 17  # la plus ancienne qu'on ait jamais vue publiée
+# À côté de la base, pas dans actual_dataset/ : ce dossier est suivi par git et
+# réécrit à chaque déploiement, alors que meetings.db survit — c'est le seul
+# endroit du dépôt dont on sache qu'il persiste. Perdre ce fichier n'est de
+# toute façon pas grave : la recherche repartirait du plancher et readopterait
+# la législature publiée au passage suivant.
+AN_LEGISLATURE_ETAT = os.path.join(ROOT, "an_legislature.json")
+
+
+def an_zip_url(legislature):
+    return (
+        f"https://data.assemblee-nationale.fr/static/openData/repository/"
+        f"{legislature}/amo/deputes_actifs_mandats_actifs_organes/"
+        f"AMO10_deputes_actifs_mandats_actifs_organes.json.zip"
+    )
+
+
+def _existe(url):
+    """L'URL est-elle publiée ? Distingue « absente » de « injoignable ».
+
+    Un 404 est une réponse : cette législature n'existe pas (encore). Tout le
+    reste — panne, coupure réseau, 500 — n'en est pas une, et doit remonter :
+    confondre les deux ferait retomber sur la législature précédente le jour
+    d'une panne passagère, donc réimporter 577 ancien·nes député·es comme s'ils
+    siégeaient.
+    """
+    requete = urllib.request.Request(
+        url, method="HEAD", headers={"User-Agent": "pauseia-crm-sync"}
+    )
+    try:
+        urllib.request.urlopen(requete, timeout=TIMEOUT).close()
+        return True
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return False
+        if err.code in (403, 405, 501):
+            # Le serveur refuse la méthode HEAD : on redemande en GET sans lire
+            # le corps (urllib ouvre le flux sans le télécharger).
+            requete = urllib.request.Request(
+                url, headers={"User-Agent": "pauseia-crm-sync"}
+            )
+            try:
+                urllib.request.urlopen(requete, timeout=TIMEOUT).close()
+                return True
+            except urllib.error.HTTPError as err2:
+                if err2.code == 404:
+                    return False
+                raise
+        raise
+
+
+def _plancher_connu():
+    """La plus haute législature déjà utilisée avec succès.
+
+    Mémorisée pour ne JAMAIS redescendre : une fois la 18ᵉ publiée et importée,
+    un 404 passager sur son dump ne doit pas faire réimporter la 17ᵉ.
+    """
+    try:
+        with open(AN_LEGISLATURE_ETAT, encoding="utf-8") as f:
+            return max(AN_LEGISLATURE_PLANCHER, int(json.load(f)["legislature"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return AN_LEGISLATURE_PLANCHER
+
+
+def _retenir_plancher(legislature):
+    os.makedirs(os.path.dirname(AN_LEGISLATURE_ETAT), exist_ok=True)
+    with open(AN_LEGISLATURE_ETAT, "w", encoding="utf-8") as f:
+        json.dump({"legislature": int(legislature)}, f)
+
+
+def legislature_an(existe=None, journaliser=True):
+    """Le numéro de législature à utiliser, et son URL.
+
+    AN_LEGISLATURE, si elle est posée, gagne et coupe toute recherche : c'est
+    la porte de sortie manuelle, elle doit rester prévisible.
+    """
+    forcee = os.environ.get("AN_LEGISLATURE")
+    if forcee:
+        if journaliser:
+            log(f"  législature {forcee} (forcée par AN_LEGISLATURE)")
+        return int(forcee)
+
+    existe = existe or _existe
+    plancher = _plancher_connu()
+    suivante = plancher + 1
+    try:
+        publiee = existe(an_zip_url(suivante))
+    except Exception as exc:                          # noqa: BLE001
+        # Le sondage ne doit JAMAIS faire tomber la chambre. Le 13/10/2026 il
+        # l'a fait : l'URL de la 18ᵉ législature, qui n'existe pas, a reçu un
+        # « HTTP Error 503: Backend fetch failed » du cache de l'Assemblée au
+        # lieu d'un 404 — et le téléchargement du dump de la 17ᵉ, parfaitement
+        # disponible, n'a même pas été tenté.
+        #
+        # L'erreur de conception : j'avais traité « une panne n'est pas une
+        # absence » comme une raison d'échouer. Elle est une raison de ne pas
+        # ADOPTER une nouvelle législature, ce qui est le statu quo. Ce qu'il
+        # fallait protéger — ne jamais redescendre sous la législature déjà
+        # utilisée — l'est par le plancher, pas par cette exception.
+        if journaliser:
+            log(f"  sondage de la législature {suivante} impossible "
+                f"({type(exc).__name__}: {exc}) — on garde {plancher}")
+        return plancher
+    if publiee:
+        if journaliser:
+            log(f"  législature {suivante} : nouveau dump publié, on l'adopte")
+        _retenir_plancher(suivante)
+        return suivante
+    if journaliser:
+        log(f"  législature {plancher}")
+    return plancher
+
 SENAT_URL = "https://www.senat.fr/api-senat/senateurs.json"
 SENAT_OUT = os.path.join(DATASET, "senateurices_actifs.json")
 
@@ -64,11 +179,42 @@ def log(msg):
     print(msg, flush=True)
 
 
-def download(url, dest):
+# Les sources officielles répondent par intermittence. Constaté le 12/10/2026 :
+# le dump de l'Assemblée est passé à 18 h 08 et a répondu « HTTP Error 503:
+# Backend fetch failed » à 18 h 09. Abandonner au premier refus, c'est perdre
+# une semaine de mise à jour pour une panne de trente secondes.
+ESSAIS = 3
+ATTENTES = (5, 20)  # secondes avant le 2ᵉ puis le 3ᵉ essai
+
+
+def _reessayable(exc):
+    """Vrai si réessayer a une chance de servir.
+
+    Un 404 ou un 403 ne changera pas dans vingt secondes : réessayer ne fait
+    qu'ajouter du bruit et retarder l'alerte. Un 5xx, un timeout ou une coupure
+    réseau, si.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, OSError))
+
+
+def download(url, dest, dormir=time.sleep):
     log(f"  ↓ {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "pauseia-crm-sync"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f)
+    for essai in range(1, ESSAIS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r, \
+                    open(dest, "wb") as f:
+                shutil.copyfileobj(r, f)
+            return
+        except Exception as exc:                      # noqa: BLE001
+            if essai == ESSAIS or not _reessayable(exc):
+                raise
+            attente = ATTENTES[essai - 1]
+            log(f"    {type(exc).__name__}: {exc} — nouvel essai dans "
+                f"{attente} s ({essai}/{ESSAIS})")
+            dormir(attente)
 
 
 def run_script(name):
@@ -80,7 +226,7 @@ def run_script(name):
 def sync_deputes():
     zip_path = os.path.join(ROOT, "_amo10.zip")
     try:
-        download(AN_ZIP_URL, zip_path)
+        download(an_zip_url(legislature_an()), zip_path)
         # The dump extracts a top-level json/ (acteur/, organe/, …); start clean
         # so a removed deputy's stale file can't linger.
         if os.path.isdir(JSON_DIR):
@@ -210,6 +356,28 @@ def main():
         db.close()
 
 
+def signaler_echecs(failures, run):
+    """Récapitule les causes à la FIN du journal, puis sort en erreur.
+
+    L'alerte Discord ne garde que la queue du journal (voir
+    utils/deploy/alerte.sh). Or la cause d'un échec de chambre n'était
+    imprimée qu'à l'endroit de l'échec, des centaines de lignes plus haut :
+    le 12/10/2026, l'alerte nommait les deux chambres en échec (Assemblée
+    nationale, Sénat) sans dire pourquoi. On la réécrit donc en dernier, et
+    on la conserve dans `import_runs.detail`.
+    """
+    log("\nCause de chaque échec :")
+    for label, message in failures:
+        log(f"  - {label} : {message}")
+    run.detail = "Chambres en échec : " + "; ".join(
+        f"{label} ({message})" for label, message in failures
+    )
+    raise SystemExit(
+        "Chambers that failed (left untouched, others applied): "
+        + ", ".join(label for label, _ in failures)
+    )
+
+
 def _main(run):
     os.makedirs(DATASET, exist_ok=True)  # every extract writes its JSON here
     chambers = [
@@ -225,18 +393,14 @@ def _main(run):
             fn()
             log(f"=== {label}: OK ===")
         except Exception as exc:  # isolate: one chamber must not sink the others
-            failures.append(label)
+            failures.append((label, f"{type(exc).__name__}: {exc}"))
             log(f"!!! {label}: FAILED — {type(exc).__name__}: {exc}")
 
     if failures:
         # Skip reconciliation: without every list the union is incomplete and
         # would retire people who are actually still in office.
         log("\nin_office reconciliation skipped (a chamber failed).")
-        run.detail = "Chambres en échec : " + ", ".join(failures)
-        raise SystemExit(
-            "Chambers that failed (left untouched, others applied): "
-            + ", ".join(failures)
-        )
+        signaler_echecs(failures, run)
 
     reconcile_in_office()
     run.detail = f"{len(chambers)} chambres rafraîchies."

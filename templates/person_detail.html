@@ -134,6 +134,11 @@
       <label>Courriel{% if autres_adresses %}s{% endif %}</label>
       <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>
          {%- else %}<span class="muted">Non renseigné</span>{% endif %}</p>
+      {% if email_deduit %}
+      <p class="hint" title="Le Sénat ne publie pas les adresses de ses membres. Celle-ci est calculée depuis le nom (initiales.nom@senat.fr), une règle juste dans la quasi-totalité des cas. Si vous la voyez écrite sur senat.fr ou si un échange aboutit, corrigez-la ici : la mention disparaîtra.">
+        Adresse déduite du nom, non vérifiée
+      </p>
+      {% endif %}
       {# Les adresses apprises au fil des échanges : elles servaient déjà à
          rattacher les courriels sans jamais s'afficher nulle part. #}
       {% if autres_adresses %}

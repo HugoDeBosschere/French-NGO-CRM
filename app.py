@@ -112,6 +112,12 @@ POLITICAL_GROUPS = {
         "Les Républicains (Sénat)",
         "Socialiste, Écologiste et Républicain (Sénat)",
         "Union Centriste (Sénat)",
+        # Renouvellement de septembre 2026 : l'Union Centriste est devenue
+        # « Union centriste et indépendants » (libellé UCI à la source) et le RN
+        # avec l'UDR ont formé leur premier groupe, l'UNT. L'ancien libellé est
+        # conservé : des fiches y sont rattachées, et l'historique compte.
+        "Union Centriste et Indépendants (UCI)",
+        "Union Nationale pour les Territoires (UNT)",
         "Rassemblement des démocrates, progressistes et indépendants (RDPI)",
         "Communiste, Républicain, Citoyen et Écologiste (CRCE-K)",
         "Les Indépendants – République et Territoires",
@@ -4339,6 +4345,16 @@ def person_detail(person_id):
     # personnelle) : elles servent déjà à rattacher les courriels, mais la
     # fiche n'en montrait aucune — on ne voyait que `persons.email`, donc on ne
     # savait pas à quelles boîtes on avait réellement écrit.
+    # Une adresse déduite d'une convention n'est pas un fait vérifié : le Sénat
+    # ne publie aucune adresse dans son API, celles de ses 348 membres sont
+    # calculées (initiales.nom@senat.fr). La fiche doit le dire, sinon on écrit
+    # à une adresse qu'on croit confirmée alors qu'elle peut rebondir.
+    adresse_principale = (person["email"] or "").strip()
+    provenance = db.execute(
+        "SELECT source FROM person_emails WHERE person_id = ? "
+        "AND LOWER(email) = LOWER(?)", (person_id, adresse_principale),
+    ).fetchone() if adresse_principale else None
+    email_deduit = bool(provenance) and provenance["source"] == "convention-senat"
     autres_adresses = [
         row["email"] for row in db.execute(
             "SELECT email FROM person_emails WHERE person_id = ? "
@@ -4350,6 +4366,7 @@ def person_detail(person_id):
         "person_detail.html",
         p=person,
         autres_adresses=autres_adresses,
+        email_deduit=email_deduit,
         organisations=organisations,
         follow_up_source=follow_up_source,
         interventions=_intervention_rows(

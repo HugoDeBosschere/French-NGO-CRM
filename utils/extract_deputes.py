@@ -44,6 +44,21 @@ def slugify(s):
     return s
 
 
+def texte(valeur):
+    """Le texte d'un champ du dump, qu'il soit nu ou enveloppé.
+
+    Le dump de l'Assemblée est du XML converti en JSON : un même champ arrive
+    tantôt comme chaîne, tantôt comme objet — `{"#text": "Paris"}` quand il
+    porte un attribut, `{"@xsi:nil": "true"}` quand il est vide. C'est déjà
+    traité pour `uid` ; le 12/10/2026 la synchro est tombée sur `villeNais`
+    (« TypeError: unsupported operand type(s) for +=: 'dict' and 'str' »), donc
+    la règle est désormais écrite une fois pour toutes.
+    """
+    if isinstance(valeur, dict):
+        valeur = valeur.get("#text", "")
+    return (valeur or "").strip() if isinstance(valeur, str) else ""
+
+
 def active(mandat):
     return mandat.get("dateFin") in (None, "")
 
@@ -51,11 +66,9 @@ def active(mandat):
 def build(acteur):
     ident = acteur["etatCivil"]["ident"]
     naiss = acteur["etatCivil"].get("infoNaissance", {}) or {}
-    prenom = ident.get("prenom", "")
-    nom = ident.get("nom", "")
-    uid = acteur["uid"]
-    if isinstance(uid, dict):  # official dump wraps ids: {"#text": "PA840235", ...}
-        uid = uid.get("#text", "")
+    prenom = texte(ident.get("prenom"))
+    nom = texte(ident.get("nom"))
+    uid = texte(acteur["uid"])  # le dump enveloppe les ids : {"#text": "PA840235"}
 
     mandats = as_list(acteur.get("mandats", {}).get("mandat"))
 
@@ -80,31 +93,32 @@ def build(acteur):
     lieu = (assemblee.get("election") or {}).get("lieu", {}) or {}
     mandature = assemblee.get("mandature") or {}
 
-    lieu_naissance = ""
-    if naiss.get("villeNais"):
-        lieu_naissance = naiss["villeNais"]
-        if naiss.get("depNais"):
-            lieu_naissance += f" ({naiss['depNais']})"
+    lieu_naissance = texte(naiss.get("villeNais"))
+    departement_naissance = texte(naiss.get("depNais"))
+    if lieu_naissance and departement_naissance:
+        lieu_naissance += f" ({departement_naissance})"
 
     # Contact info lives in the flat "adresses" collection, split by @xsi:type.
     emails, postales, sites_web = [], [], []
     twitter = None
     for a in as_list(acteur.get("adresses", {}).get("adresse")):
         xtype = a.get("@xsi:type", "")
-        if xtype == "AdresseMail_Type" and a.get("valElec"):
-            emails.append({"email": a["valElec"]})
-        elif xtype == "AdresseSiteWeb_Type" and a.get("valElec"):
-            sites_web.append({"site": a["valElec"]})
+        valeur = texte(a.get("valElec"))
+        if xtype == "AdresseMail_Type" and valeur:
+            emails.append({"email": valeur})
+        elif xtype == "AdresseSiteWeb_Type" and valeur:
+            sites_web.append({"site": valeur})
             if a.get("typeLibelle") == "Twitter":
-                twitter = a["valElec"].lstrip("@")
+                twitter = valeur.lstrip("@")
         elif xtype == "AdressePostale_Type":
+            champ = lambda cle: texte(a.get(cle))  # noqa: E731
             parts = [
-                a.get("intitule"),
-                " ".join(p for p in [a.get("numeroRue"), a.get("nomRue")] if p),
-                a.get("complementAdresse"),
-                " ".join(p for p in [a.get("codePostal"), a.get("ville")] if p),
+                champ("intitule"),
+                " ".join(p for p in [champ("numeroRue"), champ("nomRue")] if p),
+                champ("complementAdresse"),
+                " ".join(p for p in [champ("codePostal"), champ("ville")] if p),
             ]
-            txt = ", ".join(p.strip().strip(",") for p in parts if p and p.strip())
+            txt = ", ".join(p.strip(",") for p in parts if p)
             if txt:
                 postales.append({"adresse": txt})
 
@@ -118,7 +132,7 @@ def build(acteur):
     for c in as_list(collab_raw):
         if not isinstance(c, dict):
             continue
-        full = f"{c.get('prenom', '')} {c.get('nom', '')}".strip()
+        full = f"{texte(c.get('prenom'))} {texte(c.get('nom'))}".strip()
         if full:
             collaborateurs.append({"collaborateur": full})
 

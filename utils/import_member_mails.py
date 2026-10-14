@@ -109,6 +109,19 @@ def is_member(addr):
     return a.endswith("@" + MEMBER_DOMAIN) and a not in GROUP_ADDRESSES
 
 
+# Les en-têtes qui portent un destinataire. « Bcc » en fait partie, et ce n'est
+# pas une curiosité : la règle Workspace copie le message TEL QUE L'EXPÉDITEUR
+# L'A ENVOYÉ, copie cachée comprise. Un membre qui écrit à vingt élu·es les met
+# en copie cachée — c'est la bonne pratique, chacun·e ignore les autres — et
+# l'import, qui ne lisait que « To » et « Cc », ne voyait alors AUCUNE adresse
+# d'élu·e et abandonnait. Sept courriels d'un seul membre, dont les réponses à
+# des rencontres obtenues. Constaté le 12/10/2026.
+#
+# Sur un courriel REÇU, « Bcc » est normalement absent (le relais le retire
+# avant remise) : l'ajouter ici ne change donc rien à ce sens-là.
+ENTETES_DESTINATAIRES = ("To", "Cc", "Bcc")
+
+
 def addr_pairs(msg, *headers):
     """(display, address) pairs across the given headers, addresses lower-cased.
 
@@ -355,7 +368,7 @@ def classify(msg, db, email_index, name_patterns=None):
     it isn't a clear member↔élu message.
     """
     from_pairs = addr_pairs(msg, "From")
-    to_pairs = addr_pairs(msg, "To", "Cc")
+    to_pairs = addr_pairs(msg, *ENTETES_DESTINATAIRES)
 
     from_member = [(d, a) for d, a in from_pairs if is_member(a)]
     to_member = [(d, a) for d, a in to_pairs if is_member(a)]
@@ -457,8 +470,14 @@ def parle_delus(msg):
     return bool(MOTS_ELUS.search(corps))
 
 
-def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
+def queue_unknown_counterparts(db, msg, now, enforce_scope=True, dry_run=False):
     """Queue the outside address of a member mail we failed to match.
+
+    `dry_run=True` compte sans écrire. Sans ce mode, l'essai à blanc sautait
+    l'appel entier et annonçait donc toujours « 0 adresse en file, 0 hors
+    périmètre » — précisément les trois chiffres qu'on regarde pour juger si un
+    élargissement du filtre va faire du bruit. Le 12/10/2026, un essai à blanc
+    a annoncé 0 là où le vrai passage en a mis 17 en file.
 
     Only mails with a member on exactly one side are of interest: those are
     someone from PauseIA writing to, or hearing from, a person we have no fiche
@@ -472,7 +491,7 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
         return 0, 0, 0
 
     from_pairs = addr_pairs(msg, "From")
-    to_pairs = addr_pairs(msg, "To", "Cc")
+    to_pairs = addr_pairs(msg, *ENTETES_DESTINATAIRES)
     from_member = [p for p in from_pairs if is_member(p[1])]
     to_member = [p for p in to_pairs if is_member(p[1])]
 
@@ -525,7 +544,12 @@ def queue_unknown_counterparts(db, msg, now, enforce_scope=True):
         contexte = (decoded(msg.get("Subject")),
                     membre,
                     "sortant" if from_member else "entrant")
-        if enqueue(db, address, display, now, contexte):
+        if dry_run:
+            # On compte l'adresse comme elle le serait, sans l'écrire. Le
+            # décompte peut dépasser d'un cheveu le vrai passage, qui ne
+            # compte pas deux fois une adresse déjà en file.
+            queued += 1
+        elif enqueue(db, address, display, now, contexte):
             queued += 1
     return queued, out_of_scope, hors_perimetre_mais_elus
 
@@ -632,7 +656,7 @@ def contrepartie_refusee(db, msg):
     """Vrai si une adresse externe de ce courriel est marquée « ne jamais
     enregistrer ». Le réglage vaut pour la capture automatique seule : un dépôt
     manuel est un geste délibéré, il passe outre."""
-    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, *ENTETES_DESTINATAIRES):
         addr = (address or "").strip().lower()
         if not addr or is_member(addr):
             continue
@@ -656,7 +680,7 @@ def apprendre_contrepartie(db, msg, person_id):
     """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     vues, neuves = set(), []
-    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, "To", "Cc"):
+    for _display, address in addr_pairs(msg, "From") + addr_pairs(msg, *ENTETES_DESTINATAIRES):
         addr = (address or "").strip().lower()
         if not addr or addr in vues or is_member(addr) or is_generic(addr):
             continue
@@ -832,12 +856,12 @@ def main():
                         imported += 1
                     else:
                         skipped += 1
-                        if not args.dry_run:
-                            new_queued, ignored, par_elus = \
-                                queue_unknown_counterparts(db, msg, now)
-                            queued += new_queued
-                            out_of_scope += ignored
-                            via_elus += par_elus
+                        new_queued, ignored, par_elus = \
+                            queue_unknown_counterparts(
+                                db, msg, now, dry_run=args.dry_run)
+                        queued += new_queued
+                        out_of_scope += ignored
+                        via_elus += par_elus
                         if args.verbose:
                             log(f"  [skip] {decoded(msg.get('Subject'))!r}")
             max_uid = max(max_uid, uid)

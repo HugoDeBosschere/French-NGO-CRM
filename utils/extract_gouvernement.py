@@ -132,7 +132,7 @@ def first_value(raw):
 
 
 def main():
-    membres, skipped = [], 0
+    membres, skipped, sans_nom = [], 0, []
     for record in fetch_all():
         for affectation in json.loads(record["affectation_personne"] or "[]"):
             fonction = (affectation.get("fonction") or "").strip()
@@ -143,6 +143,14 @@ def main():
             personne = affectation.get("personne") or {}
             prenom = (personne.get("prenom") or "").strip()
             nom = tidy_name(personne.get("nom") or "")
+            # Une affectation sans personne (poste vacant, fiche incomplète à
+            # la source) produisait un membre au nom vide, et donc une fiche
+            # sans nom dans le CRM — celle que la fusion des doublons signale
+            # chaque jour sans pouvoir l'apparier. On l'écarte, et on le dit :
+            # un poste vacant est une information, pas un bruit à masquer.
+            if not f"{prenom} {nom}".strip():
+                sans_nom.append(fonction or role)
+                continue
             jorf = (personne.get("texte_reference") or [{}])[0]
             membres.append(
                 {
@@ -190,6 +198,13 @@ def main():
 
     print(f"Wrote {len(membres)} government members to {OUT}")
     print(f"(ignored {skipped} other named civil servants in the same records)")
+    if sans_nom:
+        # Signalé, jamais masqué : un poste sans titulaire déclaré à la source
+        # est une information, et c'est ce qui créait une fiche sans nom.
+        print(f"\nSans titulaire nommé à la source ({len(sans_nom)}) — "
+              f"écarté·es, aucune fiche créée :")
+        for fonction in sorted(set(sans_nom)):
+            print(f"  - {fonction}")
     by_role = {}
     for m in membres:
         by_role.setdefault(m["membre"]["role"], []).append(m["membre"]["nom_complet"])

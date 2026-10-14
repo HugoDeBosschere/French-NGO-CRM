@@ -88,9 +88,14 @@ def main():
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
 
+    # Uniquement les fiches « Politique » : sinon le rapprochement par le seul
+    # nom donne le mandat à un homonyme d'un autre type (voir insert_deputes.py,
+    # « Laurent Alexandre »). Le type par défaut des fiches importées étant
+    # 'Politique', l'idempotence des imports précédents est préservée.
     existing = {
         r["name"]: r
-        for r in db.execute("SELECT id, name, role, political_group FROM persons")
+        for r in db.execute("SELECT id, name, role, political_group FROM persons "
+                            "WHERE contact_type = 'Politique'")
     }
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 

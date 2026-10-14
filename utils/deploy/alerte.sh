@@ -36,8 +36,17 @@ MSG="[CRM Pause IA] Échec de ${UNITE} sur ${HOTE}
 
 ${JOURNAL}"
 
-# Discord refuse un contenu de plus de 2000 caractères.
-MSG="${MSG:0:1800}"
+# Discord refuse un contenu de plus de 2000 caractères. On garde la FIN et non
+# le début : l'erreur est la dernière chose que le journal écrit, et tronquer
+# par le début livre une alerte qui ne dit pas pourquoi. Constaté au premier
+# échec réel de sync-officials, dont l'alerte n'a transmis que la liste des
+# ministres et pas la panne.
+if [ "${#MSG}" -gt 1800 ]; then
+	QUEUE="${MSG: -1600}"
+	MSG="[CRM Pause IA] Échec de ${UNITE} sur ${HOTE}
+(début du journal coupé)
+...${QUEUE}"
+fi
 echo "$MSG" >&2
 
 json_str() {

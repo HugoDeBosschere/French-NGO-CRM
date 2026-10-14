@@ -168,8 +168,13 @@ def main():
 
     # Même correctif que pour les deux autres chambres (utils/elus_roster.py) :
     # on lit le rôle, pour voir qu'une fiche existante n'a pas encore le mandat.
+    # Uniquement les fiches « Politique » : sinon le rapprochement par le seul
+    # nom donne le mandat à un homonyme d'un autre type (voir insert_deputes.py,
+    # « Laurent Alexandre »). Le type par défaut des fiches importées étant
+    # 'Politique', l'idempotence des imports précédents est préservée.
     existing = {
-        r[0]: (r[1], r[2]) for r in db.execute("SELECT name, id, role FROM persons")
+        r[0]: (r[1], r[2]) for r in db.execute(
+            "SELECT name, id, role FROM persons WHERE contact_type = 'Politique'")
     }
     # Un second index, insensible aux accents et à la ponctuation. L'API du
     # Parlement écrit « Leila Chaibi » là où le CRM a « Leïla Chaibi » : la
