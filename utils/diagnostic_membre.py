@@ -99,7 +99,8 @@ def maillon_4(db, adresse):
         print("  dit qu'aucun de ses échanges n'est jamais entré, pas qu'il y a")
         print("  un réglage à faire pour lui.")
         return None
-    print(f"  Fiche membre #{membre['id']} — {membre["name"] or '(sans nom)'}")
+    nom = membre["name"] or "(sans nom)"
+    print(f"  Fiche membre #{membre['id']} — {nom}")
     compte = db.execute(
         "SELECT COUNT(*) FROM mail_members WHERE member_id = ?", (membre["id"],)
     ).fetchone()[0]
