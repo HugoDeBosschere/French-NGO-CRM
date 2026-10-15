@@ -275,15 +275,27 @@ def main():
     # semaines. Or ce script ne sait pas qui a quitté le Parlement, il sait
     # seulement qui manque à la liste française.
     #
-    # `fiche_url` est le bon discriminant parce que c'est LUI qui l'écrit, et
-    # seulement pour les gens de cette liste (voir poser_medias) : une fiche qui
-    # la porte vient d'ici et relève donc de sa responsabilité ; une fiche sans
-    # elle vient d'ailleurs et ne lui appartient pas.
+    # Le discriminant est la SAISIE HUMAINE, pas le lien officiel. On avait
+    # d'abord filtré sur `fiche_url` : mauvaise idée, parce qu'on veut poser le
+    # lien officiel et le portrait des élu·es d'autres pays aussi, et le jour où
+    # on le fait la fiche repasse le filtre et l'alerte revient. C'est arrivé
+    # dans l'heure qui a suivi le premier correctif.
+    #
+    # `added_by` / `validated_by` disent qu'un humain a créé ou validé la fiche,
+    # donc qu'elle ne vient pas d'ici : c'est déjà la convention retenue par la
+    # réconciliation `in_office` de sync_officials.py, pour la même raison.
+    #
+    # Limite assumée : un·e eurodéputé·e français·e dont la fiche a été validée
+    # à la main et qui quitte ensuite le Parlement ne sera pas signalé·e. Mieux
+    # vaut un départ manqué, que la liste des élu·es en exercice finit par
+    # rattraper, qu'une fausse alerte hebdomadaire que plus personne ne lit.
     gone = [
         nom
-        for nom, fiche in db.execute(
-            "SELECT name, fiche_url FROM persons WHERE role = ?", (ROLE,))
+        for nom, fiche, ajout, valid in db.execute(
+            "SELECT name, fiche_url, added_by, validated_by FROM persons "
+            "WHERE role = ?", (ROLE,))
         if nom not in seen and pose_par_le_script(fiche)
+        and ajout is None and valid is None
     ]
     total = db.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
     print(

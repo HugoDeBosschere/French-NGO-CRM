@@ -6,9 +6,11 @@ rencontre, n'y figure pas : elle était annoncée « Plus au Parlement » à cha
 passage du lundi, pendant des semaines. Le script ne sait pas qui a quitté le
 Parlement, il sait seulement qui manque à la liste française.
 
-Le discriminant est `fiche_url` : c'est le script qui l'écrit, et seulement
-pour les gens de cette liste. Une fiche qui la porte relève de lui ; une fiche
-sans elle vient d'ailleurs.
+Le discriminant est la SAISIE HUMAINE. On avait d'abord filtré sur
+`fiche_url`, et ça s'est retourné dans l'heure : on a posé son lien officiel
+sur sa fiche — ce qu'on veut faire, pour le portrait et le lien — et elle est
+repassée dans le filtre. `added_by` / `validated_by` disent qu'un humain a
+créé ou validé la fiche, donc qu'elle ne vient pas de ce script.
 """
 import os
 import sqlite3
@@ -30,20 +32,23 @@ class DepartsTests(unittest.TestCase):
         self.db = sqlite3.connect(":memory:")
         self.db.execute(
             "CREATE TABLE persons (id INTEGER PRIMARY KEY, name TEXT,"
-            " role TEXT, fiche_url TEXT)")
+            " role TEXT, fiche_url TEXT, added_by INTEGER, validated_by INTEGER)")
         self.db.executemany(
-            "INSERT INTO persons (name, role, fiche_url) VALUES (?, ?, ?)",
+            "INSERT INTO persons (name, role, fiche_url, added_by, validated_by)"
+            " VALUES (?, ?, ?, ?, ?)",
             [
                 # Importée par le script, toujours dans la liste.
                 ("Leïla Chaibi", ROLE,
-                 "https://www.europarl.europa.eu/meps/fr/197698"),
+                 "https://www.europarl.europa.eu/meps/fr/197698", None, None),
                 # Importée par le script, absente de la liste : vrai départ.
                 ("Ancien Député", ROLE,
-                 "https://www.europarl.europa.eu/meps/fr/000001"),
-                # Ajoutée à la main, élue belge : n'a jamais été dans la liste.
-                ("Estelle Ceulemans", ROLE, None),
-                # Ajoutée à la main avec un lien quelconque.
-                ("Autre Pays", ROLE, "https://exemple.be/estelle"),
+                 "https://www.europarl.europa.eu/meps/fr/000001", None, None),
+                # Le cas réel : saisie et validée à la main, élue belge, ET
+                # portant son lien officiel parce qu'on le lui a posé.
+                ("Estelle Ceulemans", ROLE,
+                 "https://www.europarl.europa.eu/meps/fr/256880", 16, 16),
+                # Saisie à la main, sans validation ni lien officiel.
+                ("Autre Pays", ROLE, "https://exemple.be/estelle", 16, None),
             ],
         )
         self.db.commit()
@@ -51,15 +56,23 @@ class DepartsTests(unittest.TestCase):
     def _absents(self, vus):
         return [
             nom
-            for nom, fiche in self.db.execute(
-                "SELECT name, fiche_url FROM persons WHERE role = ?", (ROLE,))
+            for nom, fiche, ajout, valid in self.db.execute(
+                "SELECT name, fiche_url, added_by, validated_by FROM persons"
+                " WHERE role = ?", (ROLE,))
             if nom not in vus and pose_par_le_script(fiche)
+            and ajout is None and valid is None
         ]
 
     def test_une_elue_dun_autre_pays_nest_jamais_signalee(self):
         self.assertNotIn("Estelle Ceulemans", self._absents({"Leïla Chaibi"}))
 
-    def test_un_lien_non_officiel_ne_la_fait_pas_entrer_non_plus(self):
+    def test_lui_poser_son_lien_officiel_ne_la_fait_pas_revenir(self):
+        """Le piège du premier correctif : sa fiche PORTE le lien officiel."""
+        self.assertTrue(pose_par_le_script(
+            "https://www.europarl.europa.eu/meps/fr/256880"))
+        self.assertNotIn("Estelle Ceulemans", self._absents(set()))
+
+    def test_une_fiche_saisie_a_la_main_nest_pas_signalee(self):
         self.assertNotIn("Autre Pays", self._absents({"Leïla Chaibi"}))
 
     def test_un_vrai_depart_est_toujours_signale(self):
@@ -73,7 +86,7 @@ class DepartsTests(unittest.TestCase):
         with open(os.path.join(ROOT, "utils", "insert_eurodeputes.py"),
                   encoding="utf-8") as f:
             source = f.read()
-        self.assertIn("pose_par_le_script(fiche)", source)
+        self.assertIn("ajout is None and valid is None", source)
         self.assertNotIn("Plus au Parlement", source)
 
 
