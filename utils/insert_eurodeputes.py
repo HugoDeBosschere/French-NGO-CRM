@@ -264,12 +264,26 @@ def main():
 
     db.commit()
 
-    # People filed as MEPs who are no longer in the Parliament's current list:
-    # report, never delete — their meeting history stays.
+    # Celles et ceux que CE script a importés et qui ne sont plus dans la liste :
+    # signalés, jamais supprimés, leur historique de rencontres reste.
+    #
+    # Le filtre sur `fiche_url` n'est pas cosmétique. La source ne contient que
+    # les 81 élu·es FRANÇAIS·ES : un·e eurodéputé·e d'un autre pays, ajouté·e à
+    # la main après une rencontre, n'y figure pas et était donc annoncé·e
+    # « plus au Parlement » à chaque passage. Estelle Ceulemans, élue belge en
+    # exercice depuis juillet 2024, l'a été tous les lundis pendant des
+    # semaines. Or ce script ne sait pas qui a quitté le Parlement, il sait
+    # seulement qui manque à la liste française.
+    #
+    # `fiche_url` est le bon discriminant parce que c'est LUI qui l'écrit, et
+    # seulement pour les gens de cette liste (voir poser_medias) : une fiche qui
+    # la porte vient d'ici et relève donc de sa responsabilité ; une fiche sans
+    # elle vient d'ailleurs et ne lui appartient pas.
     gone = [
-        r[0]
-        for r in db.execute("SELECT name FROM persons WHERE role = ?", (ROLE,))
-        if r[0] not in seen
+        nom
+        for nom, fiche in db.execute(
+            "SELECT name, fiche_url FROM persons WHERE role = ?", (ROLE,))
+        if nom not in seen and pose_par_le_script(fiche)
     ]
     total = db.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
     print(
@@ -279,7 +293,7 @@ def main():
     )
     if gone:
         print(
-            f"Plus au Parlement ({len(gone)}) — conservé·es, à vérifier à la "
+            f"Absent·es de la liste française ({len(gone)}) — conservé·es, à vérifier à la "
             f"main: {', '.join(gone)}"
         )
     if promus:
