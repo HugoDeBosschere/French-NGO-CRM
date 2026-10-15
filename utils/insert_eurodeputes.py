@@ -264,12 +264,38 @@ def main():
 
     db.commit()
 
-    # People filed as MEPs who are no longer in the Parliament's current list:
-    # report, never delete — their meeting history stays.
+    # Celles et ceux que CE script a importés et qui ne sont plus dans la liste :
+    # signalés, jamais supprimés, leur historique de rencontres reste.
+    #
+    # Le filtre sur `fiche_url` n'est pas cosmétique. La source ne contient que
+    # les 81 élu·es FRANÇAIS·ES : un·e eurodéputé·e d'un autre pays, ajouté·e à
+    # la main après une rencontre, n'y figure pas et était donc annoncé·e
+    # « plus au Parlement » à chaque passage. Estelle Ceulemans, élue belge en
+    # exercice depuis juillet 2024, l'a été tous les lundis pendant des
+    # semaines. Or ce script ne sait pas qui a quitté le Parlement, il sait
+    # seulement qui manque à la liste française.
+    #
+    # Le discriminant est la SAISIE HUMAINE, pas le lien officiel. On avait
+    # d'abord filtré sur `fiche_url` : mauvaise idée, parce qu'on veut poser le
+    # lien officiel et le portrait des élu·es d'autres pays aussi, et le jour où
+    # on le fait la fiche repasse le filtre et l'alerte revient. C'est arrivé
+    # dans l'heure qui a suivi le premier correctif.
+    #
+    # `added_by` / `validated_by` disent qu'un humain a créé ou validé la fiche,
+    # donc qu'elle ne vient pas d'ici : c'est déjà la convention retenue par la
+    # réconciliation `in_office` de sync_officials.py, pour la même raison.
+    #
+    # Limite assumée : un·e eurodéputé·e français·e dont la fiche a été validée
+    # à la main et qui quitte ensuite le Parlement ne sera pas signalé·e. Mieux
+    # vaut un départ manqué, que la liste des élu·es en exercice finit par
+    # rattraper, qu'une fausse alerte hebdomadaire que plus personne ne lit.
     gone = [
-        r[0]
-        for r in db.execute("SELECT name FROM persons WHERE role = ?", (ROLE,))
-        if r[0] not in seen
+        nom
+        for nom, fiche, ajout, valid in db.execute(
+            "SELECT name, fiche_url, added_by, validated_by FROM persons "
+            "WHERE role = ?", (ROLE,))
+        if nom not in seen and pose_par_le_script(fiche)
+        and ajout is None and valid is None
     ]
     total = db.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
     print(
@@ -279,7 +305,7 @@ def main():
     )
     if gone:
         print(
-            f"Plus au Parlement ({len(gone)}) — conservé·es, à vérifier à la "
+            f"Absent·es de la liste française ({len(gone)}) — conservé·es, à vérifier à la "
             f"main: {', '.join(gone)}"
         )
     if promus:
