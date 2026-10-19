@@ -93,6 +93,42 @@ def photo_url(ident):
     return f"https://www.europarl.europa.eu/mepphoto/{ident}.jpg"
 
 
+def adresse(valeur):
+    """L'adresse électronique d'un·e élu·e, que l'API en donne une ou plusieurs.
+
+    `hasEmail` arrive normalement comme chaîne (« mailto:... »). Le 19/10/2026
+    la synchro est tombée sur une liste (« AttributeError: 'list' object has no
+    attribute 'removeprefix' ») : le registre porte parfois deux adresses pour
+    la même personne, l'une en @europarl.europa.eu, l'autre en @ep.europa.eu.
+    Comme ce champ n'est lu que pour les nouveaux entrants — les autres sont
+    servis par le cache — le cas n'apparaît qu'au remplacement d'un·e élu·e, et
+    il fait alors échouer toute la chambre.
+
+    On garde la forme canonique @europarl.europa.eu quand elle est là, sinon la
+    première adresse exploitable. Une valeur vide ou d'un type inattendu rend
+    None, et l'élu·e est signalé·e comme sans adresse plutôt que de tout
+    interrompre.
+    """
+    if isinstance(valeur, str):
+        valeurs = [valeur]
+    elif isinstance(valeur, (list, tuple)):
+        valeurs = valeur
+    else:
+        valeurs = []
+    adresses = []
+    for brute in valeurs:
+        if isinstance(brute, dict):  # JSON-LD : {"id": "mailto:..."}
+            brute = brute.get("id") or brute.get("value") or ""
+        if isinstance(brute, str):
+            nette = brute.strip().removeprefix("mailto:").strip()
+            if nette:
+                adresses.append(nette)
+    for candidate in adresses:
+        if candidate.endswith("@europarl.europa.eu"):
+            return candidate
+    return adresses[0] if adresses else None
+
+
 def main():
     listing = get("meps/show-current", **{"country-of-representation": COUNTRY})
     meps = listing.get("data", [])
@@ -149,7 +185,7 @@ def main():
             print(f"  ! {m.get('label', ident)}: detail unavailable ({exc})")
             detail = {}
 
-        email = (detail.get("hasEmail") or "").removeprefix("mailto:") or None
+        email = adresse(detail.get("hasEmail"))
         genre = SEX.get(detail.get("hasGender"), "")
         prenom = detail.get("givenName") or m.get("givenName") or ""
         nom = detail.get("familyName") or m.get("familyName") or ""
