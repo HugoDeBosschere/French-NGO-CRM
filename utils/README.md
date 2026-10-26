@@ -317,6 +317,32 @@ needed. The system gets more robust on its own over time. The only case still
 unmatched is a member writing to a brand-new non-official address that has never
 appeared in a thread; it resolves itself as soon as one reply threads back.
 
+### Relance prévue et « Qui a reçu / envoyé » (octobre 2026)
+
+Each imported member mail now gets a **follow-up date** (`follow_up_date` = mail
+date + `RELANCE_JOURS`, 10 days — the same delay as the app's forms, checked by
+`tests/test_relances_membres.py`) and, when the member's header name matches an
+utilisateurice's name, **`received_by`**. Before this fix both were left NULL,
+so /todo never reminded anyone to follow those mails up.
+
+Mails imported before the fix are repaired once with
+`backfill_member_relances.py`: follow-up = date added to the CRM + 10 days, and
+`received_by` when the name matches and the field is empty. Only mails linked to
+a member (`mail_members`, filled by the importer alone) and drafts submitted by
+the importer are touched; an existing follow-up is never overwritten.
+Idempotent.
+
+```bash
+# Preview first (writes nothing), optionally limited to recent mails:
+python3 utils/backfill_member_relances.py --dry-run
+python3 utils/backfill_member_relances.py --dry-run --depuis 2026-09-01
+# Then for real:
+python3 utils/backfill_member_relances.py --depuis 2026-09-01
+```
+
+`--depuis` keeps very old mails out: their follow-up would land in the past and
+show up as overdue on /todo all at once.
+
 ## 7. Eurodéputé·es — automatic weekly refresh (`extract_` + `insert_eurodeputes.py`)
 
 French MEPs are seeded like the other chambers, but — unlike deputies/senators —
