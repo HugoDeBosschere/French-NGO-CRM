@@ -44,7 +44,7 @@ import re
 import sqlite3
 import sys
 import unicodedata
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import getaddresses
 
 # Reuse the building blocks already validated in the campaign importer.
@@ -79,6 +79,14 @@ GROUP_ADDRESSES = {
 }
 
 IMPORT_SOURCE = "Import automatique (mails membres)"
+
+# Délai de la « Relance prévue » posée sur un courriel importé, compté depuis la
+# date du courriel. C'est le même que celui des formulaires de l'application
+# (FOLLOW_UP_DEFAULT_DAYS["mail"] dans app.py, vérifié par un test) : un
+# courriel arrivé tout seul doit être suivi comme un courriel saisi à la main.
+# Sans relance, le CRM ne rappelle jamais de relancer l'élu·e (demande de Hugo,
+# 23/10/2026).
+RELANCE_JOURS = 10
 
 # Commit every N messages instead of once at the very end. A --backfill sweep
 # inspects thousands of messages, and a single transaction over the whole run
@@ -339,6 +347,41 @@ def thread_persons_lookup(db, msg):
     return out
 
 
+def relance_par_defaut(mail_date):
+    """La date de relance d'un courriel du `mail_date` (AAAA-MM-JJ) : +RELANCE_JOURS.
+
+    None si la date est inutilisable : mieux vaut pas de relance qu'une relance
+    calculée depuis une date inventée.
+    """
+    try:
+        return (date.fromisoformat(mail_date) + timedelta(days=RELANCE_JOURS)).isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def moderateur_du_membre(db, display):
+    """L'utilisateurice du CRM qui correspond à ce membre, d'après son nom.
+
+    Remplit « Qui a reçu / envoyé le mail ? » (colonne `received_by`). Même règle
+    que l'application pour une déclaration (`_submitted_by_moderator` dans
+    app.py) : nom identique, sans tenir compte des majuscules ni des espaces en
+    trop. Les utilisateurices n'ont pas d'adresse dans le CRM, d'où le nom.
+    None si aucun nom ne correspond (le membre n'est pas utilisateurice, ou
+    signe autrement) : le membre reste rattaché au courriel par `mail_members`.
+    """
+    nom = " ".join((display or "").split()).casefold()
+    if not nom:
+        return None
+    try:
+        lignes = db.execute("SELECT id, name FROM moderators").fetchall()
+    except sqlite3.OperationalError:  # base sans table des utilisateurices
+        return None
+    for mod_id, mod_nom in lignes:
+        if " ".join((mod_nom or "").split()).casefold() == nom:
+            return mod_id
+    return None
+
+
 def upsert_member(db, email_addr, display, now):
     """Return the member id for this @pauseia.fr address, creating it on first
     sight. Fills/upgrades the name when the header provides a better one."""
@@ -584,12 +627,14 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
     # Low-confidence (name-pattern) matches always go to moderation, even in
     # auto-publish mode, so a human confirms the élu·e before it is published.
     publish = auto_publish and not low_confidence
+    relance = relance_par_defaut(mail_date)
 
     if dry_run:
         note = f" [+alias {learn[0]}]" if learn else ""
         note += " [MODÉRATION: nom]" if low_confidence else ""
         log(f"  [dry-run] {'publish' if publish else 'stage'} {direction} -> "
-            f"{member_name} / {elu_names} | {mail_date} | {subject!r}{note}")
+            f"{member_name} / {elu_names} | {mail_date} | relance {relance} "
+            f"| {subject!r}{note}")
         return
 
     if learn:
@@ -602,9 +647,10 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
             INSERT INTO mails (mail_date, direction, important, subject, summary,
                 follow_up_date, received_by, validated_by, document_stored_name,
                 document_orig_name, created_at)
-            VALUES (?, ?, 0, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)
+            VALUES (?, ?, 0, ?, ?, ?, ?, NULL, NULL, NULL, ?)
             """,
-            (mail_date, direction, subject, summary, now),
+            (mail_date, direction, subject, summary, relance,
+             moderateur_du_membre(db, member_display), now),
         )
         mail_id = cur.lastrowid
         db.executemany("INSERT INTO mail_persons (mail_id, person_id) VALUES (?, ?)",
@@ -625,9 +671,10 @@ def record(db, msg, direction, matches, member, learn, low_confidence,
             INSERT INTO pending_mails (mail_date, direction, important, subject,
                 summary, follow_up_date, proposed_people, submitted_by,
                 document_stored_name, document_orig_name, created_at)
-            VALUES (?, ?, 0, ?, ?, NULL, ?, ?, NULL, NULL, ?)
+            VALUES (?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, ?)
             """,
-            (mail_date, direction, subject, summary, proposed, IMPORT_SOURCE, now),
+            (mail_date, direction, subject, summary, relance, proposed,
+             IMPORT_SOURCE, now),
         )
         remember_thread(db, message_id, [pid for pid, _n in matches])
 

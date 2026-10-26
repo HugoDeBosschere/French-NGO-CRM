@@ -53,6 +53,17 @@ Pour chaque mail, le script détermine :
   `dons@`, …) sont exclues. **Le format d'adresse n'a pas d'importance** : l'adresse
   complète est prise telle quelle (`prenom@`, `prenom.n@`, `p.nom@`, …).
 - **L'élu·e** : matché par adresse (voir §4).
+- **La relance prévue** : date du courriel + 10 jours, le même délai que les
+  formulaires de saisie (`RELANCE_JOURS`, aligné sur `FOLLOW_UP_DEFAULT_DAYS`
+  par un test). Sans elle, le CRM ne rappellerait jamais de relancer l'élu·e.
+- **« Qui a reçu / envoyé le mail ? »** : l'utilisateurice du CRM dont le nom
+  est celui du membre (même règle que pour une déclaration : majuscules et
+  espaces ignorées). Vide si le membre n'est pas utilisateurice ; il reste
+  rattaché au courriel comme membre.
+
+> Avant le 26/10/2026, ces deux champs restaient vides. Les courriels déjà
+> importés se rattrapent avec `utils/backfill_member_relances.py` (relance =
+> date d'ajout dans le CRM + 10 jours) : voir `utils/README.md`, §6.
 
 ## 4. Matching robuste des élu·es (adresses non officielles incluses)
 
