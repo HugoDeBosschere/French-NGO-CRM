@@ -48,6 +48,9 @@ gardés par un test de présence de colonne.
   `pending` / `resolved` / `absent`) et `person_emails` (autres adresses d'une
   personne, apprises par fil de discussion ou par CiviCRM — c'est la table que
   le rapprochement des mails consulte).
+- **`veille_passages`** : passages sur l'IA de chaque élu·e trouvés par la veille
+  des élu·es (veille.pauseia.fr), réécrits en entier chaque matin par
+  `utils/import_veille.py` et affichés sur la fiche. Jamais saisis à la main.
 - **Provenance** : `added_by` / `validated_by` NULL = importé par script ;
   renseigné = saisi/validé à la main (les backfills ne touchent jamais ces
   dernières).

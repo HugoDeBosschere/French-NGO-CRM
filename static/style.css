@@ -936,6 +936,16 @@ a.cal-ev:hover {
 .section-meetings      { text-decoration-color: var(--rencontre); }
 .section-mails         { text-decoration-color: var(--courriel); }
 .section-people        { text-decoration-color: var(--press-strong); }
+.section-veille        { text-decoration-color: var(--ok); }
+
+/* Passages de la veille des élu·es sur la fiche : un extrait par carte, les
+   mots-clés repérés en gras, la famille de mots-clés en étiquette. */
+.veille-passage { padding: .75rem 1rem; margin-bottom: .6rem; }
+.veille-entete  { margin: 0 0 .35rem; color: var(--muted); font-size: .9rem; }
+.veille-extrait { margin: 0; line-height: 1.5; }
+.veille-passage .hint { margin: .35rem 0 0; }
+.veille-suite summary { cursor: pointer; margin: .4rem 0 .6rem; color: var(--press-ink); }
+.tag-veille { background: var(--ok-bg); color: var(--ok); margin-left: .35rem; }
 
 .tag-intervention { background: var(--intervention-soft); color: var(--intervention-ink); }
 .cal-intervention { background: var(--intervention-soft); color: var(--intervention-ink);
