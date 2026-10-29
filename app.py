@@ -10,7 +10,9 @@ optional attached document. Persons link many-to-many to both meetings and
 mails: a meeting/mail involves one or more persons, and a person may appear in
 zero or more meetings and mails.
 
-Two lists sit on /todo beside the rencontres: the relances that have come due,
+A rencontre's place is optional; /todo lists those coming within
+PLACE_CONFIRM_DAYS that still have no place or visio link. Two lists sit on
+/todo beside the rencontres: the relances that have come due,
 each naming the utilisateurice who wrote to that person last (« quiconque »
 when nobody has), and « À contacter », a hand-built list of people to write to,
 ticked off the same way. An intervention and a contenu each carry an optional
@@ -166,7 +168,9 @@ CONTACT_TYPES = [
 # Organisations come in the same flavours, one per contact type: a journalist
 # works for a média, a politician sits in a groupe politique, a religious figure
 # belongs to a culte (a church, a diocèse, a consistoire, a mosque…).
-ORG_TYPES = ["Média", "Groupe politique", "Culte", "ONG", "Entreprise", "Autre"]
+ORG_TYPES = [
+    "Média", "Groupe politique", "Culte", "ONG", "Entreprise", "Éditeur", "Autre",
+]
 
 ORG_TYPE_BY_CONTACT_TYPE = {
     "Journaliste": "Média",
@@ -178,7 +182,7 @@ ORG_TYPE_BY_CONTACT_TYPE = {
 }
 CONTACT_TYPE_BY_ORG_TYPE = {v: k for k, v in ORG_TYPE_BY_CONTACT_TYPE.items()}
 
-# ONG, Entreprise and Autre are the organisation types that belong to no type
+# ONG, Entreprise, Éditeur and Autre are the organisation types that belong to no type
 # de contact. Anybody can be part of one — a journaliste sits on an NGO board,
 # an élu·e chairs an association — so they are offered to every type de contact
 # on top of that type's own organisation, and CONTACT_TYPE_BY_ORG_TYPE knows
@@ -187,7 +191,7 @@ CONTACT_TYPE_BY_ORG_TYPE = {v: k for k, v in ORG_TYPE_BY_CONTACT_TYPE.items()}
 #
 # They also carry no type-specific field. Name, position sur PauseIA, lien and
 # notes are all they have, so the organisation form renders no block for them.
-NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Autre"]
+NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Éditeur", "Autre"]
 
 
 def allowed_org_types(contact_type):
@@ -223,6 +227,7 @@ GENRE_BY_ORG_TYPE = {
     "Culte": "Religieux",
     "ONG": "Autre",
     "Entreprise": "Autre",
+    "Éditeur": "Autre",
     "Autre": "Autre",
 }
 
@@ -295,6 +300,8 @@ JOURNALIST_ROLES = [
     "Éditorialiste",
     "Expert·e invité·e",
     "Youtubeur·euse",
+    "Programmateur·ice",
+    "Auteur·ice",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -467,7 +474,7 @@ NGO_COMPANY_COMMON_ROLES = [
     "Chargé·e de relations",
     "Employé·e",
 ]
-NGO_ROLES = NGO_COMPANY_COMMON_ROLES + ["Bénévole"]
+NGO_ROLES = NGO_COMPANY_COMMON_ROLES + ["Chargé·e de plaidoyer", "Bénévole"]
 COMPANY_ROLES = list(NGO_COMPANY_COMMON_ROLES)
 
 # Holding one of these reveals the « Préciser » field: both labels say what
@@ -602,6 +609,11 @@ STANCES = [
     "Inconnu",
 ]
 
+# A person's gender, for the TODO filters that pick out who gets the same
+# letter. NULL is « Non renseigné »: never guessed from a first name, only
+# typed in or read from an official list (utils/backfill_genre.py).
+GENDERS = ["Femme", "Homme"]
+
 # --------------------------------------------------------------------------- #
 # Organisations
 # --------------------------------------------------------------------------- #
@@ -649,7 +661,7 @@ PENDING_TABLES = (
     "pending_contents",
 )
 
-CONTENT_TYPES = ["Article", "Interview", "Reportage", "Vidéo", "Autre"]
+CONTENT_TYPES = ["Article", "Interview", "Reportage", "Vidéo", "Livre", "Autre"]
 
 INTERVENTION_TYPES = ["Interview", "Plateau TV", "Radio", "Tribune", "Autre"]
 
@@ -945,6 +957,7 @@ def inject_role_helpers():
         "follow_up_days": FOLLOW_UP_DEFAULT_DAYS,
         "meeting_formats": MEETING_FORMATS,
         "format_label": format_label,
+        "place_confirm_days": PLACE_CONFIRM_DAYS,
         "place_label": place_label,
         "max_alt_dates": MAX_ALT_DATES,
         "parse_alt_dates": parse_alt_dates,
@@ -1204,6 +1217,7 @@ def _init_db_locked():
             territoire      TEXT,   -- Religieux·se only: diocèse, paroisse…
             in_office       INTEGER NOT NULL DEFAULT 1,  -- 0 = mandate ended, kept for history
             signed_declaration INTEGER NOT NULL DEFAULT 0,  -- « A signé la déclaration de PauseIA »
+            gender          TEXT,   -- see GENDERS, NULL = non renseigné
             added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
             created_at      TEXT NOT NULL
@@ -1638,8 +1652,10 @@ def _init_db_locked():
     # form requires the field, so touching an old rencontre fills the gap.
     if "meeting_format" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN meeting_format TEXT")
-    # Free text: the address in présentiel (required), the link or platform in
-    # visio (optional). One column, because it answers one question — where.
+    # Free text: the address in présentiel, the link or platform in visio. One
+    # column, because it answers one question — where. Optional either way: a
+    # rencontre is often booked before anyone knows where, and /todo flags it
+    # once it comes within PLACE_CONFIRM_DAYS without an answer.
     if "meeting_place" not in meeting_cols:
         db.execute("ALTER TABLE meetings ADD COLUMN meeting_place TEXT")
     # Candidate dates still being arbitrated, as a comma-joined ISO list. NULL
@@ -1791,6 +1807,12 @@ def _init_db_locked():
         if "signed_declaration" not in existing:
             db.execute(f"ALTER TABLE {table} ADD COLUMN signed_declaration "
                        "INTEGER NOT NULL DEFAULT 0")
+    # --- « Genre » on a person -------------------------------------------- #
+    # Nullable: everyone recorded before reads « Non renseigné » until
+    # utils/backfill_genre.py or a hand edit says otherwise.
+    person_cols = [r[1] for r in db.execute("PRAGMA table_info(persons)")]
+    if "gender" not in person_cols:
+        db.execute("ALTER TABLE persons ADD COLUMN gender TEXT")
     # --- « Attribuée à » on « À contacter » ------------------------------- #
     # Who is to write to the person, set by the répartition. Lists built before
     # it existed have nobody assigned, which is what NULL says.
@@ -1884,6 +1906,7 @@ PERSONS_REBUILD_SQL = """
         territoire      TEXT,
         in_office       INTEGER NOT NULL DEFAULT 1,
         signed_declaration INTEGER NOT NULL DEFAULT 0,
+        gender          TEXT,
         added_by        INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
         validated_by    INTEGER REFERENCES moderators(id) ON DELETE SET NULL,
         created_at      TEXT NOT NULL
@@ -2144,6 +2167,13 @@ FOLLOW_UP_DEFAULT_DAYS = {"mail": 10, "meeting": 5}
 # signed up is flagged on /todo as a gap to fill.
 MIN_PARTICIPANTS = 2
 
+# A rencontre this many days away or closer, still without a place or a visio
+# link, is listed on /todo under « Confirmer le lien de la visio ou le lieu de
+# la rencontre ». That list is what replaced making the place mandatory: the
+# form used to refuse a présentiel rencontre without one, which only forced
+# people to type « à confirmer » and lose the reminder.
+PLACE_CONFIRM_DAYS = 10
+
 # How a rencontre took place. Stored as the key, displayed as the label.
 MEETING_FORMATS = {"presentiel": "Présentiel", "visio": "Visio"}
 
@@ -2160,9 +2190,8 @@ def format_label(value):
 def place_label(value):
     """What the free-text place field is called, which depends on the format.
 
-    Présentiel asks where you went and insists on an answer; visio reuses the
-    same column for the link or platform, which is a convenience, not a fact
-    the record needs.
+    Présentiel asks where you go; visio reuses the same column for the link
+    or platform. Neither is required (see PLACE_CONFIRM_DAYS).
     """
     return "Lien / plateforme" if value == "visio" else "Lieu"
 
@@ -2757,8 +2786,6 @@ def _save_meeting(db, meeting):
     # field keep their honest NULL rather than being backfilled with a guess.
     if meeting_format not in MEETING_FORMATS:
         errors.append("Indiquez si la rencontre est en présentiel ou en visio.")
-    elif meeting_format == "presentiel" and not meeting_place:
-        errors.append("Indiquez le lieu de la rencontre en présentiel.")
     if not summary:
         errors.append("Un bref résumé est obligatoire.")
     if not fu_ok:
@@ -3093,10 +3120,11 @@ PAUSEIA_MAIL_COUNT_SQL = """(
 @app.route("/todo")
 @login_required
 def todo():
-    """Everything that needs doing today, in three blocks.
+    """Everything that needs doing today.
 
     Rencontres happening today; relances that have come due (today or earlier);
-    and upcoming rencontres that still need people signed up for them.
+    upcoming rencontres still missing a place or a visio link; and upcoming
+    rencontres that still need people signed up for them.
     """
     db = get_db()
     today_iso = date.today().isoformat()
@@ -3124,30 +3152,7 @@ def todo():
         (today_iso,),
     ).fetchall()
 
-    # Relances that have come due. A relance belongs to a record (the person's
-    # latest interaction), and several people can share that record, so the
-    # rows are grouped by record: one task, ticked once, not once per person.
-    due = db.execute(
-        f"""
-        SELECT l.kind, l.rec_id, l.on_date, l.follow_up_date, l.follow_up_done,
-               l.follow_up_done_at, l.summary,
-               GROUP_CONCAT(p.name, ', ')             AS person_names,
-               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails,
-               -- Whoever wrote to them last is the one to relaunch them; the
-               -- template says « quiconque » when this comes back empty.
-               GROUP_CONCAT(DISTINCT {last_sender_sql("p")}) AS relance_by
-        FROM ({LATEST_INTERACTION_SQL}) AS l
-        JOIN persons p ON p.id = l.person_id
-        WHERE l.follow_up_date IS NOT NULL AND l.follow_up_date <= ?
-          -- Ticked means done: it leaves this page immediately and lives on
-          -- /fait from then on. `follow_up_done_at` is still recorded, so /fait
-          -- can say when it was done.
-          AND l.follow_up_done = 0
-        GROUP BY l.kind, l.rec_id
-        ORDER BY l.follow_up_date, l.kind, l.rec_id
-        """,
-        (today_iso,),
-    ).fetchall()
+    due = _due_relances(db, today_iso)
 
     # Upcoming rencontres and who is signed up. Two people is the target, so the
     # template colours anything short of that as a gap to fill.
@@ -3166,6 +3171,31 @@ def todo():
         """,
         (today_iso,),
     ).fetchall()
+    # Within PLACE_CONFIRM_DAYS and still nowhere to go. Today counts: a
+    # rencontre this afternoon with no link is the most urgent of all. TRIM so
+    # a field holding a stray space is not mistaken for an answer.
+    no_place = db.execute(
+        """
+        SELECT m.*,
+               GROUP_CONCAT(p.name, ', ')             AS person_names,
+               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails,
+               (SELECT GROUP_CONCAT(mo.name, ', ')
+                  FROM meeting_moderators mm
+                  JOIN moderators mo ON mo.id = mm.moderator_id
+                 WHERE mm.meeting_id = m.id)          AS participant_names
+        FROM meetings m
+        LEFT JOIN meeting_persons mp ON mp.meeting_id = m.id
+        LEFT JOIN persons p          ON p.id = mp.person_id
+        WHERE m.meeting_date BETWEEN ? AND ?
+          AND m.done = 0 AND m.alt_dates IS NULL
+          AND COALESCE(TRIM(m.meeting_place), '') = ''
+        GROUP BY m.id
+        ORDER BY m.meeting_date, COALESCE(m.meeting_time, '99:99'), m.id
+        """,
+        (today_iso,
+         (date.today() + timedelta(days=PLACE_CONFIRM_DAYS)).isoformat()),
+    ).fetchall()
+
     signed_up = {
         m["id"]: {
             str(r[0])
@@ -3180,6 +3210,9 @@ def todo():
     # One block per utilisateurice; the rows arrive sorted that way, with the
     # « Quiconque » (NULL) last (see _to_contact_rows).
     to_contact = _to_contact_rows(db, done=0)
+    due_people = {(r["kind"], r["rec_id"]): _todo_people(json.loads(r["people"]))
+                  for r in due}
+    contact_people = {r["id"]: _todo_people([dict(r)]) for r in to_contact}
     to_contact_blocks = []
     for r in to_contact:
         if not to_contact_blocks or to_contact_blocks[-1][0] != r["assigned_to_name"]:
@@ -3193,7 +3226,13 @@ def todo():
         to_contact=to_contact,
         to_contact_blocks=to_contact_blocks,
         upcoming=upcoming,
+        no_place=no_place,
         signed_up=signed_up,
+        due_people=due_people,
+        contact_people=contact_people,
+        due_roles=_todo_roles(due_people.values()),
+        contact_roles=_todo_roles(contact_people.values()),
+        genders=GENDERS,
         moderators=_moderators(db),
         today=today_iso,
         min_participants=MIN_PARTICIPANTS,
@@ -3260,17 +3299,35 @@ def fait():
     )
 
 
+def _set_tick(table, done_col, at_col, key_col, rec_id):
+    """Tick or untick a TODO / Fait checkbox, and say so.
+
+    The forms post `done` = 1 (TODO) or 0 (Fait): setting rather than
+    flipping, so a click sent twice lands where it was meant to. Without it
+    the box flips, as it always did. The date is kept when an already-ticked
+    entry is ticked again. todo-check.js asks for JSON, to take the entry off
+    the page without reloading it; a plain form post goes back to the page.
+    `table` and the columns are literals from the routes, never user input.
+    """
+    want = request.form.get("done")
+    want = int(want) if want in ("0", "1") else None
+    db = get_db()
+    db.execute(
+        f"UPDATE {table} SET {done_col} = COALESCE(?, 1 - {done_col}), "
+        f"{at_col} = CASE WHEN COALESCE(?, 1 - {done_col}) = 0 THEN NULL "
+        f"WHEN {done_col} = 1 THEN {at_col} ELSE ? END WHERE {key_col} = ?",
+        (want, want, date.today().isoformat(), rec_id),
+    )
+    db.commit()
+    if request.accept_mimetypes.best == "application/json":
+        return {"ok": True}
+    return redirect(request.referrer or url_for("todo"))
+
+
 @app.route("/todo/rencontre/<int:meeting_id>/done", methods=["POST"])
 @login_required
 def toggle_meeting_done(meeting_id):
-    db = get_db()
-    db.execute(
-        "UPDATE meetings SET done = 1 - done, "
-        "done_at = CASE WHEN done = 0 THEN ? ELSE NULL END WHERE id = ?",
-        (date.today().isoformat(), meeting_id),
-    )
-    db.commit()
-    return redirect(request.referrer or url_for("todo"))
+    return _set_tick("meetings", "done", "done_at", "id", meeting_id)
 
 
 @app.route("/todo/relance/<kind>/<int:rec_id>/done", methods=["POST"])
@@ -3279,15 +3336,7 @@ def toggle_follow_up_done(kind, rec_id):
     if kind not in ("meeting", "mail"):
         abort(404)
     table = "meetings" if kind == "meeting" else "mails"
-    db = get_db()
-    db.execute(
-        f"UPDATE {table} SET follow_up_done = 1 - follow_up_done, "
-        f"follow_up_done_at = CASE WHEN follow_up_done = 0 THEN ? ELSE NULL END "
-        f"WHERE id = ?",
-        (date.today().isoformat(), rec_id),
-    )
-    db.commit()
-    return redirect(request.referrer or url_for("todo"))
+    return _set_tick(table, "follow_up_done", "follow_up_done_at", "id", rec_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -3296,11 +3345,90 @@ def toggle_follow_up_done(kind, rec_id):
 # A to-do list of people, filled by the répartition below and ticked off like
 # a relance: ticking moves the person to /fait, unticking brings them back.
 
+def _due_relances(db, today_iso):
+    """Relances come due, one row per record (see todo()). Shared with
+    mark_all_done(), which re-applies the /todo filters to them."""
+    # Relances that have come due. A relance belongs to a record (the person's
+    # latest interaction), and several people can share that record, so the
+    # rows are grouped by record: one task, ticked once, not once per person.
+    return db.execute(
+        f"""
+        SELECT l.kind, l.rec_id, l.on_date, l.follow_up_date, l.follow_up_done,
+               l.follow_up_done_at, l.summary,
+               GROUP_CONCAT(p.name, ', ')             AS person_names,
+               GROUP_CONCAT(NULLIF(p.email, ''), ', ') AS person_emails,
+               -- One entry per person for the genre / fonction filters and the
+               -- copy button, which work person by person (see _todo_people).
+               json_group_array(json_object('gender', p.gender, 'role', p.role,
+                                            'email', NULLIF(p.email, '')))
+                                                      AS people,
+               -- Whoever wrote to them last is the one to relaunch them; the
+               -- template says « quiconque » when this comes back empty.
+               GROUP_CONCAT(DISTINCT {last_sender_sql("p")}) AS relance_by
+        FROM ({LATEST_INTERACTION_SQL}) AS l
+        JOIN persons p ON p.id = l.person_id
+        WHERE l.follow_up_date IS NOT NULL AND l.follow_up_date <= ?
+          -- Ticked means done: it leaves this page immediately and lives on
+          -- /fait from then on. `follow_up_done_at` is still recorded, so /fait
+          -- can say when it was done.
+          AND l.follow_up_done = 0
+        GROUP BY l.kind, l.rec_id
+        ORDER BY l.follow_up_date, l.kind, l.rec_id
+        """,
+        (today_iso,),
+    ).fetchall()
+
+
+def _todo_people(rows):
+    """Who a TODO item is about, as the genre / fonction filters read it.
+
+    One {gender, roles, email} per person: a relance can concern several
+    people, and both filters must hold for the same one, or « Femme » +
+    « Député·e » would keep a relance to a député and a journaliste. The copy
+    button then takes the addresses of the matching people only.
+    """
+    return [{"gender": r.get("gender") or "",
+             "roles": split_roles(r.get("role")),
+             "email": r.get("email") or ""} for r in rows]
+
+
+def _todo_roles(items):
+    """The fonctions present in a section, for its « Fonction » filter.
+
+    Only those that occur, in ROLES order: the full list runs to dozens of
+    fonctions nobody in the section holds.
+    """
+    present = {role for people in items for p in people for role in p["roles"]}
+    order = {r: i for i, r in enumerate(ROLES)}
+    return sorted(present, key=lambda r: (order.get(r, len(order)), r))
+
+
+def _todo_item_matches(by, people, who, gender, role):
+    """Whether a /todo entry passes the section filters, as form-masks.js
+    decides it. `by` is who is to do it (comma-separated, empty or None for
+    « quiconque »), `people` comes from _todo_people(). « __anyone__ » and
+    « __none__ » are the « Quiconque », « Non renseigné » and « Sans
+    fonction » choices; an empty filter lets everything through."""
+    names = [n.strip() for n in (by or "").split(",") if n.strip()]
+    if who and not (not names if who == "__anyone__" else who in names):
+        return False
+    if not gender and not role:
+        return True
+
+    def person_ok(p):
+        gender_ok = (not gender or (not p["gender"] if gender == "__none__"
+                                    else p["gender"] == gender))
+        role_ok = (not role or (not p["roles"] if role == "__none__"
+                                else role in p["roles"]))
+        return gender_ok and role_ok
+    return any(person_ok(p) for p in people)
+
+
 def _to_contact_rows(db, done):
     """The « À contacter » list, pending (done=0) or dealt with (done=1)."""
     return db.execute(
         f"""
-        SELECT p.id, p.name, p.email, p.role, p.contact_type,
+        SELECT p.id, p.name, p.email, p.role, p.contact_type, p.gender,
                t.created_at, t.done_at,
                (SELECT GROUP_CONCAT(o.name, ', ')
                   FROM person_organisations po
@@ -3343,13 +3471,60 @@ def toggle_to_contact_done(person_id):
     if db.execute("SELECT 1 FROM to_contact WHERE person_id = ?",
                   (person_id,)).fetchone() is None:
         abort(404)
-    db.execute(
-        "UPDATE to_contact SET done = 1 - done, "
-        "done_at = CASE WHEN done = 0 THEN ? ELSE NULL END WHERE person_id = ?",
-        (date.today().isoformat(), person_id),
-    )
+    return _set_tick("to_contact", "done", "done_at", "person_id", person_id)
+
+
+@app.route("/todo/tout-cocher", methods=["POST"])
+@login_required
+def mark_all_done():
+    """Tick at once everything a /todo section's filters leave on screen.
+
+    The page posts one `item` per visible entry: « meeting:12 » or « mail:5 »
+    for a relance, « person:34 » for someone in « À contacter », along with
+    the filters in force (`by`, `gender`, `role`). The server applies those
+    filters again and ticks only what passes all three: the list the browser
+    sends is never trusted to have been filtered. Unlike the single
+    checkboxes this only ever ticks, never unticks, so posting twice (a
+    double click, a reloaded page) cannot bring anything back. Anything
+    already done or gone is skipped; it all lands on /fait, where each can
+    still be unticked one by one.
+    """
+    db = get_db()
+    today_iso = date.today().isoformat()
+    who = request.form.get("by", "")
+    gender = request.form.get("gender", "")
+    role = request.form.get("role", "")
+    # What is on the list now, with who sends it and to whom: the same
+    # data the page filtered on.
+    pending = {}
+    for r in _due_relances(db, today_iso):
+        pending[f"{r['kind']}:{r['rec_id']}"] = (
+            r["relance_by"], _todo_people(json.loads(r["people"])))
+    for r in _to_contact_rows(db, 0):
+        pending[f"person:{r['id']}"] = (
+            r["assigned_to_name"], _todo_people([dict(r)]))
+    done = 0
+    for item in dict.fromkeys(request.form.getlist("item")):
+        if item not in pending or not _todo_item_matches(
+                *pending[item], who, gender, role):
+            continue
+        kind, _, rec_id = item.partition(":")
+        if kind in ("meeting", "mail"):
+            table = "meetings" if kind == "meeting" else "mails"
+            cur = db.execute(
+                f"UPDATE {table} SET follow_up_done = 1, follow_up_done_at = ? "
+                "WHERE id = ? AND follow_up_done = 0", (today_iso, int(rec_id)))
+        else:
+            cur = db.execute(
+                "UPDATE to_contact SET done = 1, done_at = ? "
+                "WHERE person_id = ? AND done = 0", (today_iso, int(rec_id)))
+        done += cur.rowcount
     db.commit()
-    return redirect(request.referrer or url_for("todo"))
+    if done:
+        flash(f"{done} élément{'s' if done > 1 else ''} marqué"
+              f"{'s' if done > 1 else ''} comme fait"
+              f"{'s' if done > 1 else ''} : retrouvez-les dans Fait.", "success")
+    return redirect(url_for("todo"))
 
 
 @app.route("/todo/a-contacter/<int:person_id>/retirer", methods=["POST"])
@@ -4108,9 +4283,16 @@ def _save_person(db, person):
         role_detail = ""
     # Mandate details belong to an elected official; a journaliste has neither.
     circonscription = (request.form.get("circonscription") or "").strip()
+    # « Toujours en fonction » — an élu·e whose mandate ended keeps their
+    # fiche and fonction, badged « Non élu·e actuellement ». Élu·es only for
+    # now: anyone else reads as in office, so a person retyped away from
+    # Politique does not carry the badge along. The Monday sync leaves a
+    # hand-edited fiche alone (added_by set), so this choice sticks.
+    in_office = 0 if request.form.get("in_office") == "0" else 1
     if contact_type != "Politique":
         portefeuille = ""
         circonscription = ""
+        in_office = 1
     # « Territoire assigné » — the diocèse, paroisse or circonscription
     # rabbinique someone answers for. The religious counterpart of
     # circonscription, and cleared for everyone else for the same reason: a
@@ -4121,6 +4303,9 @@ def _save_person(db, person):
         territoire = ""
     stance = (request.form.get("stance") or "").strip()
     signed_declaration = _signed_declaration_from_form()
+    gender = (request.form.get("gender") or "").strip()
+    if gender not in GENDERS:
+        gender = ""
     first_contacted, fc_ok = _to_iso(request.form.get("first_contacted"))
     notes = (request.form.get("notes") or "").strip()
     email = (request.form.get("email") or "").strip()
@@ -4170,7 +4355,7 @@ def _save_person(db, person):
               first_contacted or None, notes or None, circonscription or None,
               email or None, phone or None, social_links or None,
               religion or None, territoire or None, signed_declaration,
-              added_by, validated_by)
+              gender or None, in_office, added_by, validated_by)
     if person is None:
         cur = db.execute(
             """
@@ -4178,8 +4363,8 @@ def _save_person(db, person):
                 name, contact_type, role, portefeuille, role_detail, stance,
                 first_contacted, notes, circonscription, email, phone,
                 social_links, religion, territoire, signed_declaration,
-                added_by, validated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                gender, in_office, added_by, validated_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (*values, _now()),
         )
@@ -4193,7 +4378,8 @@ def _save_person(db, person):
                 first_contacted = ?, notes = ?,
                 circonscription = ?, email = ?, phone = ?, social_links = ?,
                 religion = ?, territoire = ?, signed_declaration = ?,
-                added_by = ?, validated_by = ? WHERE id = ?
+                gender = ?, in_office = ?, added_by = ?, validated_by = ?
+                WHERE id = ?
             """,
             (*values, person_id),
         )
@@ -4210,20 +4396,39 @@ def _render_person_form(db, status=200, **ctx):
     without a round trip (see static/form-masks.js)."""
     return render_template(
         "new_person.html", organisations=_organisation_choices(db),
-        stances=STANCES, moderators=_moderators(db),
+        stances=STANCES, genders=GENDERS, moderators=_moderators(db),
         today=date.today().isoformat(), **ctx,
     ), status
+
+
+def _return_to():
+    """The page to go back to after creating a fiche, from `?next=`.
+
+    Set by the « créer la fiche manquante » links of a validation form, so the
+    moderator lands back on it, where the new fiche is now found by its name.
+    Only a path on this site is accepted, never another address.
+    """
+    nxt = request.args.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return nxt
+    return None
 
 
 @app.route("/people/new", methods=["GET", "POST"])
 @login_required
 def new_person():
     db = get_db()
-    ctx = dict(action_url=url_for("new_person"), heading="Nouvelle personne",
-               cancel_url=url_for("people"))
+    back = _return_to()
+    ctx = dict(action_url=url_for("new_person", next=back) if back
+               else url_for("new_person"),
+               heading="Nouvelle personne", cancel_url=back or url_for("people"))
     if request.method == "POST":
         person_id, errors = _save_person(db, None)
         if not errors:
+            if back:
+                flash(f"Fiche de {request.form.get('name', '').strip()} créée. "
+                      "Vérifiez qu'elle est bien cochée ci-dessous.", "success")
+                return redirect(back)
             flash("Personne ajoutée.", "success")
             return redirect(url_for("person_detail", person_id=person_id))
         for e in errors:
@@ -4232,14 +4437,21 @@ def new_person():
             db, 400, form=request.form,
             selected_orgs=set(request.form.getlist("organisation_ids")), **ctx)
     # Arriving from an organisation page pre-selects it, and with it the type de
-    # contact that organisation implies.
+    # contact that organisation implies. A validation form's « créer la fiche
+    # manquante » also passes the name the declarant typed.
     form, selected = {}, set()
+    contact_type = request.args.get("contact_type", "")
+    if contact_type in CONTACT_TYPES:
+        form["contact_type"] = contact_type
     org = _valid_organisation(db, request.args.get("organisation_id"))
     if org is not None:
         row = db.execute("SELECT org_type FROM organisations WHERE id = ?",
                          (org,)).fetchone()
-        form = {"contact_type": CONTACT_TYPE_BY_ORG_TYPE.get(row["org_type"], "")}
+        form["contact_type"] = CONTACT_TYPE_BY_ORG_TYPE.get(
+            row["org_type"], form.get("contact_type", ""))
         selected = {str(org)}
+    if request.args.get("name"):
+        form["name"] = " ".join(request.args["name"].split())
     return _render_person_form(db, form=form, selected_orgs=selected, **ctx)
 
 
@@ -4607,11 +4819,19 @@ def _render_organisation_form(db, status=200, **ctx):
 @login_required
 def new_organisation():
     db = get_db()
-    ctx = dict(action_url=url_for("new_organisation"),
-               heading="Nouvelle organisation", cancel_url=url_for("organisations"))
+    back = _return_to()
+    ctx = dict(action_url=url_for("new_organisation", next=back) if back
+               else url_for("new_organisation"),
+               heading="Nouvelle organisation",
+               cancel_url=back or url_for("organisations"))
     if request.method == "POST":
         organisation_id, errors = _save_organisation(db, None)
         if not errors:
+            if back:
+                flash(f"Fiche de {request.form.get('name', '').strip()} créée. "
+                      "Vérifiez qu'elle est bien sélectionnée ci-dessous.",
+                      "success")
+                return redirect(back)
             flash("Organisation ajoutée.", "success")
             return redirect(url_for("organisation_detail",
                                     organisation_id=organisation_id))
@@ -4620,8 +4840,10 @@ def new_organisation():
         return _render_organisation_form(db, 400, form=request.form, **ctx)
     # « + Média » / « + Groupe politique » land here with the type already set.
     wanted = request.args.get("org_type", "")
-    return _render_organisation_form(
-        db, form={"org_type": wanted if wanted in ORG_TYPES else ""}, **ctx)
+    form = {"org_type": wanted if wanted in ORG_TYPES else ""}
+    if request.args.get("name"):
+        form["name"] = " ".join(request.args["name"].split())
+    return _render_organisation_form(db, form=form, **ctx)
 
 
 @app.route("/organisations/<int:organisation_id>/edit", methods=["GET", "POST"])
@@ -6529,10 +6751,13 @@ def approve_pending_person(pid):
     # matches and name what it did not, so the gap is visible rather than found.
     selected, unmatched = _match_names(db, "organisations",
                                        draft["proposed_organisation"])
+    # A missing média or groupe is created with the type this person implies.
+    org_type = ORG_TYPE_BY_CONTACT_TYPE.get(draft["contact_type"] or "")
     return _render_person_form(
         db, form=form, selected_orgs=selected,
         proposed_organisation=draft["proposed_organisation"],
-        unmatched_organisations=unmatched, **ctx)
+        unmatched_organisations=unmatched,
+        org_prefill={"org_type": org_type} if org_type else {}, **ctx)
 
 
 @app.route("/moderation/organisation/<int:pid>/approve", methods=["GET", "POST"])
@@ -6609,7 +6834,11 @@ def _approve_pending_linked(pid, table, render, save, detail_endpoint, detail_ar
         proposed_organisation=draft["proposed_organisation"],
         unmatched_organisations=org_unmatched,
         proposed_people=draft["proposed_people"],
-        unmatched_people=people_unmatched, **ctx)
+        unmatched_people=people_unmatched,
+        # A missing person comes in with the organisation found, and so its
+        # type de contact (a média: Journaliste).
+        person_prefill={"organisation_id": form["organisation_id"]}
+        if form["organisation_id"] else {}, **ctx)
 
 
 @app.route("/moderation/contenu/<int:pid>/approve", methods=["GET", "POST"])

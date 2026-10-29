@@ -13,14 +13,15 @@
   <a href="{{ url_for('todo') }}">TODO</a>.</p>
 
 <h2 class="todo-head todo-head-relance">
-  Relances traitées <span class="muted">({{ relances_done|length }})</span>
+  Relances traitées <span class="muted">(<span data-todo-n="relances">{{ relances_done|length }}</span>)</span>
 </h2>
 {% if relances_done %}
-<ul class="todo-list">
+<ul class="todo-list" data-todo-list="relances" data-empty="Aucune relance traitée.">
   {% for r in relances_done %}
   <li class="todo-item todo-relance todo-done">
     <form method="post"
-          action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}">
+          action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="0">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="true"
               title="Décocher : remet la relance dans le TODO">☑</button>
     </form>
@@ -46,14 +47,15 @@
 {% endif %}
 
 <h2 class="todo-head todo-head-contact">
-  Personnes contactées <span class="muted">({{ contacted|length }})</span>
+  Personnes contactées <span class="muted">(<span data-todo-n="contacted">{{ contacted|length }}</span>)</span>
 </h2>
 {% if contacted %}
-<ul class="todo-list">
+<ul class="todo-list" data-todo-list="contacted" data-empty="Personne cochée.">
   {% for c in contacted %}
   <li class="todo-item todo-contact todo-done">
     <form method="post"
-          action="{{ url_for('toggle_to_contact_done', person_id=c['id']) }}">
+          action="{{ url_for('toggle_to_contact_done', person_id=c['id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="0">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="true"
               title="Décocher : remet la personne dans le TODO">☑</button>
     </form>
@@ -80,13 +82,14 @@
 {% endif %}
 
 <h2 class="todo-head todo-head-meeting">
-  Rencontres faites <span class="muted">({{ meetings_done|length }})</span>
+  Rencontres faites <span class="muted">(<span data-todo-n="meetings">{{ meetings_done|length }}</span>)</span>
 </h2>
 {% if meetings_done %}
-<ul class="todo-list">
+<ul class="todo-list" data-todo-list="meetings" data-empty="Aucune rencontre cochée.">
   {% for m in meetings_done %}
   <li class="todo-item todo-meeting todo-done">
-    <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}">
+    <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="0">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="true"
               title="Décocher : remet la rencontre dans le TODO">☑</button>
     </form>

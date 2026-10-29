@@ -58,6 +58,19 @@
         <option value="1" {% if form.get('signed_declaration')|string == '1' %}selected{% endif %}>Oui</option>
       </select>
     </div>
+
+    {# Optional: it only serves the genre filter of the TODO, to pick out
+       everyone receiving the same letter. Élu·es get it from the official
+       lists (utils/backfill_genre.py); nobody's is guessed from a prénom. #}
+    <div class="field">
+      <label for="gender">Genre</label>
+      <select id="gender" name="gender">
+        <option value="">Non renseigné</option>
+        {% for g in genders %}
+          <option value="{{ g }}" {% if form.get('gender') == g %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 
   {# One checklist per type de contact — and, for a religieux·se, one per
@@ -121,6 +134,17 @@
     <label for="circonscription">Circonscription <span class="muted">(facultatif)</span></label>
     <input type="text" id="circonscription" name="circonscription"
            placeholder="ex. Ariège (09-2)" value="{{ form.get('circonscription', '') }}">
+  </div>
+
+  {# An élu·e whose mandate ended stays on file with their fonction, shown
+     as « Non élu·e actuellement ». New fiches start in office. #}
+  <div class="field" data-politique-only
+       {% if form.get('contact_type') != 'Politique' %}hidden{% endif %}>
+    <label for="in_office">Toujours en fonction</label>
+    <select id="in_office" name="in_office">
+      <option value="1">Oui</option>
+      <option value="0" {% if form.get('in_office')|string == '0' %}selected{% endif %}>Non, mandat terminé</option>
+    </select>
   </div>
 
   {{ ui.territoire_field(form) }}

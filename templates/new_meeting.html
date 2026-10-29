@@ -28,13 +28,14 @@
   {% if unmatched_people %}
   <p class="hint"><strong>Sans correspondance :</strong>
     {{ unmatched_people | join(', ') }} : ces noms n'ont pas été retrouvés dans les
-    fiches, cochez-les à la main ou
-    <a href="{{ url_for('new_person') }}">créez la fiche manquante</a>.
+    fiches, cochez-les à la main ou {% for n in unmatched_people %}<a href="{{ url_for('new_person', name=n, next=request.path, **(person_prefill or {})) }}">créer la fiche de {{ n }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+    Vous revenez ici une fois la fiche créée : faites-le avant de modifier le
+    reste du formulaire, qui serait perdu.
     Les autres sont déjà cochées ci-dessous ; vérifiez-les avant de valider.</p>
   {% else %}
   <p class="hint">Les personnes correspondantes sont déjà cochées ci-dessous ;
     vérifiez-les avant de valider. Si l'une d'elles n'existe pas encore,
-    <a href="{{ url_for('new_person') }}">créez-la d'abord</a>.</p>
+    <a href="{{ url_for('new_person', next=request.path) }}">créez-la d'abord</a>.</p>
   {% endif %}
 </div>
 {% endif %}
@@ -125,17 +126,14 @@
        {% if form.get('meeting_format') not in meeting_formats %}hidden{% endif %}>
     <label for="meeting_place">
       <span data-place-label>{{ place_label(form.get('meeting_format')) }}</span>
-      <span class="req" data-place-req
-            {% if form.get('meeting_format') != 'presentiel' %}hidden{% endif %}>*</span>
-      <span class="muted" data-place-optional
-            {% if form.get('meeting_format') == 'presentiel' %}hidden{% endif %}>(facultatif)</span>
+      <span class="muted">(facultatif)</span>
     </label>
     <input type="text" id="meeting_place" name="meeting_place"
            value="{{ form.get('meeting_place', '') }}"
            placeholder="Permanence, mairie, salon… ou lien de visio">
-    <p class="hint">En présentiel, indiquez où la rencontre a eu lieu (c'est
-      obligatoire). En visio, vous pouvez y mettre le lien ou la plateforme, ou
-      laisser vide.</p>
+    <p class="hint">L'adresse en présentiel, le lien ou la plateforme en visio.
+      Pas encore connu ? Laissez vide : la rencontre apparaîtra dans le TODO
+      {{ place_confirm_days }} jours avant, pour penser à le confirmer.</p>
   </div>
 
   <div class="field">

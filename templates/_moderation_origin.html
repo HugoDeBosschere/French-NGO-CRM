@@ -13,7 +13,9 @@
   <strong>Organisation indiquée par le déclarant :</strong> {{ proposed_organisation }}
   {% if unmatched_organisations %}
   <p class="hint"><strong>Sans correspondance :</strong> choisissez l'organisation à la
-    main ou <a href="{{ url_for('new_organisation') }}">créez la fiche manquante</a>.</p>
+    main ou {% for n in unmatched_organisations %}<a href="{{ url_for('new_organisation', name=n, next=request.path, **(org_prefill or {})) }}">créer la fiche de {{ n }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+    Vous revenez ici une fois la fiche créée : faites-le avant de modifier le
+    reste du formulaire, qui serait perdu.</p>
   {% else %}
   <p class="hint">L'organisation correspondante est déjà sélectionnée ;
     vérifiez-la avant de valider.</p>
@@ -26,8 +28,9 @@
   {% if unmatched_people %}
   <p class="hint"><strong>Sans correspondance :</strong>
     {{ unmatched_people | join(', ') }} : ces noms n'ont pas été retrouvés dans les
-    fiches, cochez-les à la main ou
-    <a href="{{ url_for('new_person') }}">créez la fiche manquante</a>.
+    fiches, cochez-les à la main ou {% for n in unmatched_people %}<a href="{{ url_for('new_person', name=n, next=request.path, **(person_prefill or {})) }}">créer la fiche de {{ n }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+    Vous revenez ici une fois la fiche créée : faites-le avant de modifier le
+    reste du formulaire, qui serait perdu.
     Les autres sont déjà cochées ci-dessous ; vérifiez avant de valider.</p>
   {% else %}
   <p class="hint">Les personnes correspondantes sont déjà cochées ci-dessous ;

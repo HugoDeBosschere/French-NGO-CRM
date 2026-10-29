@@ -89,6 +89,12 @@ chamber.
   shown with a "Non élu·e actuellement" badge). Handles the government
   multi-role case; never touches hand-entered rows (`added_by`/`validated_by`).
   Skipped if any chamber failed, so an incomplete union can't retire anyone.
+- **Genre:** after the reconciliation it runs `backfill_genre.py --commit`, which
+  fills `persons.gender` (Femme / Homme) from the four datasets' civilité, for
+  the TODO genre filter. Only a NULL gender on a script-made fiche
+  (`added_by IS NULL`, `contact_type = 'Politique'`) is filled; nobody's is
+  guessed from a prénom. Run it by hand once after deploying the column:
+  `python3 utils/backfill_genre.py` (dry run), then `--commit`.
 - **Disk-safe:** the large AN dump is removed after extraction.
 - **Election-proof-ish:** the AN dump URL carries the legislature number
   (`AN_LEGISLATURE`, default `17`); bump it after a general election.

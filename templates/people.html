@@ -59,7 +59,7 @@
       <tr onclick="window.location='{{ url_for('person_detail', person_id=p['id']) }}'">
         <td>
           <strong>{{ p['name'] }}</strong>
-          {% if p['role'] and not p['in_office'] %}
+          {% if (p['role'] or p['contact_type'] == 'Politique') and not p['in_office'] %}
             <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
           {% endif %}
         </td>

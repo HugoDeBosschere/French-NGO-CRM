@@ -24,7 +24,7 @@
 
 {# What an organisation is, in one tag. A lookup rather than a ternary, so a
    new org_type gets its own colour instead of quietly borrowing another one's.
-   The three types that belong to no type de contact share one neutral colour,
+   The types that belong to no type de contact share one neutral colour,
    because that is exactly what they have in common. #}
 {% set ORG_TAG_CLASS = {
      'Média': 'tag-media',
@@ -32,6 +32,7 @@
      'Culte': 'tag-culte',
      'ONG': 'tag-neutre',
      'Entreprise': 'tag-neutre',
+     'Éditeur': 'tag-neutre',
      'Autre': 'tag-neutre',
    } %}
 {% macro org_tag(org_type) %}

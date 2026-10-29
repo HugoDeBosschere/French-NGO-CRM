@@ -588,11 +588,12 @@ a.cal-ev:hover {
   font-size: .78rem;
 }
 
-/* "No longer in office" badge on kept-but-inactive officials */
+/* "No longer in office" badge on kept-but-inactive officials: red, so a
+   former élu·e is not written to as if still in office */
 .tag-inactive {
-  background: #f1f3f5;
-  color: #667085;
-  border: 1px solid var(--line);
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecdca;
   font-weight: 600;
 }
 
@@ -1021,8 +1022,17 @@ a.tag:hover { text-decoration: none; filter: brightness(.96); }
   .split-typehead, .split-org, .split-rows li { flex-wrap: wrap; }
 }
 
-/* « Utilisateurice » filter in a /todo section title */
-.todo-filter { width: auto; margin-left: .5rem; font-size: .85rem; font-weight: 400; padding: .2rem .4rem; vertical-align: middle; }
+/* /todo: the filters under a section title (who sends it, genre, fonction)
+   and the button copying the addresses they leave on screen. */
+.todo-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: .25rem 0 .9rem; }
+.todo-filters label { display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-size: .85rem; font-weight: 400; }
+.todo-filter { width: auto; max-width: 14rem; font-size: .85rem; font-weight: 400; padding: .2rem .4rem; }
+.copy-all { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; padding: .25rem .6rem; }
+.copy-all.copied { color: #1f7a3d; }
+.copy-all:disabled { opacity: .5; cursor: not-allowed; }
+.todo-filters [data-todo-copy-count] { font-size: .85rem; }
+.done-all { margin: 0 0 0 auto; }
+.done-all .btn { font-size: .85rem; padding: .25rem .6rem; }
 
 /* Répartition: the section titles' underline in the page's two colours, and
    no spinner arrows on the small number boxes (they cover the digits at that
@@ -1489,3 +1499,14 @@ table.meetings td.col-num {
 }
 .deposit-apprendre input { margin-top: .2rem; flex: 0 0 auto; }
 .deposit-apprendre > :not(input) { min-width: 0; }
+
+/* Bouton « copier » à côté d'une adresse (copy.js). Discret au repos, il
+   passe au vert le temps de confirmer la copie. */
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: .35rem; padding: .2rem; vertical-align: middle;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--muted); cursor: pointer;
+}
+.copy-btn:hover, .copy-btn:focus-visible { background: #eceff2; color: inherit; }
+.copy-btn.copied { color: #1f7a3d; }

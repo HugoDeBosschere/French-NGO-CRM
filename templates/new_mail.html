@@ -26,13 +26,14 @@
   {% if unmatched_people %}
   <p class="hint"><strong>Sans correspondance :</strong>
     {{ unmatched_people | join(', ') }} : ces noms n'ont pas été retrouvés dans les
-    fiches, cochez-les à la main ou
-    <a href="{{ url_for('new_person') }}">créez la fiche manquante</a>.
+    fiches, cochez-les à la main ou {% for n in unmatched_people %}<a href="{{ url_for('new_person', name=n, next=request.path, **(person_prefill or {})) }}">créer la fiche de {{ n }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+    Vous revenez ici une fois la fiche créée : faites-le avant de modifier le
+    reste du formulaire, qui serait perdu.
     Les autres sont déjà cochées ci-dessous ; vérifiez-les avant de valider.</p>
   {% else %}
   <p class="hint">Les personnes correspondantes sont déjà cochées ci-dessous ;
     vérifiez-les avant de valider. Si l'une d'elles n'existe pas encore,
-    <a href="{{ url_for('new_person') }}">créez-la d'abord</a>.</p>
+    <a href="{{ url_for('new_person', next=request.path) }}">créez-la d'abord</a>.</p>
   {% endif %}
 </div>
 {% endif %}

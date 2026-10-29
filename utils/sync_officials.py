@@ -217,10 +217,10 @@ def download(url, dest, dormir=time.sleep):
             dormir(attente)
 
 
-def run_script(name):
+def run_script(name, *args):
     """Run utils/<name> in its own process so a SystemExit guard inside one
     script can't abort the whole orchestration."""
-    subprocess.run([sys.executable, os.path.join(HERE, name)], check=True)
+    subprocess.run([sys.executable, os.path.join(HERE, name), *args], check=True)
 
 
 def sync_deputes():
@@ -403,6 +403,8 @@ def _main(run):
         signaler_echecs(failures, run)
 
     reconcile_in_office()
+    # A new élu·e arrives without a gender; the datasets just refreshed say it.
+    run_script("backfill_genre.py", "--commit")
     run.detail = f"{len(chambers)} chambres rafraîchies."
     log("\nAll chambers refreshed.")
 

@@ -6,7 +6,7 @@
 <div class="page-head">
   <h1>{{ p['name'] }}
     {{ ui.contact_tag(p['contact_type']) }}
-    {% if p['role'] and not p['in_office'] %}
+    {% if (p['role'] or p['contact_type'] == 'Politique') and not p['in_office'] %}
       <span class="tag tag-inactive" title="N'occupe plus de mandat ; fiche conservée pour l'historique">Non élu·e actuellement</span>
     {% endif %}
   </h1>
@@ -63,13 +63,24 @@
       <label>A signé la déclaration de PauseIA</label>
       <p>{{ valeur('Oui' if p['signed_declaration'] else 'Non') }}</p>
     </div>
+    <div class="field">
+      <label>Genre</label>
+      <p>{{ valeur(p['gender']) }}</p>
+    </div>
   </div>
 
   <div class="grid-2">
     <div class="field">
       <label>Fonction{% if split_roles(p['role'])|length > 1 %}s{% endif %}</label>
-      <p>{{ valeur(p['role']) }}</p>
+      <p>{{ valeur(p['role']) }}{% if p['role'] and not p['in_office'] %}
+        <span class="muted">(n'est plus en fonction)</span>{% endif %}</p>
     </div>
+    {% if p['contact_type'] == 'Politique' %}
+    <div class="field">
+      <label>Toujours en fonction</label>
+      <p>{% if p['in_office'] %}Oui{% else %}<span class="warn">Non, mandat terminé</span>{% endif %}</p>
+    </div>
+    {% endif %}
     {% if p['portefeuille'] %}
     <div class="field">
       <label>Portefeuille</label>
@@ -133,6 +144,17 @@
     <div class="field">
       <label>Courriel{% if autres_adresses %}s{% endif %}</label>
       <p>{% if p['email'] %}<a href="mailto:{{ p['email'] }}">{{ p['email'] }}</a>
+         {#- Caché tant que copy.js ne l'a pas activé : sans JavaScript, ou sans
+             accès au presse-papiers, un bouton qui ne fait rien serait pire
+             que pas de bouton. #}
+         <button type="button" class="copy-btn" data-copy="{{ p['email'] }}"
+                 title="Copier l'adresse" aria-label="Copier l'adresse" hidden>
+           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+             <rect x="9" y="9" width="13" height="13" rx="2"/>
+             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+           </svg>
+         </button>
          {%- else %}<span class="muted">Non renseigné</span>{% endif %}</p>
       {% if email_deduit %}
       <p class="hint" title="Le Sénat ne publie pas les adresses de ses membres. Celle-ci est calculée depuis le nom (initiales.nom@senat.fr), une règle juste dans la quasi-totalité des cas. Si vous la voyez écrite sur senat.fr ou si un échange aboutit, corrigez-la ici : la mention disparaîtra.">

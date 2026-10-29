@@ -1,16 +1,56 @@
 {% extends "base.html" %}
 {% block title %}À faire{% endblock %}
 {% block content %}
-{# Filter on who is to do it, in the browser; each browser remembers its own
-   choice, so everyone lands on their own list. Items carry data-by: the
-   names of who is to do them, comma-separated, empty for « quiconque ». #}
-{% macro by_filter(key) %}
-<select class="todo-filter" data-todo-filter="{{ key }}"
-        aria-label="Filtrer par utilisateurice">
-  <option value="">Tout le monde</option>
-  {% for mo in moderators %}<option value="{{ mo['name'] }}">{{ mo['name'] }}</option>{% endfor %}
-  <option value="__anyone__">Quiconque</option>
-</select>
+{# Filters on a section, applied in the browser (static/form-masks.js):
+   who is to do it, then the genre and fonction of who receives it, so that
+   everyone getting the same letter can be picked out and their addresses
+   copied in one go. Items carry data-by (who is to do them, comma-separated,
+   empty for « quiconque ») and data-people (one {gender, roles, email} per
+   person concerned). Each browser remembers its own choices. #}
+{% macro section_filters(key, roles) %}
+<div class="todo-filters" data-todo-filters="{{ key }}">
+  <label>À envoyer par
+    <select class="todo-filter" data-todo-filter="{{ key }}" data-todo-dim="by">
+      <option value="">Tout le monde</option>
+      {% for mo in moderators %}<option value="{{ mo['name'] }}">{{ mo['name'] }}</option>{% endfor %}
+      <option value="__anyone__">Quiconque</option>
+    </select>
+  </label>
+  <label>Genre
+    <select class="todo-filter" data-todo-filter="{{ key }}" data-todo-dim="gender">
+      <option value="">Tous</option>
+      {% for g in genders %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+      <option value="__none__">Non renseigné</option>
+    </select>
+  </label>
+  <label>Fonction
+    <select class="todo-filter" data-todo-filter="{{ key }}" data-todo-dim="role">
+      <option value="">Toutes</option>
+      {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+      <option value="__none__">Sans fonction</option>
+    </select>
+  </label>
+  {# Revealed by copy.js only where the clipboard is available; form-masks.js
+     keeps data-copy in step with what the filters leave on screen. #}
+  <button type="button" class="btn copy-all" data-copy="" data-todo-copy="{{ key }}"
+          title="Copier les adresses affichées" hidden>
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>
+    Copier les adresses
+  </button>
+  <span class="muted" data-todo-copy-count="{{ key }}"></span>
+  {# Ticks every entry left on screen. form-masks.js fills in one `item` per
+     visible entry and asks for confirmation; without JavaScript it stays
+     hidden, the single checkboxes still work. #}
+  <form method="post" action="{{ url_for('mark_all_done') }}" class="done-all"
+        data-todo-done-all="{{ key }}" hidden>
+    <button type="submit" class="btn">✓ Tout marquer comme fait
+      (<span data-todo-done-count>0</span>)</button>
+  </form>
+</div>
 {% endmacro %}
 <div class="page-head">
   <h1 class="todo-title-head">TODO</h1>
@@ -26,13 +66,14 @@
 
 {# ---------------- Rencontres du jour ---------------- #}
 <h2 class="todo-head todo-head-meeting">
-  Rencontres du jour <span class="muted">({{ meetings_today|length }})</span>
+  Rencontres du jour <span class="muted">(<span data-todo-n="today">{{ meetings_today|length }}</span>)</span>
 </h2>
 {% if meetings_today %}
-<ul class="todo-list">
+<ul class="todo-list" data-todo-list="today" data-empty="Aucune rencontre aujourd'hui.">
   {% for m in meetings_today %}
   <li class="todo-item todo-meeting">
-    <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}">
+    <form method="post" action="{{ url_for('toggle_meeting_done', meeting_id=m['id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="1">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="false"
               title="Marquer comme faite : la rencontre passe dans Fait">☐</button>
     </form>
@@ -42,14 +83,17 @@
         {{ m['person_names'] or 'Rencontre' }}
       </a>
       <p class="todo-sub">{{ m['summary'] }}</p>
-      <p class="todo-meta">
+      <p class="todo-sub">
+        Avec :
         {% if m['participant_names'] %}
-          Avec : {{ m['participant_names'] }}
+          <strong>{{ m['participant_names'] }}</strong>
         {% else %}
-          <span class="warn">Personne d'inscrit·e</span>
+          <strong class="warn">personne d'inscrit·e</strong>
         {% endif %}
+      </p>
+      <p class="todo-meta">
         {% for addr in (m['person_emails'] or '').split(', ') if addr %}
-          · <a href="mailto:{{ addr }}">{{ addr }}</a>
+          <a href="mailto:{{ addr }}">{{ addr }}</a>{% if not loop.last %} · {% endif %}
         {% endfor %}
       </p>
     </div>
@@ -60,21 +104,68 @@
 <p class="muted">Aucune rencontre aujourd'hui.</p>
 {% endif %}
 
+{# ---------------- Lieu ou lien à confirmer ---------------- #}
+<h2 class="todo-head todo-head-meeting">
+  Confirmer le lien de la visio ou le lieu de la rencontre <span class="muted">({{ no_place|length }})</span>
+</h2>
+<p class="hint">Rencontres prévues dans les {{ place_confirm_days }} prochains jours qui
+  n'ont encore ni lieu ni lien de visio.</p>
+{% if no_place %}
+<ul class="todo-list">
+  {% for m in no_place %}
+  {% set d = m['meeting_date'] | days_until %}
+  <li class="todo-item todo-meeting">
+    <div class="todo-body">
+      <a class="todo-title" href="{{ url_for('meeting_detail', meeting_id=m['id']) }}">
+        {{ m['meeting_date'] | fr_date }}{% if m['meeting_time'] %} à {{ m['meeting_time'] }}{% endif %}
+        · {{ m['person_names'] or 'Rencontre' }}
+      </a>
+      {# Always red: a rencontre this close with no place or link is already
+         late to confirm. #}
+      <p class="todo-sub">
+        <span class="due due-overdue">{% if d == 0 %}aujourd'hui{% elif d == 1 %}demain{% else %}dans {{ d }}&nbsp;j{% endif %}</span>
+        · {{ 'Visio' if m['meeting_format'] == 'visio' else 'Présentiel' }}
+        · <a href="{{ url_for('edit_meeting', meeting_id=m['id']) }}">Ajouter le {{ 'lien' if m['meeting_format'] == 'visio' else 'lieu' }} →</a>
+      </p>
+      <p class="todo-sub">
+        Avec :
+        {% if m['participant_names'] %}
+          <strong>{{ m['participant_names'] }}</strong>
+        {% else %}
+          <strong class="warn">personne d'inscrit·e</strong>
+        {% endif %}
+      </p>
+      <p class="todo-meta">
+        {% for addr in (m['person_emails'] or '').split(', ') if addr %}
+          <a href="mailto:{{ addr }}">{{ addr }}</a>{% if not loop.last %} · {% endif %}
+        {% endfor %}
+      </p>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Rien à confirmer : toutes les rencontres proches ont un lieu ou un lien.</p>
+{% endif %}
+
 {# ---------------- Relances dues ---------------- #}
 <h2 class="todo-head todo-head-relance">
   Relances à envoyer <span class="muted">(<span data-todo-count="relances">{{ due|length }}</span>)</span>
-  {{ by_filter('relances') }}
 </h2>
 <p class="hint">Relances prévues aujourd'hui ou déjà passées. Cocher une relance
   la retire d'ici et la place dans <a href="{{ url_for('fait') }}">Fait</a>, où
   vous pouvez la décocher pour la faire revenir.</p>
 {% if due %}
+{{ section_filters('relances', due_roles) }}
 <div data-todo-filtered="relances">
 <ul class="todo-list" data-todo-block>
   {% for r in due %}
-  <li class="todo-item todo-relance" data-by="{{ r['relance_by'] or '' }}">
+  <li class="todo-item todo-relance" data-by="{{ r['relance_by'] or '' }}"
+      data-people='{{ due_people[(r['kind'], r['rec_id'])] | tojson }}'
+      data-done="{{ r['kind'] }}:{{ r['rec_id'] }}">
     <form method="post"
-          action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}">
+          action="{{ url_for('toggle_follow_up_done', kind=r['kind'], rec_id=r['rec_id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="1">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="false"
               title="Marquer comme faite : la relance passe dans Fait">☐</button>
     </form>
@@ -111,7 +202,7 @@
   </li>
   {% endfor %}
 </ul>
-<p class="muted" data-todo-empty hidden>Aucune relance pour cette utilisateurice.</p>
+<p class="muted" data-todo-empty hidden>Aucune relance ne correspond à ces filtres.</p>
 </div>
 {% else %}
 <p class="muted">Aucune relance en attente.</p>
@@ -120,26 +211,31 @@
 {# ---------------- À contacter ---------------- #}
 <h2 class="todo-head todo-head-contact">
   À contacter <span class="muted">(<span data-todo-count="contact">{{ to_contact|length }}</span>)</span>
-  {{ by_filter('contact') }}
 </h2>
 <p><a class="btn btn-primary" href="{{ url_for('to_contact_split') }}">
   + Répartir à contacter</a></p>
 <p class="hint">Les personnes à qui écrire. Cocher une personne la retire d'ici et
   la place dans <a href="{{ url_for('fait') }}">Fait</a>, où vous pouvez la
   décocher pour la faire revenir ou la retirer de la liste.</p>
-{% if to_contact_blocks %}<div data-todo-filtered="contact">{% endif %}
+{% if to_contact_blocks %}
+{{ section_filters('contact', contact_roles) }}
+<div data-todo-filtered="contact">
+{% endif %}
 {% for assignee, rows in to_contact_blocks %}
 <div data-todo-block>
 {# A heading only once the list has been shared out at all. #}
 {% if to_contact_blocks|length > 1 or assignee %}
 <h3 class="todo-assignee">{{ assignee or 'Quiconque' }}
-  <span class="muted">({{ rows|length }})</span></h3>
+  <span class="muted">(<span data-todo-n="contact-{{ loop.index }}">{{ rows|length }}</span>)</span></h3>
 {% endif %}
-<ul class="todo-list">
+<ul class="todo-list" data-todo-list="contact-{{ loop.index }}">
   {% for c in rows %}
-  <li class="todo-item todo-contact" data-by="{{ assignee or '' }}">
+  <li class="todo-item todo-contact" data-by="{{ assignee or '' }}"
+      data-people='{{ contact_people[c['id']] | tojson }}'
+      data-done="person:{{ c['id'] }}">
     <form method="post"
-          action="{{ url_for('toggle_to_contact_done', person_id=c['id']) }}">
+          action="{{ url_for('toggle_to_contact_done', person_id=c['id']) }}" data-todo-tick>
+      <input type="hidden" name="done" value="1">
       <button type="submit" class="todo-check" role="checkbox" aria-checked="false"
               title="Marquer comme contactée : la personne passe dans Fait">☐</button>
     </form>
@@ -170,7 +266,7 @@
 <p class="muted">Personne à contacter pour le moment.</p>
 {% endfor %}
 {% if to_contact_blocks %}
-<p class="muted" data-todo-empty hidden>Personne à contacter pour cette utilisateurice.</p>
+<p class="muted" data-todo-empty hidden>Personne ne correspond à ces filtres.</p>
 </div>
 {% endif %}
 

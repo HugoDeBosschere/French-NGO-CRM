@@ -225,35 +225,21 @@
     sync();
   }
 
-  // « Format de la rencontre » drives the free-text field under it: présentiel
-  // asks where you went and insists on an answer, visio reuses the same field
-  // for an optional link. Hidden until a format is picked, so the question is
-  // never asked before it means anything.
-  //
-  // app.py validates the same rule on submit — this only spares the user a
-  // round trip, it is never what enforces it. The `required` attribute is set
-  // only where the server actually requires the field, which the presence of
-  // the « * » marker tells us: the anonymous /declarer form asks the same
-  // question without ever blocking on it.
+  // « Format de la rencontre » drives the free-text field under it: « Lieu »
+  // in présentiel, « Lien / plateforme » in visio, optional in both (/todo
+  // flags a rencontre still without one as it approaches). Hidden until a
+  // format is picked, so the question is never asked before it means anything.
   function attachFormatToggle(group) {
     var field = document.getElementById("meeting-place-field");
     if (!field) return;
     var input = field.querySelector('input[name="meeting_place"]');
     var label = field.querySelector("[data-place-label]");
-    var req = field.querySelector("[data-place-req]");
-    var optional = field.querySelector("[data-place-optional]");
 
     function sync() {
       var picked = group.querySelector('input[name="meeting_format"]:checked');
       var value = picked ? picked.value : "";
       field.hidden = !value;
-      var mandatory = value === "presentiel";
-      if (label) label.textContent = mandatory ? "Lieu" : "Lien / plateforme";
-      if (req) {
-        req.hidden = !mandatory;
-        if (input) input.required = mandatory;
-      }
-      if (optional) optional.hidden = mandatory;
+      if (label) label.textContent = value === "presentiel" ? "Lieu" : "Lien / plateforme";
     }
     group.addEventListener("change", sync);
     sync();
@@ -352,10 +338,10 @@
     "Autre": "Autre"
   };
 
-  // ONG, entreprise and autre belong to no type de contact, so they are offered
+  // ONG, entreprise, éditeur and autre belong to no type de contact, so they are offered
   // on top of whichever one is chosen: a journaliste can sit on an NGO board
   // and an élu·e can chair an association. app.py keeps the same set on save.
-  var NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Autre"];
+  var NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "\u00c9diteur", "Autre"];
 
   function syncOrganisations(form, contactType) {
     var own = ORG_TYPE_OF_CONTACT[contactType] || "";
@@ -790,29 +776,69 @@
     });
   }
 
-  // /todo: the « Utilisateurice » filter on a section. Items carry data-by,
-  // the comma-separated names of who is to do them (empty for « quiconque »).
-  // Blocks left with nothing visible hide, headings and all, and the count in
-  // the section title follows. The choice is remembered per browser, like
-  // data-remember, since the shared login cannot say who is looking.
-  function attachTodoFilter(select) {
-    var key = select.getAttribute("data-todo-filter");
+  // /todo: the filters on a section — who is to send it (data-by, the
+  // comma-separated names, empty for « quiconque »), and the genre and
+  // fonction of who receives it (data-people, one {gender, roles, email} per
+  // person). Genre and fonction must hold for the same person, so a relance
+  // to a député and a journaliste is not kept by « Femme » + « Député·e »
+  // through two different people. Blocks left with nothing visible hide,
+  // headings and all; the count in the section title follows; the copy
+  // button gets the addresses of the matching people. The choices are
+  // remembered per browser, like data-remember, since the shared login cannot
+  // say who is looking.
+  function attachTodoFilters(bar) {
+    var key = bar.getAttribute("data-todo-filters");
     var scope = document.querySelector('[data-todo-filtered="' + key + '"]');
     var count = document.querySelector('[data-todo-count="' + key + '"]');
-    var storeKey = "pauseia:todo-filter:" + key;
-    if (!scope) { select.hidden = true; return; }
+    var copy = bar.querySelector("[data-todo-copy]");
+    var copyCount = bar.querySelector("[data-todo-copy-count]");
+    var doneAll = bar.querySelector("[data-todo-done-all]");
+    var doneCount = doneAll && doneAll.querySelector("[data-todo-done-count]");
+    var visible = [];
+    var selects = {};
+    bar.querySelectorAll("select[data-todo-dim]").forEach(function (sel) {
+      selects[sel.getAttribute("data-todo-dim")] = sel;
+    });
+    if (!scope) { bar.hidden = true; return; }
+
+    function value(dim) { return selects[dim] ? selects[dim].value : ""; }
+
+    function personMatches(p, gender, role) {
+      var genderOk = !gender ||
+        (gender === "__none__" ? !p.gender : p.gender === gender);
+      var roleOk = !role ||
+        (role === "__none__" ? p.roles.length === 0 : p.roles.indexOf(role) !== -1);
+      return genderOk && roleOk;
+    }
 
     function apply() {
-      var who = select.value, shown = 0;
+      var who = value("by"), gender = value("gender"), role = value("role");
+      var shown = 0, emails = [], seen = {}, noEmail = 0;
+      visible = [];
       scope.querySelectorAll("[data-todo-block]").forEach(function (block) {
         var inBlock = 0;
         block.querySelectorAll("[data-by]").forEach(function (item) {
           var by = item.getAttribute("data-by");
           var names = by ? by.split(",").map(function (n) { return n.trim(); }) : [];
-          var on = !who ||
+          var byOk = !who ||
             (who === "__anyone__" ? names.length === 0 : names.indexOf(who) !== -1);
+          var people = [];
+          try { people = JSON.parse(item.getAttribute("data-people") || "[]"); }
+          catch (e) { people = []; }
+          var matching = people.filter(function (p) {
+            return personMatches(p, gender, role);
+          });
+          var on = byOk && (matching.length > 0 || (!gender && !role));
           item.hidden = !on;
-          if (on) inBlock++;
+          if (!on) return;
+          inBlock++;
+          if (item.getAttribute("data-done")) visible.push(item.getAttribute("data-done"));
+          matching.forEach(function (p) {
+            var addr = (p.email || "").trim();
+            if (!addr) { noEmail++; return; }
+            var k = addr.toLowerCase();
+            if (!seen[k]) { seen[k] = true; emails.push(addr); }
+          });
         });
         block.hidden = !inBlock;
         shown += inBlock;
@@ -820,19 +846,72 @@
       if (count) count.textContent = shown;
       var empty = scope.querySelector("[data-todo-empty]");
       if (empty) empty.hidden = shown > 0;
+      if (doneAll) {
+        doneAll.hidden = visible.length === 0;
+        if (doneCount) doneCount.textContent = visible.length;
+      }
+      if (copy) {
+        copy.setAttribute("data-copy", emails.join(", "));
+        copy.disabled = emails.length === 0;
+      }
+      if (copyCount) {
+        var text = emails.length + " adresse" + (emails.length === 1 ? "" : "s");
+        if (noEmail) {
+          text += " · " + noEmail + " personne" + (noEmail === 1 ? "" : "s") +
+            " sans adresse";
+        }
+        copyCount.textContent = text;
+      }
     }
 
-    try {
-      var saved = window.localStorage.getItem(storeKey);
-      if (saved) {
-        select.value = saved;
-        if (select.value !== saved) select.value = "";
-      }
-    } catch (e) { /* no storage — show everything */ }
-    select.addEventListener("change", function () {
-      try { window.localStorage.setItem(storeKey, select.value); } catch (e) {}
-      apply();
+    // « Tout marquer comme fait »: exactly the entries on screen when it is
+    // pressed, after saying how many — it moves them all to /fait at once.
+    if (doneAll) {
+      doneAll.addEventListener("submit", function (e) {
+        var n = visible.length;
+        var question = n > 1
+          ? "Marquer comme faits les " + n + " éléments affichés ? Ils passeront " +
+            "dans Fait, où vous pourrez les décocher un par un."
+          : "Marquer comme fait l'élément affiché ? Il passera dans Fait, où " +
+            "vous pourrez le décocher.";
+        if (!n || !window.confirm(question)) {
+          e.preventDefault();
+          return;
+        }
+        doneAll.querySelectorAll('input[type="hidden"]').forEach(function (el) {
+          el.remove();
+        });
+        function hidden(name, v) {
+          var input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = v;
+          doneAll.appendChild(input);
+        }
+        visible.forEach(function (v) { hidden("item", v); });
+        // The server filters again with these: it ticks only what passes.
+        ["by", "gender", "role"].forEach(function (dim) { hidden(dim, value(dim)); });
+      });
+    }
+
+    Object.keys(selects).forEach(function (dim) {
+      var select = selects[dim];
+      // The utilisateurice choice keeps its former key, so nobody loses it.
+      var storeKey = "pauseia:todo-filter:" + key + (dim === "by" ? "" : ":" + dim);
+      try {
+        var saved = window.localStorage.getItem(storeKey);
+        if (saved) {
+          select.value = saved;
+          if (select.value !== saved) select.value = "";
+        }
+      } catch (e) { /* no storage — show everything */ }
+      select.addEventListener("change", function () {
+        try { window.localStorage.setItem(storeKey, select.value); } catch (e) {}
+        apply();
+      });
     });
+    // An entry ticked or put back by todo-check.js: recount what is shown.
+    document.addEventListener("todo:changed", apply);
     apply();
   }
 
@@ -893,8 +972,8 @@
       .querySelectorAll("[data-split-form]")
       .forEach(attachSplitForm);
     document
-      .querySelectorAll("[data-todo-filter]")
-      .forEach(attachTodoFilter);
+      .querySelectorAll("[data-todo-filters]")
+      .forEach(attachTodoFilters);
     document
       .querySelectorAll("[data-split-preview]")
       .forEach(attachSplitPreview);
