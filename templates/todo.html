@@ -319,6 +319,18 @@
           {% endfor %}
         </div>
         {% if moderators %}
+        {# Outside data-date-col: backups do not count towards the minimum. #}
+        <p class="signup-backup-label">En cas de problème
+          <span class="muted">: qui peut prendre la place d'un·e inscrit·e empêché·e</span></p>
+        <div class="checklist checklist-inline" data-backup-list>
+          {% for mo in moderators %}
+            <label class="check">
+              <input type="checkbox" name="backup_ids" value="{{ mo['id'] }}"
+                     {% if (mo['id']|string) in backups.get(m['id'], []) %}checked{% endif %}>
+              {{ mo['name'] }}
+            </label>
+          {% endfor %}
+        </div>
         {# Kept for browsers without JavaScript; the auto-save hides it. #}
         <button class="btn btn-primary" type="submit" data-autosave-fallback>Enregistrer les inscriptions</button>
         {# The labels live here, not in the script: every user-facing

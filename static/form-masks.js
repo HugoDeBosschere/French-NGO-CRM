@@ -516,6 +516,27 @@
     });
   }
 
+  // « En cas de problème »: one name is either going or standing by, never
+  // both. Ticking it in one list unticks it in the other, so the page shows
+  // what the server will keep (see _set_meeting_backups).
+  function attachBackupList(list) {
+    var form = list.closest("form");
+    if (!form) return;
+    form.addEventListener("change", function (event) {
+      var box = event.target;
+      if (box.type !== "checkbox" || !box.checked) return;
+      var other = { participant_ids: "backup_ids", backup_ids: "participant_ids" }[box.name];
+      if (!other) return;
+      [].forEach.call(form.querySelectorAll('input[name="' + other + '"]'), function (el) {
+        if (el.value === box.value && el.checked) {
+          el.checked = false;
+          // Lets the sign-up count follow when a backup takes a place back.
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+    });
+  }
+
   // « Autres dates possibles »: filling in a date reveals the heure field for
   // that alternative, so an hour can be given for any of them — and two
   // créneaux on the same day are simply the same date twice with two hours.
@@ -956,6 +977,9 @@
     document
       .querySelectorAll("form[data-autosave]")
       .forEach(attachAutosave);
+    document
+      .querySelectorAll("[data-backup-list]")
+      .forEach(attachBackupList);
     document
       .querySelectorAll("[data-alt-slots]")
       .forEach(attachAltSlots);

@@ -88,6 +88,24 @@
       <a href="{{ url_for('moderators_admin') }}">Gérer les utilisateurices</a>.</p>
   </div>
 
+  {# After a failed submit, what was ticked; when editing, what is stored. #}
+  {% set chosen_backups = request.form.getlist('backup_ids') if request.method == 'POST' else (selected_backups or []) %}
+  <div class="field">
+    <label>En cas de problème <span class="muted">(facultatif)</span></label>
+    <div class="checklist" data-backup-list>
+      {% for mo in moderators %}
+        <label class="check">
+          <input type="checkbox" name="backup_ids" value="{{ mo['id'] }}"
+                 {% if (mo['id']|string) in chosen_backups %}checked{% endif %}>
+          {{ mo['name'] }}
+        </label>
+      {% endfor %}
+    </div>
+    <p class="hint">Les utilisateurices qui peuvent prendre la place d'un·e
+      participant·e si celle-ci ou celui-ci a finalement un empêchement.
+      Une personne cochée au-dessus n'est pas gardée ici.</p>
+  </div>
+
   <div class="grid-2">
     <div class="field">
       <label for="meeting_date">Date de la rencontre <span class="req">*</span></label>

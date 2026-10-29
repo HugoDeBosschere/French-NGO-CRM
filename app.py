@@ -1253,6 +1253,16 @@ def _init_db_locked():
             PRIMARY KEY (meeting_id, moderator_id)
         );
 
+        -- « En cas de problème » : who could step in if a participant drops
+        -- out. Never a participant at the same time (the participant wins, see
+        -- _set_meeting_backups), and never promoted automatically: whoever
+        -- takes the place ticks themself in the sign-ups.
+        CREATE TABLE IF NOT EXISTS meeting_backups (
+            meeting_id   INTEGER NOT NULL REFERENCES meetings(id)   ON DELETE CASCADE,
+            moderator_id INTEGER NOT NULL REFERENCES moderators(id) ON DELETE CASCADE,
+            PRIMARY KEY (meeting_id, moderator_id)
+        );
+
         -- Who is free on which candidate date, while a rencontre is still
         -- being scheduled (see /repartition). These rows are temporary: once a
         -- date is chosen, that date's rows become the rencontre's participants
@@ -2675,6 +2685,32 @@ def _set_meeting_moderators(db, meeting_id, moderator_ids):
     )
 
 
+def _set_meeting_backups(db, meeting_id, moderator_ids):
+    """Replace a meeting's « En cas de problème » list with `moderator_ids`.
+
+    Someone already going is not also a backup: call after
+    _set_meeting_moderators, which this reads to drop them.
+    """
+    db.execute("DELETE FROM meeting_backups WHERE meeting_id = ?", (meeting_id,))
+    db.executemany(
+        """INSERT INTO meeting_backups (meeting_id, moderator_id)
+           SELECT ?, ? WHERE NOT EXISTS (
+               SELECT 1 FROM meeting_moderators
+                WHERE meeting_id = ? AND moderator_id = ?)""",
+        [(meeting_id, mid, meeting_id, mid) for mid in moderator_ids],
+    )
+
+
+def _meeting_backup_ids(db, meeting_id):
+    return {
+        str(r[0])
+        for r in db.execute(
+            "SELECT moderator_id FROM meeting_backups WHERE meeting_id = ?",
+            (meeting_id,),
+        )
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Meetings
 # --------------------------------------------------------------------------- #
@@ -2806,6 +2842,8 @@ def _save_meeting(db, meeting):
 
     person_id_ints = [int(pid) for pid in person_ids]
     participant_id_ints = [int(m) for m in participant_ids]
+    backup_id_ints = [int(m) for m in request.form.getlist("backup_ids")
+                      if m in mod_ids]
 
     if meeting is None:
         cur = db.execute(
@@ -2856,6 +2894,7 @@ def _save_meeting(db, meeting):
         file.save(UPLOAD_DIR / stored_name)
     _set_person_links(db, "meeting_persons", "meeting_id", meeting_id, person_id_ints)
     _set_meeting_moderators(db, meeting_id, participant_id_ints)
+    _set_meeting_backups(db, meeting_id, backup_id_ints)
     # A rencontre entering arbitration starts with the people already on it
     # pencilled in for every candidate date. The form insists on at least one
     # participant, so without this /repartition would open showing nobody
@@ -2972,6 +3011,7 @@ def edit_meeting(meeting_id):
     return render_template(
         "new_meeting.html", people=people, moderators=mods,
         form=_form_from_row(meeting), selected_ids=linked, selected_mods=linked_mods,
+        selected_backups=_meeting_backup_ids(db, meeting_id),
         current=meeting, today=date.today().isoformat(),
         action_url=url_for("edit_meeting", meeting_id=meeting_id),
         heading="Modifier la rencontre",
@@ -3015,6 +3055,15 @@ def meeting_detail(meeting_id):
         """,
         (meeting_id,),
     ).fetchall()
+    backups = db.execute(
+        """
+        SELECT mo.name FROM moderators mo
+        JOIN meeting_backups mb ON mb.moderator_id = mo.id
+        WHERE mb.meeting_id = ?
+        ORDER BY mo.name COLLATE NOCASE
+        """,
+        (meeting_id,),
+    ).fetchall()
     validator = db.execute(
         "SELECT name FROM moderators WHERE id = ?", (meeting["validated_by"],)
     ).fetchone()
@@ -3024,6 +3073,7 @@ def meeting_detail(meeting_id):
     return render_template(
         "detail.html", m=meeting, people=people,
         participants=[r["name"] for r in participants],
+        backups=[r["name"] for r in backups],
         validated_by=validator["name"] if validator else None,
         recorded_by=recorder["name"] if recorder else None,
         candidates=candidate_slots(meeting) if meeting["alt_dates"] else [],
@@ -3206,6 +3256,7 @@ def todo():
         }
         for m in upcoming
     }
+    backups = {m["id"]: _meeting_backup_ids(db, m["id"]) for m in upcoming}
 
     # One block per utilisateurice; the rows arrive sorted that way, with the
     # « Quiconque » (NULL) last (see _to_contact_rows).
@@ -3228,6 +3279,7 @@ def todo():
         upcoming=upcoming,
         no_place=no_place,
         signed_up=signed_up,
+        backups=backups,
         due_people=due_people,
         contact_people=contact_people,
         due_roles=_todo_roles(due_people.values()),
@@ -3876,6 +3928,8 @@ def sign_up_meeting(meeting_id):
     mod_ids = {str(m["id"]) for m in _moderators(db)}
     chosen = [int(m) for m in request.form.getlist("participant_ids") if m in mod_ids]
     _set_meeting_moderators(db, meeting_id, chosen)
+    _set_meeting_backups(db, meeting_id, [
+        int(m) for m in request.form.getlist("backup_ids") if m in mod_ids])
     db.commit()
     if _is_autosave():
         return "", 204
@@ -4035,6 +4089,12 @@ def confirm_meeting_date(meeting_id):
         (on_date, at_time, meeting_id),
     )
     _set_meeting_moderators(db, meeting_id, going)
+    # Whoever is now going is no longer « en cas de problème ».
+    db.execute(
+        "DELETE FROM meeting_backups WHERE meeting_id = ? AND moderator_id IN "
+        "(SELECT moderator_id FROM meeting_moderators WHERE meeting_id = ?)",
+        (meeting_id, meeting_id),
+    )
     db.execute("DELETE FROM meeting_availability WHERE meeting_id = ?", (meeting_id,))
     db.commit()
 

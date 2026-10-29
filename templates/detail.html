@@ -46,6 +46,13 @@
     {% endif %}
   </div>
 
+  {% if backups %}
+  <div class="field">
+    <label>En cas de problème</label>
+    <p>{% for name in backups %}<span class="tag">{{ name }}</span>{% endfor %}</p>
+  </div>
+  {% endif %}
+
   <div class="grid-2">
     <div class="field">
       <label>Format</label>

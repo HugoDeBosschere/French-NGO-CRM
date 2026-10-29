@@ -789,6 +789,7 @@ a.cal-ev:hover {
 
 .checklist-inline { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin: .45rem 0; }
 .signup-form { margin-top: .3rem; }
+.signup-backup-label { margin: .5rem 0 0; font-size: .9rem; font-weight: 600; }
 
 /* TODO gets its own light red, kept clear of the dark red that flags an
    under-staffed rencontre and of the violet that means "relance". */
