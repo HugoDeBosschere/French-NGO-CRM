@@ -205,6 +205,49 @@ C'était auparavant un `ExecStartPre` de l'import citoyen précédé d'un « - �
 qui avalait son échec — la synchro pouvait s'arrêter des mois sans que
 personne l'apprenne.
 
+## 4 ter. Ce que les élu·es ont dit sur l'IA (`import_veille.py`)
+
+Demande de Romain (27/10/2026) : sur la fiche d'un·e élu·e, voir ses passages
+sur l'IA trouvés par la **veille des élu·es** (dépôt
+[Pause-IA/declarations-elus-ia](https://github.com/Pause-IA/declarations-elus-ia),
+site https://veille.pauseia.fr/). La fiche affiche une section « Sur l'IA,
+d'après la veille » : date, type (séance, question écrite), chambre, famille de
+mots-clés, extrait avec les mots-clés en gras, lien vers la source officielle.
+Elle n'apparaît que pour les élu·es qui ont au moins un passage, et rappelle que
+les extraits sont repérés automatiquement : à relire avant toute citation.
+
+```bash
+python3 utils/import_veille.py --file synthese_elus.json --dry-run
+python3 utils/import_veille.py --file synthese_elus.json
+```
+
+- **Source** : `synthese_elus.json`, produit chaque matin par la veille et rangé
+  sur l'hôte dans `/opt/volunteer-apps/data/veille-elus/`. `import-veille.service`
+  le copie dans le conteneur, puis lance l'import (07:15, heure de Paris).
+- **Rapprochement**, du plus sûr au moins sûr : l'identifiant officiel de la
+  veille (`ids_officiels` : PA… à l'AN, matricule au Sénat, numéro au PE)
+  retrouvé dans `persons.fiche_url` ; sinon le nom (accents et majuscules
+  ignorés) s'il ne désigne qu'une fiche, ou une seule fiche dont la fonction
+  correspond à la chambre. **Deux homonymes indiscernables sont laissés de côté**
+  et listés (« à vérifier ») : un passage sur la mauvaise fiche serait pire
+  qu'un passage absent. Les personnalités auditionnées ne sont pas rapprochées.
+- **Table `veille_passages`**, réécrite en entier à chaque import : relancer ne
+  crée aucun doublon, et une correction côté veille se répercute. Un fichier
+  sans aucune personne arrête le script sans rien effacer. Rien d'autre n'est
+  modifié dans le CRM.
+- **Pas de score** : la fiche montre ce que l'élu·e a dit, sources à l'appui,
+  pas le classement de la veille.
+
+Installation sur le serveur :
+
+```bash
+sudo cp utils/deploy/import-veille.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start import-veille.service      # un premier passage tout de suite
+journalctl -u import-veille.service -n 30
+sudo systemctl enable --now import-veille.timer
+```
+
 ## 4 bis. Fusionner les fiches en double (`fusionner_doublons.py`)
 
 Les scripts d'insertion apparient par (nom normalisé, type de contact) : une

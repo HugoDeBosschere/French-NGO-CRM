@@ -203,6 +203,30 @@
   </div>
 </div>
 
+{# Passages sur l'IA trouvés automatiquement par la veille des élu·es
+   (utils/import_veille.py). Rien n'est affiché pour qui n'a jamais été repéré :
+   la section n'aurait rien à dire. #}
+{% if veille %}
+<h2 class="section-title section-veille">Sur l'IA, d'après la veille</h2>
+<div class="veille-liste">
+  {% for v in veille %}
+  {% if loop.index == 6 %}<details class="veille-suite"><summary>Voir les {{ veille|length - 5 }} autres passages</summary>{% endif %}
+  <div class="card veille-passage">
+    <p class="veille-entete">
+      <span class="nowrap">{{ v['date'] | fr_date }}</span> ·
+      {{ v['type'] | capitalize }}{% if v['chambre'] %} · {{ v['chambre'] }}{% endif %}
+      {% for f in v['familles'] %}<span class="tag tag-veille">{{ f }}</span>{% endfor %}
+    </p>
+    <p class="veille-extrait">« {% for texte, gras in v['segments'] %}{% if gras %}<strong>{{ texte }}</strong>{% else %}{{ texte }}{% endif %}{% endfor %} »</p>
+    {% if v['lien'] %}<p class="hint"><a href="{{ v['lien'] }}" target="_blank" rel="noopener noreferrer">Lire la source officielle ↗</a></p>{% endif %}
+  </div>
+  {% if loop.last and loop.length > 5 %}</details>{% endif %}
+  {% endfor %}
+</div>
+<p class="hint">Extraits repérés automatiquement par mots-clés (veille du {{ veille[0]['genere_le'] | fr_date }}) :
+  relire la source avant de citer ou de s'appuyer sur un passage.</p>
+{% endif %}
+
 {# Every pane carries the same small line, full or empty, so « et maintenant ? »
    is answered in the same place and the same way throughout. #}
 <h2 class="section-title section-interventions">Interventions</h2>

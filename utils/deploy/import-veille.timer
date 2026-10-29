@@ -1,0 +1,13 @@
+[Unit]
+Description=Import quotidien des passages de la veille des élu·es dans le CRM
+
+[Timer]
+# La veille tourne à 06:00 (heure de Paris), avec jusqu'à 10 min de décalage,
+# et dure quelques minutes. 07:15 lui laisse le temps de finir, et passe avant
+# civicrm-sync (06:30 UTC, soit 07:30 l'hiver). Si la veille n'a pas fini, on
+# importe le fichier de la veille précédente : rien de cassé, un jour de retard.
+OnCalendar=*-*-* 07:15:00 Europe/Paris
+Persistent=true
+
+[Install]
+WantedBy=timers.target

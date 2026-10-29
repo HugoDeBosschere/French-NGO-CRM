@@ -1,0 +1,21 @@
+[Unit]
+Description=Passages sur l'IA de la veille des élu·es, sur les fiches du CRM
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+# Prévient en cas d'échec (unité modèle alerte@.service).
+OnFailure=alerte@%n.service
+
+[Service]
+Type=oneshot
+# utils/ n'est pas dans l'image : le restaurer seulement s'il manque. Ne jamais
+# le supprimer ici (rm -rf) : civicrm-sync peut être en train de lire ces
+# fichiers (voir import-member-mails.service).
+ExecStartPre=/bin/sh -c '/usr/bin/docker exec website-meeting-app test -f /app/utils/import_veille.py || /usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils'
+# La veille (conteneur veille-elus-ia, dépôt Pause-IA/declarations-elus-ia)
+# range son fichier sur l'hôte, dans son volume de données. L'hôte sert
+# d'intermédiaire, comme pour CiviCRM : aucune des deux applications n'appelle
+# l'autre, aucun jeton à partager.
+ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/data/veille-elus/synthese_elus.json website-meeting-app:/tmp/synthese_elus.json
+ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/import_veille.py --file /tmp/synthese_elus.json --db /app/meetings.db

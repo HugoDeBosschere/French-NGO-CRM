@@ -23,6 +23,7 @@ import calendar as pycalendar
 import contextlib
 import email
 import fcntl
+import json
 import math
 import os
 import random
@@ -1438,6 +1439,26 @@ def _init_db_locked():
         );
         CREATE INDEX IF NOT EXISTS idx_person_emails_person
             ON person_emails(person_id);
+
+        -- Passages sur l'IA trouvés par la veille des élu·es
+        -- (veille.pauseia.fr), affichés sur la fiche. Réécrite en entier par
+        -- utils/import_veille.py à chaque import : jamais saisie à la main.
+        -- Même schéma que SCHEMA dans ce script.
+        CREATE TABLE IF NOT EXISTS veille_passages (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id  INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            date       TEXT,
+            chambre    TEXT,
+            type       TEXT,
+            poids      INTEGER,
+            mots       TEXT,
+            extrait    TEXT,
+            marques    TEXT,
+            lien       TEXT,
+            genere_le  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_veille_passages_person
+            ON veille_passages(person_id);
 
         -- Staging tables. Anonymous users (no password) submit drafts here via
         -- the "Déclarer une activité" forms. A certified user reviews them on the
@@ -4273,6 +4294,52 @@ def delete_person(person_id):
     return redirect(url_for("people"))
 
 
+def _segments_veille(extrait, marques):
+    """Découpe l'extrait en [(texte, gras)] : les mots-clés que la veille a
+    repérés sont mis en gras par le gabarit, sans jamais injecter de HTML."""
+    segments, pos = [], 0
+    for debut, fin in sorted(marques or []):
+        if not (isinstance(debut, int) and isinstance(fin, int)):
+            continue
+        debut, fin = max(debut, pos), min(fin, len(extrait))
+        if debut >= fin:
+            continue
+        if debut > pos:
+            segments.append((extrait[pos:debut], False))
+        segments.append((extrait[debut:fin], True))
+        pos = fin
+    if pos < len(extrait):
+        segments.append((extrait[pos:], False))
+    return segments
+
+
+def _passages_veille(db, person_id):
+    """Les passages sur l'IA de la veille des élu·es pour cette fiche, du plus
+    récent au plus ancien. Liste vide si la table n'existe pas encore."""
+    try:
+        rows = db.execute(
+            "SELECT * FROM veille_passages WHERE person_id = ? "
+            "ORDER BY date DESC, poids DESC, id", (person_id,)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    passages = []
+    for r in rows:
+        try:
+            mots = json.loads(r["mots"] or "{}")
+            marques = json.loads(r["marques"] or "[]")
+        except ValueError:
+            mots, marques = {}, []
+        passages.append({
+            "date": r["date"], "chambre": r["chambre"], "type": r["type"],
+            "familles": sorted(mots),
+            "mots": sorted({m for liste in mots.values() for m in liste}),
+            "segments": _segments_veille(r["extrait"] or "", marques),
+            "lien": r["lien"] if (r["lien"] or "").startswith("https://") else "",
+            "genere_le": r["genere_le"],
+        })
+    return passages
+
+
 @app.route("/people/<int:person_id>")
 @login_required
 def person_detail(person_id):
@@ -4365,6 +4432,7 @@ def person_detail(person_id):
     return render_template(
         "person_detail.html",
         p=person,
+        veille=_passages_veille(db, person_id),
         autres_adresses=autres_adresses,
         email_deduit=email_deduit,
         organisations=organisations,
