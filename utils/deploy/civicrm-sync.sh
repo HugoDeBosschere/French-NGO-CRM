@@ -228,7 +228,11 @@ say "5/5  Re-linking the mails that were waiting"
 if [ -n "$COMMIT" ]; then
   # A full sweep: the mails skipped earlier now match. `imported_mails` dedups,
   # so nothing is recorded twice.
-  docker exec "$CRM_CONTAINER" python3 /app/utils/import_member_mails.py --backfill
+  # `timeout` DANS le conteneur : quand systemd coupe ce service, il ne tue que
+  # le client `docker exec` ; le Python continuait seul dans le conteneur et
+  # gardait la base occupée (alertes « database is locked » du 29/10/2026).
+  # 110 min, juste sous TimeoutStartSec=2h (civicrm-sync.service).
+  docker exec "$CRM_CONTAINER" timeout 110m python3 /app/utils/import_member_mails.py --backfill
 else
   echo "   (dry-run : import_member_mails.py --backfill non lancé)"
 fi

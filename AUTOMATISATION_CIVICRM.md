@@ -94,6 +94,41 @@ journalctl -u civicrm-sync -n 40        # après le premier passage
 Lancez d'abord `sudo /opt/scripts/civicrm-sync.sh` **sans `--commit`** : rien
 n'est écrit et la sortie dit exactement ce qui serait créé.
 
+### Si des alertes « database is locked » arrivent
+
+Le 29/10/2026, `import-member-mails.service` échouait toutes les dix minutes sur
+`sqlite3.OperationalError: database is locked`, et `civicrm-sync.service` était
+coupé à 30 minutes (« start operation timed out »). Il y avait trois causes :
+
+- le balayage complet de l'étape 5 (`import_member_mails.py --backfill`, plus de
+  4 400 courriels) gardait une transaction d'écriture ouverte pendant qu'il
+  téléchargeait les courriels. Désormais, chaque courriel est validé aussitôt
+  (`tests/test_import_verrou.py`) ;
+- ce balayage ne tenait plus dans les 30 minutes du service : la limite passe à
+  2 h ;
+- quand systemd coupe le service, il ne tue que le client `docker exec`, pas le
+  Python lancé dans le conteneur, qui continuait seul. L'étape 5 tourne donc
+  sous `timeout 110m` dans le conteneur.
+
+Pour vérifier qu'aucun balayage orphelin ne tourne encore dans le conteneur :
+
+```bash
+sudo docker top website-meeting-app | grep import_member_mails
+```
+
+Une ligne `--backfill` en dehors du créneau de 06:30 UTC est un orphelin. On
+peut l'arrêter sans risque (`sudo kill <PID>`, le PID de la 2e colonne) :
+chaque courriel déjà validé reste acquis, et `imported_mails` évite les
+doublons au passage suivant.
+
+Après la mise à jour du code, recopier les deux fichiers de déploiement modifiés :
+
+```bash
+sudo cp utils/deploy/civicrm-sync.sh /opt/scripts/ && sudo chmod +x /opt/scripts/civicrm-sync.sh
+sudo cp utils/deploy/civicrm-sync.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
 ### Pourquoi deux requêtes pour les adresses
 
 CiviCRM porte **~1,6 adresse par journaliste** (21 401 adresses pour 12 987
