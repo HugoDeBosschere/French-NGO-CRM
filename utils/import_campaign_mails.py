@@ -877,6 +877,10 @@ def main():
             queued += result == "queued"
             unmatched += result == "unmatched"
             max_uid = max(max_uid, uid)
+            # Même règle que import_member_mails.py : ne jamais garder la base
+            # verrouillée pendant le téléchargement du courriel suivant.
+            if not args.dry_run and db.in_transaction:
+                db.commit()
 
         if not args.dry_run:
             set_last_uid(db, mailbox, max_uid)

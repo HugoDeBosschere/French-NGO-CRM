@@ -912,6 +912,14 @@ def main():
                         if args.verbose:
                             log(f"  [skip] {decoded(msg.get('Subject'))!r}")
             max_uid = max(max_uid, uid)
+            # Valider tout de suite ce que ce courriel a écrit. Sans cela, la
+            # transaction ouverte par la première écriture restait ouverte
+            # pendant le téléchargement des courriels suivants, et SQLite
+            # refusait toute autre écriture : au-delà de 30 s (busy_timeout),
+            # l'import de 10 minutes échouait sur « database is locked »
+            # pendant le balayage complet de civicrm-sync (alertes du 29/10/2026).
+            if not args.dry_run and db.in_transaction:
+                db.commit()
             if not args.dry_run and (index + 1) % COMMIT_EVERY == 0:
                 # UIDs come in ascending order, so recording the highest one
                 # seen is an honest resume point.

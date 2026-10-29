@@ -16,9 +16,13 @@ Type=oneshot
 # Stripe/HelloAsso contributions. It refreshes /app/utils itself, so no
 # ExecStartPre is needed here.
 ExecStart=/opt/scripts/civicrm-sync.sh --commit
-# A few dozen cv calls plus a --backfill sweep of the audit mailbox. Far under
-# this in practice, but a hung IMAP connection must not wedge the timer.
-TimeoutStartSec=30min
+# A few dozen cv calls plus a --backfill sweep of the audit mailbox. The sweep
+# re-reads every message, and the mailbox grows: at ~4 500 messages (10/2026) it
+# no longer fit in 30 minutes and was killed every morning. Since the importer
+# commits after each message, a long sweep no longer blocks anyone. The sweep
+# itself is capped at 110 min inside the container (civicrm-sync.sh, step 5),
+# because killing this unit does not stop a process started by `docker exec`.
+TimeoutStartSec=2h
 # A CiviCRM upgrade that renames a custom field makes the contract test abort
 # with a non-zero status, and that is the point: it belongs in the journal, not
 # retried into silence. `journalctl -u civicrm-sync` shows what it could not map.
