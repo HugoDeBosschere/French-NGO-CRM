@@ -95,6 +95,9 @@ chamber.
   (`added_by IS NULL`, `contact_type = 'Politique'`) is filled; nobody's is
   guessed from a prénom. Run it by hand once after deploying the column:
   `python3 utils/backfill_genre.py` (dry run), then `--commit`.
+  Self-contained: it reads the datasets itself and depends on no other script
+  (it used to import `export_contacts_xlsx.py`, never committed, which broke
+  `sync-officials` on 02/11/2026).
 - **Disk-safe:** the large AN dump is removed after extraction.
 - **Election-proof-ish:** the AN dump URL carries the legislature number
   (`AN_LEGISLATURE`, default `17`); bump it after a general election.
