@@ -305,21 +305,76 @@ rater : `cp meetings.db` **ne suffit plus** comme sauvegarde. Les écritures
 récentes vivent dans `meetings.db-wal` jusqu'au prochain checkpoint, et une
 copie du seul fichier principal les perd — en ayant l'air parfaitement valide.
 Utiliser `utils/backup_db.py`, qui fait un `VACUUM INTO` : un fichier unique et
-cohérent, pris à chaud, sans arrêter l'application. Le `Dockerfile` ne copie que `app.py` + `templates/` + `static/` ;
-`utils/` et `actual_dataset/` sont injectés à l'exécution par `docker cp`.
+cohérent, pris à chaud, sans arrêter l'application. C'est ce que lance
+`backup-db.service`, déjà installé sur le serveur.
+
+### La procédure
 
 ```bash
 cd /opt/volunteer-apps/apps/website-meeting
-sudo docker exec website-meeting-app python3 /app/utils/backup_db.py   # PAS un cp, voir ci-dessous
-git fetch <remote> && git checkout -f <remote>/main    # la prod suit main
-sudo docker-compose build && sudo docker-compose up -d  # init_db applique les migrations
-sudo docker logs --tail 15 website-meeting-app          # vérifier: pas de traceback
-# peuplement éventuel :
-sudo docker exec website-meeting-app rm -rf /app/utils
-sudo docker cp utils website-meeting-app:/app/utils
-sudo docker cp actual_dataset website-meeting-app:/app/actual_dataset   # si le script lit un JSON
-sudo docker exec website-meeting-app python3 /app/utils/<script>.py [--commit]
+
+# 1. Sauvegarder avant toute chose : init_db applique les migrations au
+#    démarrage du conteneur, c'est l'étape qui peut abîmer les données.
+sudo systemctl start backup-db.service
+ls -lh /opt/volunteer-apps/backups/website-meeting | tail -2
+
+# 2. Regarder ce qui arrive, et surtout si des unités systemd ont changé.
+git fetch origin main
+git diff --stat HEAD..origin/main
+git diff --name-only HEAD..origin/main -- utils/deploy/
+
+# 3. Mettre à jour et reconstruire. La prod suit main.
+sudo git pull
+sudo docker-compose build && sudo docker-compose up -d
+
+# 4. Vérifier : gunicorn démarre, ses workers aussi, aucun traceback.
+sudo docker logs --tail 20 website-meeting-app
 ```
+
+### Trois pièges, tous rencontrés en production
+
+**1. C'est la reconstruction qui déploie, pas le `git pull`.** Le `Dockerfile`
+copie `app.py`, `templates/`, `static/`, **`utils/` et `actual_dataset/`** dans
+l'image. Un `pull` sans `docker-compose build` laisse donc le conteneur sur
+l'ancien code, sans aucun signe visible.
+
+**2. Les unités systemd ne suivent pas le dépôt.** Les fichiers de
+`utils/deploy/` sont des modèles ; ce qui tourne est la copie dans
+`/etc/systemd/system/`. Si l'étape 2 en montre un de modifié :
+
+```bash
+sudo cp utils/deploy/<unité>.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+Le 02/11/2026, `civicrm-sync` se faisait tuer chaque matin depuis des semaines :
+son `TimeoutStartSec` était passé de 30 min à 2 h dans le dépôt, mais personne
+n'avait recopié l'unité.
+
+**3. Les scripts de `utils/` ne tournent pas tout seuls.** Toujours un
+`--dry-run` d'abord, dont on lit la sortie, avant le passage réel :
+
+```bash
+sudo docker exec -e IMAP_DB_PATH=/app/meetings.db website-meeting-app \
+  python3 /app/utils/<script>.py --dry-run
+```
+
+### Modifier `utils/` sans reconstruire
+
+Possible pour un correctif urgent, mais à éviter : le conteneur et le dépôt
+divergent alors silencieusement, et la prochaine reconstruction écrase la
+retouche. Copier **fichier par fichier**, jamais le dossier — `docker cp` d'un
+dossier sur un dossier existant l'imbrique (`/app/utils/utils`), et un
+`rm -rf /app/utils` préalable couperait `civicrm-sync` s'il est en train de lire
+ces fichiers :
+
+```bash
+sudo docker cp utils/<fichier>.py website-meeting-app:/app/utils/<fichier>.py
+```
+
+C'est aussi pourquoi `import-member-mails.service` ne restaure `/app/utils` que
+s'il manque : il tourne toutes les dix minutes, et le recopier à chaque passage
+écraserait ces fichiers sous les pieds des autres travaux.
 
 ## 7. Où regarder en premier
 
