@@ -25,13 +25,46 @@ import sqlite3
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-
-from export_contacts_xlsx import (  # noqa: E402
-    DATA, deputes_genders, eurodeputes_genders, senateurices_genders)
-
 ROOT = os.path.dirname(HERE)
 DB = os.environ.get("IMAP_DB_PATH") or os.path.join(ROOT, "meetings.db")
+DATA = os.path.join(ROOT, "actual_dataset")
+
+# Les trois lecteurs ci-dessous venaient d'export_contacts_xlsx.py, un script
+# d'export ponctuel resté hors du dépôt : sync-officials.service échouait le
+# 02/11/2026 sur « No module named 'export_contacts_xlsx' ». Ils vivent
+# désormais ici, pour que ce script ne dépende de rien d'autre.
+
+
+def deputes_genders():
+    """Assemblée nationale dump: `sexe` is "H" or "F", name is the `nom` field
+    (the whole name), which is what insert_deputes.py wrote to `persons`."""
+    src = json.load(open(os.path.join(DATA, "deputes_officiel.json"), encoding="utf-8"))
+    genre = {"H": "Homme", "F": "Femme"}
+    return {
+        d["depute"]["nom"]: genre.get(d["depute"].get("sexe"), "")
+        for d in src["deputes"]
+    }
+
+
+def senateurices_genders():
+    """Sénat dump: read `civilite` ("M." / "Mme"), not `feminise` — the latter
+    says whether the person's title is spelled in the feminine, which is a
+    different question and does not line up with the count of women."""
+    src = json.load(
+        open(os.path.join(DATA, "senateurices_actifs.json"), encoding="utf-8")
+    )
+    genre = {"M.": "Homme", "Mme": "Femme"}
+    return {
+        f"{s['prenom']} {s['nom']}".strip(): genre.get(s.get("civilite"), "")
+        for s in src
+    }
+
+
+def eurodeputes_genders():
+    """European Parliament dump: extract_eurodeputes.py already resolved the EU
+    `hasGender` vocabulary to "Homme" / "Femme", so read it straight off."""
+    src = json.load(open(os.path.join(DATA, "eurodeputes_fr.json"), encoding="utf-8"))
+    return {m["nom_complet"]: m.get("genre", "") for m in src}
 
 
 def gouvernement_genders():
