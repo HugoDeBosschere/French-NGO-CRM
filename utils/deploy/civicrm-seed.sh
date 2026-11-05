@@ -30,7 +30,6 @@ SEED_GROUP_ID="${SEED_GROUP_ID:-12}"
 CIVI_CONTAINER="${CIVI_CONTAINER:-civicrm-web}"
 CRM_CONTAINER="${CRM_CONTAINER:-website-meeting-app}"
 CIVI_CWD="${CIVI_CWD:-/var/www/html}"
-REPO="${REPO:-/opt/volunteer-apps/apps/website-meeting}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -40,9 +39,7 @@ COMMIT=""
 say() { printf '\n== %s\n' "$*"; }
 civi() { docker exec "$CIVI_CONTAINER" cv api4 "$1" "$2" --cwd="$CIVI_CWD" 2>/dev/null; }
 
-say "0/3  Refreshing utils/ inside $CRM_CONTAINER"
-docker exec "$CRM_CONTAINER" rm -rf /app/utils
-docker cp "$REPO/utils" "$CRM_CONTAINER:/app/utils"
+# utils/ est dans l'image (deploy/Dockerfile) : rien à recopier.
 
 say "1/3  Médias first — a seeded journalist needs their média to exist"
 "$(dirname "$0")/civicrm-sync.sh" --medias-only ${COMMIT:+--commit} || true

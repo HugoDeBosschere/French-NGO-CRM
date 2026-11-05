@@ -242,7 +242,7 @@ fails as read-only:
 
 ```bash
 # on the server, after the code deploy above
-sudo docker cp utils website-meeting-app:/app/utils    # image ships no utils/
+# utils/ ships with the image: rebuild it (docker-compose build) after the pull
 sudo docker exec website-meeting-app \
      python3 /app/utils/insert_medias_journalistes.py            # dry run
 sudo docker exec website-meeting-app \

@@ -10,14 +10,11 @@ OnFailure=alerte@%n.service
 
 [Service]
 Type=oneshot
-# Refresh utils/ in the container first (image doesn't ship it; restarts drop it).
-ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
-ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
-# Seed the committed datasets (senators/government JSON) so a chamber whose fetch
-# fails still has a baseline. rm first: docker cp of a dir onto an existing dir
-# would nest it (/app/actual_dataset/actual_dataset).
-ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/actual_dataset
-ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/actual_dataset website-meeting-app:/app/actual_dataset
+# utils/ et actual_dataset/ sont dans l'image (deploy/Dockerfile) : plus de
+# recopie avant chaque passage. Elle faisait un `rm -rf /app/utils` qui pouvait
+# couper un autre travail en train de lire ces fichiers (civicrm-sync,
+# import-member-mails). Les jeux de données de l'image servent de base si le
+# téléchargement d'une chambre échoue.
 # Downloads the AN dump (zip), the Sénat API JSON and the government list, then
 # runs extract+insert per chamber. Each chamber is isolated; inserts are
 # idempotent (departed members reported, never deleted).

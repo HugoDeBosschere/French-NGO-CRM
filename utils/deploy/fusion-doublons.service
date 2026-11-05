@@ -13,8 +13,7 @@ OnFailure=alerte@%n.service
 
 [Service]
 Type=oneshot
-ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
-ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# utils/ est dans l'image (deploy/Dockerfile) : rien à recopier avant le passage.
 # Une sauvegarde AVANT, parce que c'est le seul travail planifié qui SUPPRIME
 # des lignes. `VACUUM INTO` et non `cp` : la base est en WAL.
 ExecStartPre=/usr/bin/docker exec website-meeting-app python3 /app/utils/backup_db.py

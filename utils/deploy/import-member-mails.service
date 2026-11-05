@@ -13,11 +13,7 @@ Type=oneshot
 # Runs every 10 minutes: never let two runs overlap on the same mailbox.
 # (systemd already refuses to start a service that is still running; this
 # states the intent for anyone shortening the interval further.)
-# utils/ is not in the image and a container restart drops it, so it has to be
-# restored — but ONLY when missing. Copying it on every run was fine daily; at
-# one run per ten minutes it would `rm -rf /app/utils` under civicrm-sync's feet
-# while that script is reading those very files.
-ExecStartPre=/bin/sh -c '/usr/bin/docker exec website-meeting-app test -f /app/utils/import_member_mails.py || /usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils'
+# utils/ est dans l'image (deploy/Dockerfile) : rien à recopier avant le passage.
 
 # Reads the audit mailbox that the Gmail routing rule copies member↔élu mail into.
 # Secrets file supplies MEMBER_IMAP_USER / MEMBER_IMAP_APP_PASSWORD; add

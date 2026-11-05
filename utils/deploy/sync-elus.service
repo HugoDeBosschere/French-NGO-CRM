@@ -18,7 +18,5 @@ OnFailure=alerte@%n.service
 
 [Service]
 Type=oneshot
-# L'image ne contient pas utils/, et un redémarrage du conteneur le perd.
-ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
-ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# utils/ est dans l'image (deploy/Dockerfile) : rien à recopier avant le passage.
 ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/sync_emails_from_elus.py --db /app/meetings.db

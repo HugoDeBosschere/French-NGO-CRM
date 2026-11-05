@@ -5,12 +5,12 @@
 # The scripts run INSIDE the app container, via `docker exec`, so they run as the
 # same user that owns and writes meetings.db (running them on the host as a
 # different user hits "attempt to write a readonly database"). The container
-# image does not ship utils/, so we `docker cp` the scripts in first. Everything
+# image ships utils/ (deploy/Dockerfile): rebuild it to deploy new scripts. Everything
 # is stdlib-only Python; the only requirement is that the container has outbound
 # network (for IMAP and the elus.json fetch), which it does.
 #
-# Prerequisite: the server checkout carries this branch's utils/ (e.g.
-#   git fetch romain && git checkout romain/<branch> -- utils/ )
+# Prerequisite: the image was rebuilt from the up-to-date checkout
+#   (docker-compose build && docker-compose up -d, see CLAUDE.md)
 # and the secrets env file contains IMAP_USER and IMAP_APP_PASSWORD.
 #
 # Usage (from the app dir, /opt/volunteer-apps/apps/website-meeting):
@@ -49,13 +49,14 @@ in_container() {
         "$CONTAINER" python3 "/app/utils/$@"
 }
 
-echo "== 1/5  Copy scripts into the container =="
-# Remove any previous copy first: `docker cp src container:/app/utils` NESTS into
-# an existing dir (creating /app/utils/utils and leaving stale files behind), so
-# a plain re-copy would keep running old code. Wipe then copy for a clean state.
-$DOCKER exec "$CONTAINER" rm -rf /app/utils
-$DOCKER cp utils "$CONTAINER":/app/utils
-echo "   utils/ copied to $CONTAINER:/app/utils"
+echo "== 1/5  Check the scripts are in the container =="
+# utils/ comes with the image. No `rm -rf /app/utils` + `docker cp` any more:
+# it could cut a scheduled job (civicrm-sync, import-member-mails) mid-read.
+if ! $DOCKER exec "$CONTAINER" test -f /app/utils/import_campaign_mails.py; then
+    echo "   /app/utils/import_campaign_mails.py missing: rebuild the image first." >&2
+    exit 1
+fi
+echo "   utils/ present in $CONTAINER:/app/utils"
 
 echo "== 2/5  Backup the database =="
 if [ "$DRY_RUN" = "1" ]; then
