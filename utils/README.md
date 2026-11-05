@@ -630,7 +630,7 @@ correspondent plus) et combien ont été laissées de côté par prudence.
 
 On the server, one script does the whole rollout — DB backup, email sync,
 backfill, and the systemd timer. It runs the Python **inside the app container**
-(via `docker cp` + `docker exec`) so it executes as the user that owns
+(via `docker exec`; `utils/` ships with the image) so it executes as the user that owns
 `meetings.db`; running it on the host as another user fails with "attempt to
 write a readonly database". The container needs outbound network (for IMAP and
 the elus.json fetch), which it has:
@@ -725,7 +725,7 @@ a écrit, en lecture seule, orchestrés depuis l'hôte.
 | `mailpatterns.py` | La convention d'adresses de chaque média, apprise sur les adresses connues. Sert à **reconnaître** une adresse, jamais à en construire une pour y écrire. Un gabarit est retenu s'il explique au moins 60 % des adresses du domaine (`MIN_SHARE`) : l'unanimité exigée au départ laissait une exception historique annuler une rédaction de 2 000 adresses. |
 | `deploy/civicrm-seed.sh` | Amorçage, une fois : crée les fiches d'un groupe presse restreint, sans quoi aucune adresse de presse n'est rattachable ni aucune convention apprenable. |
 | `deploy/backup-db.{sh,service,timer}` | Sauvegarde nocturne (03:17) : dans le conteneur, puis **sortie sur l'hôte**, puis hors machine si `RSYNC_DEST`. C'est le seul filet de l'outil. |
-| `deploy/civicrm-sync.sh` | Le cycle quotidien : `cv` → `docker cp` → scripts. Planifié à 06:30 par `civicrm-sync.timer`, après l'import des mails de membres de 06:10. |
+| `deploy/civicrm-sync.sh` | Le cycle quotidien : `cv` → `docker cp` des fichiers JSON → scripts. Planifié à 06:30 par `civicrm-sync.timer`, après l'import des mails de membres de 06:10. |
 
 Ordre de mise en route : `civicrm-seed.sh --commit`, puis activer
 `civicrm-sync.timer`. Rien à faire côté Google Workspace — sa règle copie déjà

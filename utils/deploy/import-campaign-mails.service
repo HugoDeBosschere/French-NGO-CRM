@@ -10,12 +10,7 @@ OnFailure=alerte@%n.service
 
 [Service]
 Type=oneshot
-# The container image does not ship utils/, and a container restart drops any
-# earlier copy, so refresh it from the server checkout before each run. Wipe any
-# existing copy first: `docker cp` into an existing dir nests (/app/utils/utils)
-# and would leave stale code behind.
-ExecStartPre=-/usr/bin/docker exec website-meeting-app rm -rf /app/utils
-ExecStartPre=/usr/bin/docker cp /opt/volunteer-apps/apps/website-meeting/utils website-meeting-app:/app/utils
+# utils/ est dans l'image (deploy/Dockerfile) : rien à recopier avant le passage.
 # La synchronisation des adresses, portraits et fiches depuis elus.json a sa
 # propre unité (sync-elus.service, 05:55) : ici, précédée d'un « - », son échec
 # était avalé et la synchro pouvait s'arrêter des mois sans que personne le

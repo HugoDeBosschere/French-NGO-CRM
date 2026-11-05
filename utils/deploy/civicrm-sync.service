@@ -13,8 +13,8 @@ Type=oneshot
 # The script drives both containers from the host: `cv api4 …` inside
 # civicrm-web, the importers inside website-meeting-app. Every CiviCRM call is a
 # `.get` — nothing here can write to CiviCRM, which holds the donors and the
-# Stripe/HelloAsso contributions. It refreshes /app/utils itself, so no
-# ExecStartPre is needed here.
+# Stripe/HelloAsso contributions. utils/ is in the image
+# (deploy/Dockerfile): nothing to copy first.
 ExecStart=/opt/scripts/civicrm-sync.sh --commit
 # A few dozen cv calls plus a --backfill sweep of the audit mailbox. The sweep
 # re-reads every message, and the mailbox grows: at ~4 500 messages (10/2026) it

@@ -214,8 +214,7 @@ parlementaires restent un plancher.
 - `import-member-mails` (**toutes les 10 min**, `OnUnitActiveSec=10min`) — la
   capture Workspace est instantanée, seul cet import faisait attendre ; sans
   `--backfill` il ne lit que les UID nouveaux, donc un passage à vide ne coûte
-  rien. Le service ne recopie `utils/` que si elle manque (sinon il effacerait
-  ce répertoire sous les pieds de `civicrm-sync`).
+  rien. Il lit `utils/` dans l'image, sans rien recopier.
 - `civicrm-sync` (06:30) — **après** l'import des mails de membres, qui est
   précisément ce qui remplit la file que cette synchro vide.
 - `sync-elus` (05:55, adresses + portraits + fiches officielles depuis
@@ -372,9 +371,11 @@ ces fichiers :
 sudo docker cp utils/<fichier>.py website-meeting-app:/app/utils/<fichier>.py
 ```
 
-C'est aussi pourquoi `import-member-mails.service` ne restaure `/app/utils` que
-s'il manque : il tourne toutes les dix minutes, et le recopier à chaque passage
-écraserait ces fichiers sous les pieds des autres travaux.
+Aucune unité systemd ni aucun script ne recopie plus `utils/` avant de tourner
+(depuis le 05/11/2026) : tous lisent la version de l'image. Les anciens
+`rm -rf /app/utils` + `docker cp` pouvaient couper un travail en cours de
+lecture (`civicrm-sync`, `import-member-mails` qui tourne toutes les dix
+minutes).
 
 ## 7. Où regarder en premier
 

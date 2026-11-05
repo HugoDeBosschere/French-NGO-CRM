@@ -32,7 +32,6 @@ PRESS_GROUP_IDS="${PRESS_GROUP_IDS:-12,28,69}"
 CIVI_CONTAINER="${CIVI_CONTAINER:-civicrm-web}"
 CRM_CONTAINER="${CRM_CONTAINER:-website-meeting-app}"
 CIVI_CWD="${CIVI_CWD:-/var/www/html}"
-REPO="${REPO:-/opt/volunteer-apps/apps/website-meeting}"
 WORK="$(mktemp -d)"
 
 # `set -e` interrompt le script à la première erreur : sans ce piège, une
@@ -66,9 +65,9 @@ say() { printf '\n== %s\n' "$*"; }
 # cv prints PHP startup warnings on stderr; keep stdout clean for the JSON.
 civi() { docker exec "$CIVI_CONTAINER" cv api4 "$1" "$2" --cwd="$CIVI_CWD" 2>/dev/null; }
 
-say "0/5  Refreshing utils/ inside $CRM_CONTAINER"
-docker exec "$CRM_CONTAINER" rm -rf /app/utils
-docker cp "$REPO/utils" "$CRM_CONTAINER:/app/utils"
+# utils/ est dans l'image (deploy/Dockerfile) : plus de recopie ici. Son
+# `rm -rf /app/utils` pouvait tomber pendant import-member-mails, qui
+# tourne toutes les dix minutes et lit ces mêmes fichiers.
 
 # --------------------------------------------------------------------------- #
 say "1/5  Médias (organisations) from CiviCRM"

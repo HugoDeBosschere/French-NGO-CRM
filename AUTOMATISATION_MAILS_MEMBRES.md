@@ -146,9 +146,10 @@ même classifieur que l'import automatique
 Un `Message-ID` déjà connu est ignoré : on peut redéposer un fil entier sans
 créer de doublon. Un fichier illisible n'emporte pas les autres du même dépôt.
 
-**Dépendance à connaître** : le Dockerfile ne copie pas `utils/`, injecté à
-l'exécution par `docker cp`. `app.py` l'importe donc tardivement et affiche un
-message explicite s'il manque, au lieu de refuser de démarrer.
+**Dépendance à connaître** : `utils/` est copié dans l'image par le Dockerfile
+(depuis 10/2026 ; avant, il était injecté à l'exécution par `docker cp`).
+`app.py` l'importe tardivement et affiche un message explicite s'il manque, au
+lieu de refuser de démarrer.
 
 ## 6. Fonctionnement en continu (automatique)
 
@@ -241,10 +242,9 @@ sudo systemctl enable --now sync-officials.timer
 > `sync-eurodeputes` est **obsolète** (`sudo systemctl disable --now
 > sync-eurodeputes.timer`).
 
-> ⚠️ Le conteneur ne contient ni `utils/` ni `actual_dataset/` (le Dockerfile ne
-> copie que `app.py`/templates/static). Les services les recopient (`docker cp`)
-> avant chaque exécution — d'abord `rm -rf` la cible pour éviter l'imbrication.
-> Les changements d'`app.py` / templates nécessitent un `docker-compose build`.
+> ⚠️ `utils/` et `actual_dataset/` sont dans l'image (deploy/Dockerfile) : les
+> services ne les recopient plus. Tout changement d'`app.py`, des templates ou
+> de `utils/` se déploie par `docker-compose build && docker-compose up -d`.
 
 **Logs** :
 `journalctl -u import-member-mails.service -n 50` ·
