@@ -222,7 +222,9 @@ parlementaires restent un plancher.
   « - » : son échec était avalé, donc la synchro pouvait s'arrêter des mois
   sans que personne l'apprenne. Unité séparée, avec `OnFailure`.
 - `fusion-doublons` (07:10, **après** `civicrm-sync`) — le seul travail
-  planifié qui SUPPRIME des lignes, d'où la sauvegarde en `ExecStartPre` et la
+  planifié qui SUPPRIME des lignes, d'où la sauvegarde en `ExecStartPre`
+  (`/tmp/avant-fusion` du conteneur, 3 au plus : sans `--keep`, une copie par
+  jour s'empilait à côté de `/app/meetings.db`) et la
   limite de 50 fiches par passage (`--max`), au-delà de laquelle il s'arrête
   et alerte plutôt que de nettoyer en masse sans témoin. Les noms seulement
   ressemblants ne sont jamais fusionnés automatiquement : `--approchants` les

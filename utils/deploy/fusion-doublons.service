@@ -16,5 +16,9 @@ Type=oneshot
 # utils/ est dans l'image (deploy/Dockerfile) : rien à recopier avant le passage.
 # Une sauvegarde AVANT, parce que c'est le seul travail planifié qui SUPPRIME
 # des lignes. `VACUUM INTO` et non `cp` : la base est en WAL.
-ExecStartPre=/usr/bin/docker exec website-meeting-app python3 /app/utils/backup_db.py
+# Dans un dossier à elle, avec --keep 3 : sans ça, une copie par jour
+# (environ 8 Mo) s'empilait à côté de /app/meetings.db, sans jamais être
+# supprimée. C'est un filet pour annuler une fusion de la veille ; l'historique
+# long, lui, est celui de backup-db (03:17, 30 jours, sur l'hôte).
+ExecStartPre=/usr/bin/docker exec website-meeting-app python3 /app/utils/backup_db.py --label avant-fusion --dir /tmp/avant-fusion --keep 3
 ExecStart=/usr/bin/docker exec website-meeting-app python3 /app/utils/fusionner_doublons.py --db /app/meetings.db

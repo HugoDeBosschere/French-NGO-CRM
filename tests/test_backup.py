@@ -105,6 +105,25 @@ class BackupTests(unittest.TestCase):
         self.assertTrue(os.path.isdir(cible))
         self.assertEqual(len(os.listdir(cible)), 1)
 
+    def test_the_pre_fusion_backup_is_bounded(self):
+        # fusion-doublons écrivait une copie par jour à côté de la base, sans
+        # rotation : environ 8 Mo de plus chaque matin, jamais supprimés.
+        cible = os.path.join(self.dir, "avant-fusion")
+        for _ in range(5):
+            self._run("--label", "avant-fusion", "--dir", cible, "--keep", "3")
+        self.assertEqual(len(os.listdir(cible)), 3)
+        self.assertEqual(self._backups(), [])      # rien à côté de la base
+
+    def test_the_fusion_unit_keeps_its_backups_bounded(self):
+        # Le garde-fou ci-dessus ne sert que si l'unité s'en sert.
+        with open(os.path.join(ROOT, "utils", "deploy",
+                               "fusion-doublons.service"), encoding="utf-8") as f:
+            pre = [l for l in f if l.startswith("ExecStartPre=")]
+        self.assertEqual(len(pre), 1)
+        self.assertIn("backup_db.py", pre[0])
+        self.assertIn("--dir ", pre[0])
+        self.assertIn("--keep ", pre[0])
+
 
 if __name__ == "__main__":
     unittest.main()
