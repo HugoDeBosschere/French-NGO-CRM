@@ -299,7 +299,10 @@ Minuterie : `fusion-doublons.timer`, tous les jours à 07:10, après la synchro
 CiviCRM qui en est la principale pourvoyeuse. C'est le **seul travail planifié
 qui supprime des lignes**, d'où une sauvegarde en `ExecStartPre` et une limite
 de 50 fiches par passage (`--max`) : au-delà, il s'arrête et alerte plutôt que
-de nettoyer en masse sans témoin.
+de nettoyer en masse sans témoin. Cette sauvegarde va dans
+`/tmp/avant-fusion` du conteneur (`meetings.db.bak-avant-fusion-AAAA-MM-JJ`),
+3 au plus : de quoi annuler une fusion récente. L'historique long est celui de
+`backup-db` (30 jours, sur l'hôte).
 
 ## 6. Members' correspondence with élu·es (`import_member_mails.py`)
 
