@@ -335,13 +335,14 @@
     "Religieux\u00b7se": "Culte",
     "Membre d'une ONG": "ONG",
     "Membre d'une entreprise": "Entreprise",
+    "Membre d'un think tank": "Think tank",
     "Autre": "Autre"
   };
 
   // ONG, entreprise, éditeur and autre belong to no type de contact, so they are offered
   // on top of whichever one is chosen: a journaliste can sit on an NGO board
   // and an élu·e can chair an association. app.py keeps the same set on save.
-  var NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "\u00c9diteur", "Autre"];
+  var NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Think tank", "\u00c9diteur", "Autre"];
 
   function syncOrganisations(form, contactType) {
     var own = ORG_TYPE_OF_CONTACT[contactType] || "";
