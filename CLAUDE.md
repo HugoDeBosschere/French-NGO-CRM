@@ -27,11 +27,11 @@ gardés par un test de présence de colonne.
 
 - **`persons`** : un contact. Colonne clé **`contact_type`** ∈ `CONTACT_TYPES`
   (`Journaliste`, `Politique`, `Religieux·se`, `Membre d'une ONG`,
-  `Membre d'une entreprise`, `Autre`). Champs notables : `role` (fonctions,
+  `Membre d'une entreprise`, `Membre d'un think tank`, `Autre`). Champs notables : `role` (fonctions,
   cumulables), `political_group` (nullable depuis la fusion), `stance` (position
   sur PauseIA), `email`, `in_office` (0 = mandat terminé, fiche conservée), etc.
 - **`organisations`** : `ORG_TYPES` = `Média`, `Groupe politique`, `Culte`, `ONG`,
-  `Entreprise`, `Autre`. Correspondance type de contact ↔ type d'orga dans
+  `Entreprise`, `Think tank`, `Autre`. Correspondance type de contact ↔ type d'orga dans
   `ORG_TYPE_BY_CONTACT_TYPE` (`app.py`).
 - **`import_runs`** : une ligne par exécution d'un importeur (script, début, fin,
   statut, nombre de courriels). Écrite par `utils/importruns.py`, lue par

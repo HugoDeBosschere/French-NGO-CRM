@@ -124,6 +124,11 @@ stays a separate fiche.
 - **`insert_cultes.py`** — the religious organisations: each culte plus the
   body that actually speaks for it (CEF, FPF, CNEF, AEOF, Consistoire central,
   CRIF, Grande Mosquée de Paris, FORIF, UBF, CRCF). Fifteen rows, hard-coded.
+- **`insert_think_tanks.py`** — twenty French think tanks that publish on le
+  numérique, l'IA, la défense or the European institutions (Institut
+  Montaigne, Terra Nova, Ifri, Renaissance numérique, CeSIA…), as `Think tank`
+  organisations, stance `Inconnu`, links to be checked. No people: researchers
+  are filed by hand as `Membre d'un think tank` when contact is made.
 - **`extract_eveques.py`** + **`insert_eveques.py`** — the ~120 French bishops
   from the Conférence des évêques de France's own annuaire. Creates each
   diocèse as a `Culte` organisation, sets the fonction from the title
@@ -135,6 +140,7 @@ stays a separate fiche.
 python3 utils/insert_medias_journalistes.py            # dry run
 python3 utils/insert_medias_journalistes.py --commit
 python3 utils/insert_cultes.py --commit
+python3 utils/insert_think_tanks.py --commit
 python3 utils/extract_eveques.py && python3 utils/insert_eveques.py --commit
 ```
 

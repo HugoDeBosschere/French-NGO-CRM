@@ -27,7 +27,8 @@
      href="{{ url_for('people', q=q or none) }}">Tous <span class="muted">{{ total }}</span></a>
   {# « Membre d'une ONG » + « s » donnait « Membre d'une ONGs ». #}
   {% set CHIP_LABEL = {"Membre d'une ONG": "Membres d'une ONG",
-                       "Membre d'une entreprise": "Membres d'une entreprise"} %}
+                       "Membre d'une entreprise": "Membres d'une entreprise",
+                       "Membre d'un think tank": "Membres d'un think tank"} %}
   {% for t in contact_types %}
     <a class="chip {{ 'chip-on' if contact_type == t }}"
        href="{{ url_for('people', q=q or none, contact_type=t) }}">

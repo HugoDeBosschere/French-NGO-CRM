@@ -162,6 +162,7 @@ CONTACT_TYPES = [
     "Religieux·se",
     "Membre d'une ONG",
     "Membre d'une entreprise",
+    "Membre d'un think tank",
     "Autre",
 ]
 
@@ -169,7 +170,8 @@ CONTACT_TYPES = [
 # works for a média, a politician sits in a groupe politique, a religious figure
 # belongs to a culte (a church, a diocèse, a consistoire, a mosque…).
 ORG_TYPES = [
-    "Média", "Groupe politique", "Culte", "ONG", "Entreprise", "Éditeur", "Autre",
+    "Média", "Groupe politique", "Culte", "ONG", "Entreprise", "Think tank", "Éditeur",
+    "Autre",
 ]
 
 ORG_TYPE_BY_CONTACT_TYPE = {
@@ -178,6 +180,7 @@ ORG_TYPE_BY_CONTACT_TYPE = {
     "Religieux·se": "Culte",
     "Membre d'une ONG": "ONG",
     "Membre d'une entreprise": "Entreprise",
+    "Membre d'un think tank": "Think tank",
     "Autre": "Autre",
 }
 CONTACT_TYPE_BY_ORG_TYPE = {v: k for k, v in ORG_TYPE_BY_CONTACT_TYPE.items()}
@@ -191,7 +194,9 @@ CONTACT_TYPE_BY_ORG_TYPE = {v: k for k, v in ORG_TYPE_BY_CONTACT_TYPE.items()}
 #
 # They also carry no type-specific field. Name, position sur PauseIA, lien and
 # notes are all they have, so the organisation form renders no block for them.
-NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Éditeur", "Autre"]
+# « Think tank » (demande de Jeanne) is one of them for the same
+# reason: an élu·e or a journaliste can sit on a think tank's board.
+NEUTRAL_ORG_TYPES = ["ONG", "Entreprise", "Think tank", "Éditeur", "Autre"]
 
 
 def allowed_org_types(contact_type):
@@ -218,6 +223,7 @@ GENRE_BY_CONTACT_TYPE = {
     "Religieux·se": "Religieux",
     "Membre d'une ONG": "Autre",
     "Membre d'une entreprise": "Autre",
+    "Membre d'un think tank": "Autre",
     "Autre": "Autre",
 }
 
@@ -227,6 +233,7 @@ GENRE_BY_ORG_TYPE = {
     "Culte": "Religieux",
     "ONG": "Autre",
     "Entreprise": "Autre",
+    "Think tank": "Autre",
     "Éditeur": "Autre",
     "Autre": "Autre",
 }
@@ -476,6 +483,12 @@ NGO_COMPANY_COMMON_ROLES = [
 ]
 NGO_ROLES = NGO_COMPANY_COMMON_ROLES + ["Chargé·e de plaidoyer", "Bénévole"]
 COMPANY_ROLES = list(NGO_COMPANY_COMMON_ROLES)
+# A think tank is run like an ONG, but what it produces is notes and reports:
+# the people PauseIA will talk to are its researchers and the authors of its
+# studies on le numérique and l'IA.
+THINK_TANK_ROLES = NGO_COMPANY_COMMON_ROLES + [
+    "Président·e", "Chargé·e d'études", "Chercheur·euse associé·e",
+]
 
 # Holding one of these reveals the « Préciser » field: both labels say what
 # somebody is rather than what they do, so the useful part is what comes next
@@ -489,6 +502,7 @@ ROLES_BY_CONTACT_TYPE = {
     "Religieux·se": RELIGIOUS_ROLES,
     "Membre d'une ONG": NGO_ROLES,
     "Membre d'une entreprise": COMPANY_ROLES,
+    "Membre d'un think tank": THINK_TANK_ROLES,
     # « Autre » is the type for someone none of the others fits, so there is no
     # list of functions to offer: whatever they do goes in the notes.
     "Autre": [],
@@ -500,7 +514,7 @@ ROLES_BY_CONTACT_TYPE = {
 # political and the journalistic list; the religious lists share a few labels
 # with each other, which is what _dedup is for.
 ROLES = _dedup(POLITICAL_ROLES + JOURNALIST_ROLES + RELIGIOUS_ROLES
-               + NGO_ROLES + COMPANY_ROLES)
+               + NGO_ROLES + COMPANY_ROLES + THINK_TANK_ROLES)
 
 # How several roles are joined inside the single `role` TEXT column. No label in
 # ROLES contains a comma, so this round-trips safely.
