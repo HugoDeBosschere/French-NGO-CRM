@@ -4314,6 +4314,68 @@ def _signed_declaration_from_form():
     return {"1": 1, "0": 0}.get((request.form.get("signed_declaration") or "").strip())
 
 
+_EMAIL_RE = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
+
+
+def _other_emails_from_form(db, person, main_email):
+    """« Autres adresses »: the extra addresses typed on the person form.
+
+    Returns (addresses, errors). `addresses` is None when the form has no such
+    field — the moderation form creates a fiche without it, and must not be read
+    as « remove them all ». One per line, though commas and semicolons are
+    accepted too, since that is how addresses get pasted.
+
+    An address belongs to one person only (it is the key of `person_emails`, and
+    the import attaches the mail to whoever holds it): one already held by
+    another fiche is refused with that fiche's name, never moved silently.
+    """
+    raw = request.form.get("other_emails")
+    if raw is None:
+        return None, []
+    own_id = person["id"] if person is not None else None
+    main = (main_email or "").strip().lower()
+    addresses, errors = [], []
+    for address in re.split(r"[\s,;]+", raw.lower()):
+        if not address or address == main or address in addresses:
+            continue
+        if not _EMAIL_RE.match(address):
+            errors.append(f"« {address} » n'est pas une adresse valide.")
+            continue
+        holder = db.execute(
+            "SELECT p.id, p.name FROM person_emails pe "
+            "JOIN persons p ON p.id = pe.person_id WHERE pe.email = ? "
+            "UNION SELECT id, name FROM persons WHERE LOWER(email) = ?",
+            (address, address)).fetchall()
+        others = [h["name"] for h in holder if h["id"] != own_id]
+        if others:
+            errors.append(f"L'adresse {address} est déjà celle de {others[0]}.")
+            continue
+        addresses.append(address)
+    return addresses, errors
+
+
+def _set_other_emails(db, person_id, addresses, keep):
+    """Make `addresses` the person's extra addresses, removing the ones no
+    longer listed. `keep` are the main addresses, old and new: the form never
+    shows them as extras, so their absence from the list says nothing."""
+    keep = {(k or "").strip().lower() for k in keep} - {""}
+    listed = set(addresses) | keep
+    for row in db.execute("SELECT email FROM person_emails WHERE person_id = ?",
+                          (person_id,)).fetchall():
+        if row["email"].lower() not in listed:
+            db.execute("DELETE FROM person_emails WHERE email = ?", (row["email"],))
+    now = _now()
+    for address in addresses:
+        db.execute(
+            "INSERT OR IGNORE INTO person_emails (email, person_id, source, "
+            "created_at) VALUES (?, ?, 'interface', ?)", (address, person_id, now))
+        # Waiting in « À rattacher »? It now has its owner.
+        db.execute(
+            "UPDATE civicrm_pending SET status = 'resolved', resolved_at = ?, "
+            "person_id = ? WHERE email = ? AND status != 'resolved'",
+            (now, person_id, address))
+
+
 def _save_person(db, person):
     """Validate the person form and insert/update. Returns (person_id, errors).
 
@@ -4406,6 +4468,8 @@ def _save_person(db, person):
         errors.append("Indiquez qui a validé la fiche.")
     if not fc_ok:
         errors.append("La date de contact est invalide (format JJ/MM/AAAA).")
+    other_emails, email_errors = _other_emails_from_form(db, person, email)
+    errors += email_errors
 
     if errors:
         return None, errors
@@ -4443,6 +4507,9 @@ def _save_person(db, person):
             """,
             (*values, person_id),
         )
+    if other_emails is not None:
+        _set_other_emails(db, person_id, other_emails,
+                          keep=(email, person["email"] if person else None))
     _set_links(db, "person_organisations", "person_id", person_id,
                "organisation_id", organisation_ids)
     _sync_group_mirror(db, [person_id])
@@ -4545,8 +4612,14 @@ def edit_person(person_id):
             "SELECT organisation_id FROM person_organisations WHERE person_id = ?",
             (person_id,))
     }
-    return _render_person_form(db, form=_form_from_row(person),
-                               selected_orgs=linked, **ctx)
+    form = _form_from_row(person)
+    main = (person["email"] or "").strip().lower()
+    form["other_emails"] = "\n".join(
+        row["email"] for row in db.execute(
+            "SELECT email FROM person_emails WHERE person_id = ? "
+            "ORDER BY email COLLATE NOCASE", (person_id,))
+        if row["email"].lower() != main)
+    return _render_person_form(db, form=form, selected_orgs=linked, **ctx)
 
 
 @app.route("/people/<int:person_id>/delete", methods=["POST"])

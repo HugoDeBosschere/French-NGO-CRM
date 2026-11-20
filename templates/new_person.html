@@ -128,6 +128,16 @@
     </div>
   </div>
 
+  {# Les adresses secondaires (cabinet, attaché·e, adresse personnelle) :
+     les courriels venant de l'une d'elles sont rattachés à cette fiche. #}
+  <div class="field">
+    <label for="other_emails">Autres adresses <span class="muted">(facultatif)</span></label>
+    <textarea id="other_emails" name="other_emails" rows="2"
+      placeholder="Une adresse par ligne : cabinet, attaché·e, adresse personnelle…">{{ form.get('other_emails', '') }}</textarea>
+    <p class="hint">Les courriels envoyés depuis ou vers ces adresses sont
+      rattachés à cette personne. Retirer une ligne retire l'adresse.</p>
+  </div>
+
   {# Circonscription is a mandate detail: shown for a politique only. #}
   <div class="field" data-politique-only
        {% if form.get('contact_type') != 'Politique' %}hidden{% endif %}>
